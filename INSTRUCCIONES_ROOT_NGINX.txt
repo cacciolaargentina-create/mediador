@@ -1,0 +1,82 @@
+Instrucciones para la persona con acceso root en caosmatik.com.ar
+==================================================================
+
+Objetivo: exponer públicamente la app "mediador_digital" (Node/Express,
+ya corriendo con pm2 en el puerto 3000 interno, usuario bachi) en el
+subdominio mediador.caosmatik.com.ar con HTTPS.
+
+Paso 1 — DNS
+------------
+Agregar un registro DNS para el subdominio:
+  Tipo: A (o CNAME si usan Cloudflare)
+  Nombre: mediador
+  Valor: 185.194.218.21 (misma IP que caosmatik.com.ar)
+
+Si el dominio está detrás de Cloudflare, asegurarse de que este
+subdominio esté en modo "DNS only" (nube gris) para que certbot pueda
+validar el dominio y para que el puerto 443 llegue directo al servidor.
+(Una vez emitido el certificado, se puede volver a poner proxy naranja
+si lo prefieren, pero recomendamos dejarlo en gris para simplificar.)
+
+Paso 2 — Certificado SSL
+-------------------------
+sudo certbot certonly --nginx -d mediador.caosmatik.com.ar
+
+Paso 3 — Config de nginx
+--------------------------
+Crear el archivo /etc/nginx/sites-available/mediador-caosmatik con:
+
+server {
+    listen 80;
+    server_name mediador.caosmatik.com.ar;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name mediador.caosmatik.com.ar;
+
+    ssl_certificate /etc/letsencrypt/live/mediador.caosmatik.com.ar/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/mediador.caosmatik.com.ar/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+Nota: el "Upgrade"/"Connection: upgrade" es necesario porque la app usa
+Socket.IO (WebSockets) para tiempo real — sin eso el chat no actualiza
+en vivo.
+
+Paso 4 — Activar y recargar
+-----------------------------
+sudo ln -s /etc/nginx/sites-available/mediador-caosmatik /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+
+Paso 5 (opcional, recomendado) — pm2 al arrancar el server
+-------------------------------------------------------------
+El usuario bachi ya dejó la app corriendo con pm2 (sin instalación
+global, vía npx), pero como no tiene sudo, el proceso no revive solo
+si el servidor reinicia. Si quieren que sobreviva a un reboot, correr
+como root (una sola vez):
+
+  sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u bachi --hp /home/bachi
+
+(el comando exacto lo imprime "pm2 startup" al correrlo como bachi;
+copiar y pegar la línea que sugiere, con sudo).
+
+Verificación
+------------
+Después de estos pasos, https://mediador.caosmatik.com.ar debería
+mostrar la app (login con Google todavía deshabilitado hasta que se
+complete .env con las credenciales de Google OAuth y Anthropic).

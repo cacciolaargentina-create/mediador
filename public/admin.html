@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Puente Digital — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#12181A; --surface:#1B2326; --surface-2:#222C30; --line:#2E393D;
+    --text:#E7EDEC; --text-dim:#93A3A2; --text-faint:#5E6E6D;
+    --calm:#5FA8A0; --calm-dim:#3E6E69; --warn:#D98C4A; --warn-dim:#5A4327;
+    --danger:#C4614A; --danger-dim:#4A2C23;
+    --serif:'Fraunces',serif; --sans:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ height:100%; }
+  body{ background:var(--bg); color:var(--text); font-family:var(--sans); -webkit-font-smoothing:antialiased; }
+
+  .wrap{ max-width:1100px; margin:0 auto; padding:28px 20px 60px; }
+  header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:26px; flex-wrap:wrap; gap:12px; }
+  .brand{ font-family:var(--serif); font-weight:600; font-size:19px; }
+  .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
+  .brand-sub{ font-family:var(--mono); font-size:10px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.07em; margin-top:2px; }
+  .user-chip{ display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text-dim); }
+  .user-chip img{ width:26px; height:26px; border-radius:50%; }
+  .user-chip a, .user-chip button{ background:none; border:1px solid var(--line); color:var(--text-dim); font-size:11.5px; padding:6px 10px; border-radius:7px; cursor:pointer; font-family:var(--sans); text-decoration:none; }
+  .user-chip a:hover, .user-chip button:hover{ border-color:var(--calm-dim); color:var(--text); }
+
+  .stat-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(170px,1fr)); gap:12px; margin-bottom:32px; }
+  .stat-card{ background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .stat-card .num{ font-family:var(--serif); font-size:27px; font-weight:600; line-height:1; }
+  .stat-card .lab{ font-size:12px; color:var(--text-dim); margin-top:6px; }
+  .stat-card .sub{ font-family:var(--mono); font-size:10px; color:var(--text-faint); margin-top:6px; line-height:1.4; }
+
+  section.block{ margin-bottom:32px; }
+  h2.block-title{ font-family:var(--serif); font-size:16px; font-weight:600; margin-bottom:12px; }
+
+  .table-wrap{ overflow-x:auto; background:var(--surface); border:1px solid var(--line); border-radius:10px; }
+  table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  table.min-w{ min-width:600px; }
+  th, td{ text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  tr:last-child td{ border-bottom:none; }
+  th{ font-family:var(--mono); font-size:9.5px; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-faint); font-weight:500; }
+  td{ color:var(--text-dim); }
+  td.strong{ color:var(--text); font-weight:600; }
+
+  .pill{ font-family:var(--mono); font-size:9.5px; text-transform:uppercase; letter-spacing:0.05em; padding:2px 8px; border-radius:10px; }
+  .pill.guest{ background:var(--warn-dim); color:var(--warn); }
+  .pill.google{ background:var(--calm-dim); color:var(--calm); }
+
+  .chart-card{ background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:18px; }
+  .chart-legend{ display:flex; gap:16px; margin-bottom:14px; font-size:11.5px; color:var(--text-dim); }
+  .chart-legend span{ display:inline-flex; align-items:center; gap:6px; }
+  .chart-legend .sw{ width:9px; height:9px; border-radius:2px; display:inline-block; }
+  .chart-note{ font-size:11px; color:var(--text-faint); margin-top:10px; line-height:1.4; }
+
+  .center-note{ text-align:center; padding:22vh 20px 20px; color:var(--text-dim); font-size:14px; line-height:1.6; }
+  .center-note .brand{ font-size:25px; margin-bottom:14px; display:block; }
+  button.google-btn{ display:flex; align-items:center; gap:10px; background:#fff; color:#1F1F1F; border:none; font-weight:600; font-size:14px; padding:12px 22px; border-radius:8px; cursor:pointer; font-family:var(--sans); margin:18px auto 0; }
+  .empty-hint{ padding:18px; color:var(--text-faint); font-size:12.5px; text-align:center; }
+</style>
+</head>
+<body>
+<div id="app"><div class="center-note">Cargando…</div></div>
+<script src="/admin.js"></script>
+</body>
+</html>

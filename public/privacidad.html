@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Puente Digital — Política de privacidad</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#12181A; --surface:#1B2326; --surface-2:#222C30; --line:#2E393D;
+    --text:#E7EDEC; --text-dim:#93A3A2; --text-faint:#5E6E6D;
+    --calm:#5FA8A0; --calm-dim:#3E6E69; --warn:#D98C4A; --warn-dim:#5A4327;
+    --danger:#C4614A; --danger-dim:#4A2C23;
+    --serif:'Fraunces',serif; --sans:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ height:100%; }
+  body{ background:var(--bg); color:var(--text); font-family:var(--sans); -webkit-font-smoothing:antialiased; min-height:100vh; display:flex; flex-direction:column; }
+
+  .site-header{ position:sticky; top:0; z-index:20; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 20px; background:rgba(18,24,26,0.92); backdrop-filter:blur(6px); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .site-header .brand{ font-family:var(--serif); font-weight:600; font-size:17px; color:var(--text); text-decoration:none; flex-shrink:0; }
+  .site-header .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
+  .site-footer-inner .brand{ font-family:var(--serif); font-weight:600; font-size:16px; color:var(--text); text-decoration:none; }
+  .site-footer-inner .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
+  .site-nav{ display:flex; gap:18px; flex-wrap:wrap; }
+  .site-nav a{ font-size:12.5px; color:var(--text-dim); text-decoration:none; font-family:var(--sans); white-space:nowrap; }
+  .site-nav a:hover, .site-nav a.active{ color:var(--calm); }
+
+  .site-footer{ border-top:1px solid var(--line); padding:24px 20px 30px; margin-top:auto; }
+  .site-footer-inner{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px; max-width:720px; margin:0 auto 14px; }
+  .site-footer .disclaimer{ max-width:720px; margin:0 auto; font-size:11px; color:var(--text-faint); line-height:1.5; }
+
+  .legal-wrap{ max-width:720px; width:100%; margin:0 auto; padding:40px 22px 20px; box-sizing:border-box; flex:1; }
+  .legal-wrap h1{ font-family:var(--serif); font-size:28px; font-weight:600; margin-bottom:8px; }
+  .legal-wrap .updated{ font-family:var(--mono); font-size:11px; color:var(--text-faint); margin-bottom:22px; text-transform:uppercase; letter-spacing:0.05em; }
+  .legal-note{ background:var(--warn-dim); border:1px solid var(--warn); color:var(--warn); border-radius:8px; padding:12px 14px; font-size:12.5px; line-height:1.55; margin-bottom:28px; }
+  .legal-wrap h2{ font-family:var(--serif); font-size:18px; font-weight:600; margin:30px 0 10px; }
+  .legal-wrap p{ font-size:14px; color:var(--text-dim); line-height:1.7; margin-bottom:12px; }
+  .legal-wrap ul{ margin:0 0 12px 20px; padding:0; }
+  .legal-wrap li{ font-size:14px; color:var(--text-dim); line-height:1.7; margin-bottom:6px; }
+  .legal-wrap strong{ color:var(--text); }
+  .legal-wrap a{ color:var(--calm); }
+  .legal-wrap table{ width:100%; border-collapse:collapse; margin:14px 0 20px; font-size:13px; }
+  .legal-wrap th, .legal-wrap td{ text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .legal-wrap th{ font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-faint); font-weight:500; }
+  .legal-wrap td{ color:var(--text-dim); }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <a href="/" class="brand">Puente<em>digital</em></a>
+  <nav class="site-nav">
+    <a href="/">Inicio</a>
+    <a href="/#faq">FAQ</a>
+    <a href="/legal.html">Marco legal</a>
+    <a href="/terminos.html">Términos</a>
+    <a href="/privacidad.html" class="active">Privacidad</a>
+  </nav>
+</header>
+
+<div class="legal-wrap">
+  <h1>Política de privacidad</h1>
+  <div class="updated">Última actualización: agosto de 2026</div>
+
+  <div class="legal-note">Esta es una plantilla general de política de privacidad, orientativa para el lanzamiento de Puente Digital. Antes de publicarla como versión final, hacela revisar por un abogado o abogada especializado en protección de datos personales (en Argentina, Ley 25.326).</div>
+
+  <h2>1. Qué datos recolectamos</h2>
+  <table>
+    <tr><th>Dato</th><th>De dónde sale</th></tr>
+    <tr><td>Nombre, email y foto de perfil</td><td>De tu cuenta de Google, si iniciás sesión así</td></tr>
+    <tr><td>Nombre</td><td>Escrito a mano, si entrás como invitado/a sin cuenta de Google</td></tr>
+    <tr><td>Mensajes del canal</td><td>Lo que escribís en el chat</td></tr>
+    <tr><td>Eventos del calendario</td><td>Horarios, entregas y detalles que cargás</td></tr>
+    <tr><td>Preguntas al asistente</td><td>Lo que le consultás sobre el historial del canal</td></tr>
+  </table>
+
+  <h2>2. Para qué usamos estos datos</h2>
+  <ul>
+    <li>Para darte acceso a tu canal y mostrarle tus mensajes y acuerdos a la otra persona del canal.</li>
+    <li>Para que la IA analice cada mensaje antes de enviarse y sugiera una alternativa más neutral cuando corresponda.</li>
+    <li>Para que el asistente pueda responder preguntas sobre el historial de ese mismo canal.</li>
+    <li>Para generar el informe exportable que pedís desde Historial.</li>
+    <li>Para el feed de calendario (.ics) que sincronizás con tu Google o Apple Calendar, si activás esa opción.</li>
+  </ul>
+  <p>No usamos tus mensajes para entrenar modelos de inteligencia artificial ni con fines publicitarios.</p>
+
+  <h2>3. Con quién se comparten tus datos</h2>
+  <p>Puente Digital funciona con dos proveedores externos:</p>
+  <ul>
+    <li><strong>Google</strong> (inicio de sesión con Google OAuth) — recibe lo necesario para autenticarte, según la política de privacidad de Google.</li>
+    <li><strong>Anthropic</strong> (proveedor de la inteligencia artificial) — recibe el texto de cada mensaje al momento de enviarse, para analizarlo y, si corresponde, sugerir una alternativa. También recibe el historial del canal cuando usás el Asistente, para poder responder tu pregunta.</li>
+  </ul>
+  <p>No vendemos tus datos a terceros ni los compartimos con fines comerciales.</p>
+
+  <h2>4. Quién puede ver tus mensajes</h2>
+  <p>Por defecto, dentro de un canal solo las dos partes que lo integran pueden ver los mensajes y acuerdos. Opcionalmente, cualquiera de las dos partes puede invitar a un mediador/a o a un estudio jurídico a ese canal puntual, con acceso de solo lectura (no pueden escribir ni resolver acuerdos) — su ingreso queda siempre anunciado en el chat y visible en la lista de integrantes, para ambas partes. Quien administra el sistema puede acceder a los datos almacenados solo para mantenimiento técnico o si es requerido por ley — no hay una persona revisando conversaciones de forma rutinaria.</p>
+
+  <h2>5. Cómo protegemos tus datos</h2>
+  <p>Las conexiones al Servicio usan HTTPS. El acceso a un canal requiere una cuenta de Google real o un link de invitado con un código largo no adivinable. Aun así, ningún sistema es 100% infalible — te recomendamos no compartir el link de tu canal fuera del contexto para el que fue creado.</p>
+
+  <h2>6. Cuánto tiempo guardamos tus datos</h2>
+  <p>Guardamos los mensajes y acuerdos de un canal mientras la cuenta esté activa. <em>[Completar con la política de retención y borrado definitiva antes de publicar — por ejemplo, plazo de conservación tras la inactividad del canal.]</em></p>
+
+  <h2>7. Tus derechos</h2>
+  <p>De acuerdo con la Ley de Protección de Datos Personales (Ley 25.326) de Argentina, tenés derecho a acceder, rectificar y solicitar la supresión de tus datos personales. Para ejercer estos derechos, escribinos a <em>[completar email de contacto]</em>.</p>
+
+  <h2>8. Información sobre niños, niñas y adolescentes</h2>
+  <p>Puente Digital está pensado para ser usado por personas adultas. Es posible que en los mensajes o el calendario se mencione información sobre hijos e hijas (horarios, salud, colegio) — esa información es cargada y gestionada por las personas adultas del canal bajo su propia responsabilidad, no directamente por niños, niñas o adolescentes.</p>
+
+  <h2>9. Cambios a esta política</h2>
+  <p>Podemos actualizar esta Política ocasionalmente. Los cambios importantes se van a reflejar en la fecha de "Última actualización" de esta página.</p>
+
+  <h2>10. Contacto</h2>
+  <p>Ante dudas sobre esta Política de privacidad, escribinos a <em>[completar email de contacto]</em>. Para entender el resto de las condiciones de uso, mirá los <a href="/terminos.html">Términos y condiciones</a> y el <a href="/legal.html">Marco legal</a>.</p>
+</div>
+
+<footer class="site-footer">
+  <div class="site-footer-inner">
+    <a href="/" class="brand">Puente<em>digital</em></a>
+    <nav class="site-nav">
+      <a href="/#faq">FAQ</a>
+      <a href="/legal.html">Marco legal</a>
+      <a href="/terminos.html">Términos</a>
+      <a href="/privacidad.html">Privacidad</a>
+    </nav>
+  </div>
+  <p class="disclaimer">Puente Digital es una herramienta de comunicación, no asesoramiento legal, terapéutico ni una mediación homologada. Su objetivo es ayudar a desescalar el conflicto y dar tranquilidad, no reemplazar a un profesional.</p>
+</footer>
+
+</body>
+</html>

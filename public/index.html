@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Puente Digital</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+  :root{
+    --bg:#12181A; --surface:#1B2326; --surface-2:#222C30; --line:#2E393D;
+    --text:#E7EDEC; --text-dim:#93A3A2; --text-faint:#5E6E6D;
+    --calm:#5FA8A0; --calm-dim:#3E6E69; --warn:#D98C4A; --warn-dim:#5A4327;
+    --danger:#C4614A; --danger-dim:#4A2C23;
+    --serif:'Fraunces',serif; --sans:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{ background:var(--bg); color:var(--text); font-family:var(--sans); -webkit-font-smoothing:antialiased; display:flex; flex-direction:column; min-height:100vh; }
+
+  header.topbar{ padding:16px 20px 12px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; gap:10px; }
+  header.topbar .brand{ font-family:var(--serif); font-weight:600; font-size:18px; }
+  header.topbar .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
+  header.topbar .tagline{ font-size:10.5px; color:var(--text-faint); font-family:var(--mono); text-transform:uppercase; letter-spacing:0.07em; }
+  header.topbar .user-chip{ display:flex; align-items:center; gap:8px; }
+  header.topbar .user-chip img{ width:24px; height:24px; border-radius:50%; }
+  header.topbar .user-chip .name{ font-size:12px; color:var(--text-dim); }
+  header.topbar .user-chip button{ background:none; border:none; color:var(--text-faint); font-size:11px; cursor:pointer; text-decoration:underline; font-family:var(--sans); }
+  header.topbar .user-chip .role-badge{ font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:0.05em; color:var(--calm); border:1px solid var(--calm-dim); padding:2px 7px; border-radius:10px; }
+
+  main{ flex:1; overflow-y:auto; padding-bottom:84px; }
+  .screen{ display:none; animation:fade .25s ease; }
+  .screen.active{ display:block; }
+  @keyframes fade{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;} }
+
+  nav.tabs{ position:fixed; bottom:0; left:0; right:0; display:flex; background:var(--surface); border-top:1px solid var(--line); z-index:10; }
+  nav.tabs button{ flex:1; background:none; border:none; color:var(--text-faint); font-size:10.5px; padding:10px 2px 12px; display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer; position:relative; }
+  nav.tabs button .ic{ font-size:17px; line-height:1; }
+  nav.tabs button.active{ color:var(--calm); }
+  nav.tabs button .dot-alert{ display:none; position:absolute; top:6px; right:calc(50% - 17px); width:6px; height:6px; border-radius:50%; background:var(--warn); }
+  nav.tabs button .dot-alert.show{ display:block; }
+
+  .pad{ padding:18px 20px; }
+  .center-pad{ padding:40px 20px; display:flex; flex-direction:column; align-items:center; text-align:center; gap:16px; }
+  h1.screen-title{ font-family:var(--serif); font-size:23px; font-weight:600; margin-bottom:4px; }
+  .screen-sub{ color:var(--text-dim); font-size:13.5px; margin-bottom:18px; line-height:1.5; }
+  .card{ background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:14px; }
+  .eyebrow{ font-family:var(--mono); font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-faint); margin-bottom:8px; }
+  button.primary{ background:var(--calm); color:#0E1A19; border:none; font-weight:600; font-size:14px; padding:12px 18px; border-radius:8px; cursor:pointer; font-family:var(--sans); }
+  button.primary:disabled{ opacity:0.4; cursor:not-allowed; }
+  button.ghost{ background:none; border:1px solid var(--line); color:var(--text); font-size:13px; padding:10px 14px; border-radius:8px; cursor:pointer; font-family:var(--sans); }
+  button.ghost.small{ padding:6px 10px; font-size:11.5px; }
+  button.google-btn{ display:flex; align-items:center; gap:10px; background:#fff; color:#1F1F1F; border:none; font-weight:600; font-size:14px; padding:12px 22px; border-radius:8px; cursor:pointer; font-family:var(--sans); }
+  button.danger-link{ background:none; border:none; color:var(--danger); font-size:12px; cursor:pointer; padding:0; font-family:var(--sans); text-decoration:underline; }
+  input[type=text], input[type=date], textarea, select{ width:100%; min-width:0; background:var(--surface-2); border:1px solid var(--line); color:var(--text); padding:11px 12px; border-radius:8px; font-family:var(--sans); font-size:14px; }
+  input:focus, textarea:focus, select:focus{ outline:2px solid var(--calm-dim); border-color:var(--calm); }
+  label.field-label{ font-size:12px; color:var(--text-dim); display:block; margin-bottom:6px; }
+  .field-hint{ font-size:11px; color:var(--text-faint); margin-top:6px; line-height:1.4; }
+  .row-copy{ display:flex; gap:8px; }
+  .row-copy input{ flex:1; }
+  .row-copy button{ flex-shrink:0; }
+
+  .hero-demo{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:18px; }
+  .bubble{ max-width:82%; padding:10px 13px; border-radius:12px; font-size:14px; line-height:1.45; margin-bottom:8px; }
+  .bubble.original{ background:var(--surface-2); border:1px solid var(--danger); color:var(--text-dim); text-decoration:line-through; text-decoration-color:var(--danger); text-decoration-thickness:1px; }
+  .bubble.suggested{ background:var(--calm-dim); border:1px solid var(--calm); color:var(--text); margin-left:auto; }
+  .bubble-label{ font-family:var(--mono); font-size:9.5px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-faint); margin-bottom:3px; }
+
+  .status-banner{ display:flex; align-items:center; gap:8px; padding:9px 12px; border-radius:8px; font-size:12px; font-family:var(--mono); margin-bottom:16px; }
+  .status-banner.ok{ background:var(--calm-dim); color:var(--calm); }
+  .status-banner.warn{ background:var(--warn-dim); color:var(--warn); }
+  .status-banner.err{ background:var(--danger-dim); color:var(--danger); }
+  .status-banner .dot{ width:6px; height:6px; border-radius:50%; background:currentColor; flex-shrink:0; }
+
+  .code-display{ font-family:var(--mono); font-size:26px; letter-spacing:0.12em; color:var(--calm); text-align:center; padding:14px; background:var(--surface-2); border:1px dashed var(--calm-dim); border-radius:8px; margin-bottom:12px; }
+
+  .cal-nav{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  .cal-nav button{ width:32px; height:32px; padding:0; font-size:16px; line-height:1; flex-shrink:0; }
+  .cal-month-label{ font-family:var(--serif); font-size:15px; font-weight:600; text-transform:capitalize; }
+  .cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+  .cal-dow{ text-align:center; font-family:var(--mono); font-size:9.5px; color:var(--text-faint); padding-bottom:6px; text-transform:uppercase; }
+  .cal-day{ aspect-ratio:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; border-radius:7px; font-size:12px; color:var(--text-dim); }
+  .cal-day.empty{ visibility:hidden; }
+  .cal-day.has-events{ background:var(--surface-2); color:var(--text); cursor:pointer; }
+  .cal-day.has-events:hover{ background:var(--surface); }
+  .cal-day.today .num{ color:var(--calm); font-weight:700; }
+  .cal-day.selected{ outline:1.5px solid var(--calm); outline-offset:-1px; }
+  .cal-day .dots{ display:flex; gap:2px; }
+  .cal-day .dot{ width:4px; height:4px; border-radius:50%; background:var(--text-faint); }
+  .cal-day .dot.confirmado{ background:var(--calm); }
+  .cal-day .dot.pendiente{ background:var(--warn); }
+  .cal-day .dot.rechazado{ background:var(--danger); }
+
+  .chat-wrap{ display:flex; flex-direction:column; height:calc(100vh - 230px); min-height:320px; }
+  .chat-log{ flex:1; overflow-y:auto; padding:4px 0 14px; display:flex; flex-direction:column; gap:10px; }
+  .msg{ max-width:80%; padding:10px 13px; border-radius:14px; font-size:14px; line-height:1.45; }
+  .msg.me{ background:var(--calm-dim); border:1px solid var(--calm); align-self:flex-end; border-bottom-right-radius:3px; }
+  .msg.them{ background:var(--surface); border:1px solid var(--line); align-self:flex-start; border-bottom-left-radius:3px; }
+  .msg .meta{ font-family:var(--mono); font-size:9.5px; color:var(--text-faint); margin-top:5px; }
+  .msg.system{ align-self:center; background:none; border:1px dashed var(--line); color:var(--text-faint); font-size:11.5px; font-family:var(--mono); text-align:center; max-width:92%; }
+  .msg.pattern{ border-color:var(--warn); color:var(--warn); }
+  .msg .flag-note{ margin-top:6px; font-size:11.5px; color:var(--warn); border-top:1px solid var(--warn-dim); padding-top:5px; }
+  .neutral-btn{ font-family:var(--mono); font-size:9.5px; text-decoration:underline; color:var(--calm); background:none; border:none; cursor:pointer; padding:0; margin-top:5px; }
+  .neutral-box{ margin-top:7px; padding:8px 9px; background:var(--surface-2); border:1px solid var(--calm-dim); border-radius:7px; font-size:12.5px; color:var(--text-dim); line-height:1.4; }
+  .neutral-box .lab{ font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:0.06em; color:var(--calm); margin-bottom:3px; }
+
+  .analyzing{ align-self:flex-end; font-family:var(--mono); font-size:11px; color:var(--text-faint); display:flex; align-items:center; gap:8px; padding:6px 4px; }
+  .analyzing .spin{ width:10px; height:10px; border-radius:50%; border:2px solid var(--line); border-top-color:var(--calm); animation:spin .7s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  .reform-card{ align-self:flex-end; max-width:90%; background:var(--surface); border:1px solid var(--warn); border-radius:12px; padding:14px; }
+  .reform-card .head{ display:flex; align-items:center; gap:6px; font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--warn); margin-bottom:10px; }
+  .reform-card .reason{ font-size:12.5px; color:var(--text-dim); margin-bottom:12px; line-height:1.4; }
+  .reform-card .block{ margin-bottom:10px; }
+  .reform-card .block .lab{ font-family:var(--mono); font-size:9.5px; text-transform:uppercase; letter-spacing:0.07em; color:var(--text-faint); margin-bottom:4px; }
+  .reform-card .block .txt{ font-size:13.5px; line-height:1.4; padding:8px 10px; border-radius:7px; }
+  .reform-card .block.orig .txt{ background:var(--surface-2); color:var(--text-dim); border:1px solid var(--danger); }
+  .reform-card .block.alt .txt{ background:var(--calm-dim); border:1px solid var(--calm); }
+  .reform-card .actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
+  .reform-card .actions button{ flex:1; font-size:12.5px; padding:9px 8px; }
+
+  .composer{ display:flex; gap:8px; padding-top:10px; border-top:1px solid var(--line); }
+  .composer textarea{ resize:none; height:44px; padding-top:11px; }
+  .composer button{ flex-shrink:0; }
+
+  .quick-templates{ display:flex; flex-wrap:wrap; gap:6px; padding-top:10px; }
+  .chip{ background:var(--surface-2); border:1px solid var(--line); color:var(--text-dim); font-size:11px; padding:6px 10px; border-radius:14px; cursor:pointer; font-family:var(--sans); white-space:nowrap; }
+  .chip:hover{ border-color:var(--calm-dim); color:var(--text); }
+  .chip.chip-propose{ border-color:var(--calm-dim); color:var(--calm); }
+
+  .propose-inline{ background:var(--surface); border:1px solid var(--calm-dim); border-radius:10px; padding:12px; margin-top:8px; }
+  .propose-inline input{ margin-bottom:8px; }
+  .inline-form-actions{ display:flex; gap:8px; }
+  .inline-form-actions button{ flex-shrink:0; }
+
+  .proposal-card{ align-self:center; max-width:92%; background:var(--surface); border:1px solid var(--calm-dim); border-radius:12px; padding:13px 14px; }
+  .proposal-head{ display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:var(--text-dim); margin-bottom:6px; }
+  .proposal-head .ic{ font-size:13px; }
+  .proposal-head .ev-pill{ margin-left:auto; }
+  .proposal-detail{ font-size:14px; line-height:1.4; margin-bottom:3px; }
+  .proposal-date{ font-family:var(--mono); font-size:11px; text-transform:capitalize; color:var(--text-faint); margin-bottom:10px; }
+  .proposal-series{ font-size:11px; color:var(--text-faint); background:var(--surface-2); border-radius:6px; padding:6px 8px; margin-bottom:10px; line-height:1.4; }
+  .series-tag{ font-size:11px; }
+  .proposal-actions{ display:flex; gap:6px; align-items:center; }
+  .proposal-actions button{ flex-shrink:0; }
+  .proposal-actions .primary{ margin-left:auto; }
+  .proposal-wait{ font-size:11.5px; color:var(--text-faint); font-family:var(--mono); }
+  .text-link{ display:block; margin-top:6px; background:none; border:none; color:var(--calm); font-size:11.5px; text-decoration:underline; cursor:pointer; padding:0; font-family:var(--sans); }
+  .counter-form input{ margin-bottom:8px; }
+  .counter-actions{ display:flex; gap:8px; }
+  .counter-actions button{ flex-shrink:0; }
+  .counter-actions .primary{ flex:1; }
+
+  .event-item{ padding:12px 0; border-bottom:1px solid var(--line); }
+  .event-item:last-child{ border-bottom:none; }
+  .event-item .row1{ display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; }
+  .event-item .day{ font-family:var(--mono); font-size:11px; color:var(--calm); width:52px; flex-shrink:0; }
+  .event-item .what{ font-size:13.5px; flex:1; }
+  .ev-pill{ font-family:var(--mono); font-size:9.5px; text-transform:uppercase; letter-spacing:0.05em; padding:2px 8px; border-radius:10px; flex-shrink:0; }
+  .ev-pill.pendiente{ background:var(--warn-dim); color:var(--warn); }
+  .ev-pill.confirmado{ background:var(--calm-dim); color:var(--calm); }
+  .ev-pill.rechazado{ background:var(--danger-dim); color:var(--danger); }
+  .event-item .who{ font-size:11px; color:var(--text-faint); }
+  .event-item .confirm-actions{ display:flex; gap:8px; margin-top:6px; }
+
+  .hist-item{ padding:12px 0; border-bottom:1px solid var(--line); }
+  .hist-item:last-child{ border-bottom:none; }
+  .hist-item .top{ display:flex; justify-content:space-between; margin-bottom:4px; }
+  .hist-item .who{ font-size:12px; font-weight:600; }
+  .hist-item .ts{ font-family:var(--mono); font-size:10.5px; color:var(--text-faint); }
+  .hist-item .txt{ font-size:13px; color:var(--text-dim); line-height:1.4; }
+  .hist-item .flag{ display:inline-block; margin-top:5px; font-family:var(--mono); font-size:9.5px; color:var(--warn); border:1px solid var(--warn-dim); background:var(--warn-dim); padding:2px 7px; border-radius:5px; text-transform:uppercase; letter-spacing:0.05em; }
+
+  .empty-hint{ font-size:13px; color:var(--text-faint); text-align:center; padding:20px 10px; }
+  .disclaimer{ font-size:11px; color:var(--text-faint); line-height:1.5; margin-top:20px; border-top:1px solid var(--line); padding-top:14px; }
+
+  .landing-screen{ overflow-y:auto; display:flex; flex-direction:column; }
+
+  .site-header{ position:sticky; top:0; z-index:20; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 20px; background:rgba(18,24,26,0.92); backdrop-filter:blur(6px); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .site-header .brand{ font-family:var(--serif); font-weight:600; font-size:17px; color:var(--text); text-decoration:none; flex-shrink:0; }
+  .site-header .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
+  .site-footer-inner .brand{ font-family:var(--serif); font-weight:600; font-size:16px; color:var(--text); text-decoration:none; }
+  .site-footer-inner .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
+  .site-nav{ display:flex; gap:18px; flex-wrap:wrap; }
+  .site-nav a{ font-size:12.5px; color:var(--text-dim); text-decoration:none; font-family:var(--sans); white-space:nowrap; }
+  .site-nav a:hover, .site-nav a.active{ color:var(--calm); }
+
+  .site-footer{ border-top:1px solid var(--line); padding:24px 20px 30px; margin-top:auto; }
+  .site-footer-inner{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px; max-width:720px; margin:0 auto 14px; }
+  .site-footer .disclaimer{ max-width:720px; margin:0 auto; font-size:11px; color:var(--text-faint); line-height:1.5; border:none; padding-top:0; }
+
+  .legal-wrap{ max-width:720px; width:100%; margin:0 auto; padding:40px 22px 20px; box-sizing:border-box; }
+  .legal-wrap h1{ font-family:var(--serif); font-size:28px; font-weight:600; margin-bottom:8px; }
+  .legal-wrap .updated{ font-family:var(--mono); font-size:11px; color:var(--text-faint); margin-bottom:22px; text-transform:uppercase; letter-spacing:0.05em; }
+  .legal-note{ background:var(--warn-dim); border:1px solid var(--warn); color:var(--warn); border-radius:8px; padding:12px 14px; font-size:12.5px; line-height:1.55; margin-bottom:28px; }
+  .legal-wrap h2{ font-family:var(--serif); font-size:18px; font-weight:600; margin:30px 0 10px; }
+  .legal-wrap p{ font-size:14px; color:var(--text-dim); line-height:1.7; margin-bottom:12px; }
+  .legal-wrap ul{ margin:0 0 12px 20px; padding:0; }
+  .legal-wrap li{ font-size:14px; color:var(--text-dim); line-height:1.7; margin-bottom:6px; }
+  .legal-wrap strong{ color:var(--text); }
+  .legal-wrap a{ color:var(--calm); }
+  .landing-wrap{ width:100%; max-width:480px; margin:0 auto; padding:36px 22px 48px; text-align:left; }
+  .landing-wrap .brand-row{ text-align:center; margin-bottom:2px; }
+  .landing-wrap .brand{ font-size:25px; }
+  .landing-wrap .tagline-center{ text-align:center; color:var(--text-faint); font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:0.07em; margin-bottom:30px; }
+  .landing-wrap h1.screen-title{ text-align:center; font-size:25px; }
+  .landing-wrap .screen-sub{ text-align:center; }
+  .landing-wrap .cta-block{ margin:22px 0 8px; }
+  .landing-wrap .cta-block .google-btn{ width:100%; justify-content:center; }
+  .landing-wrap .cta-note{ text-align:center; font-size:11.5px; color:var(--text-faint); margin-top:9px; }
+  .section-heading{ font-family:var(--serif); font-size:17px; font-weight:600; margin:36px 0 14px; }
+
+  .steps{ display:flex; flex-direction:column; gap:14px; }
+  .step-item{ display:flex; gap:12px; align-items:flex-start; }
+  .step-item .step-num{ flex-shrink:0; width:26px; height:26px; border-radius:50%; background:var(--surface-2); border:1px solid var(--calm-dim); color:var(--calm); font-family:var(--mono); font-size:12px; display:flex; align-items:center; justify-content:center; }
+  .step-item .step-body .t{ font-size:14px; font-weight:600; margin-bottom:2px; }
+  .step-item .step-body .d{ font-size:13px; color:var(--text-dim); line-height:1.45; }
+
+  .feature-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:12px; }
+  .feature-item{ background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .feature-item .ic{ font-size:18px; margin-bottom:8px; display:block; }
+  .feature-item .t{ font-size:13px; font-weight:600; margin-bottom:4px; }
+  .feature-item .d{ font-size:12px; color:var(--text-dim); line-height:1.4; }
+
+  .guest-note{ background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:14px 16px; font-size:12.5px; color:var(--text-dim); line-height:1.5; }
+  .guest-note b{ color:var(--text); }
+
+  .faq-list{ border-top:1px solid var(--line); }
+  .faq-item{ border-bottom:1px solid var(--line); padding:14px 0; }
+  .faq-item summary{ cursor:pointer; font-size:14px; font-weight:600; color:var(--text); list-style:none; display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .faq-item summary::-webkit-details-marker{ display:none; }
+  .faq-item summary::after{ content:'+'; font-family:var(--mono); font-size:17px; color:var(--text-faint); flex-shrink:0; }
+  .faq-item[open] summary::after{ content:'–'; }
+  .faq-item p{ margin-top:10px; font-size:13px; color:var(--text-dim); line-height:1.55; }
+
+  .mini-event{ display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .mini-event:last-child{ border-bottom:none; }
+  .mini-event .day{ font-family:var(--mono); font-size:11px; color:var(--calm); width:50px; flex-shrink:0; }
+  .mini-event .what{ flex:1; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  .member-row{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .member-row:last-child{ border-bottom:none; }
+
+  .sync-actions{ display:flex; flex-direction:column; gap:8px; margin-top:2px; }
+  .sync-actions .sync-link{ display:flex; align-items:center; gap:10px; background:var(--surface-2); border:1px solid var(--line); color:var(--text); font-size:13px; padding:10px 12px; border-radius:8px; text-decoration:none; font-family:var(--sans); cursor:pointer; }
+  .sync-actions .sync-link:hover{ border-color:var(--calm-dim); }
+  .sync-actions .sync-link .ic{ font-size:15px; flex-shrink:0; }
+  @media (min-width:560px){ .sync-actions{ flex-direction:row; flex-wrap:wrap; } .sync-actions .sync-link{ flex:1 1 220px; } }
+
+  .hero-row{ display:block; }
+
+  /* ---- Tablet and up: give the app shell breathing room instead of a full-bleed mobile column ---- */
+  @media (min-width:700px){
+    header.topbar{ padding-left:max(24px, calc((100% - 680px)/2)); padding-right:max(24px, calc((100% - 680px)/2)); }
+    nav.tabs{ padding-left:max(24px, calc((100% - 680px)/2)); padding-right:max(24px, calc((100% - 680px)/2)); }
+    .pad{ max-width:680px; margin:0 auto; padding:26px 24px; }
+    .chat-wrap{ height:calc(100vh - 260px); }
+  }
+
+  /* ---- Desktop: landing gets a wider canvas and a two-column hero ---- */
+  @media (min-width:900px){
+    .landing-wrap{ max-width:900px; padding:64px 40px 72px; }
+    .landing-wrap h1.screen-title{ font-size:32px; }
+
+    .hero-row{ display:flex; align-items:center; gap:48px; margin-bottom:6px; }
+    .hero-row .hero-copy{ flex:1; }
+    .hero-row .hero-copy h1.screen-title, .hero-row .hero-copy .screen-sub{ text-align:left; }
+    .hero-row .hero-demo{ flex:1; margin-bottom:0; }
+
+    .cta-block{ max-width:360px; margin-left:auto; margin-right:auto; }
+
+    .steps{ flex-direction:row; gap:20px; }
+    .step-item{ flex-direction:column; flex:1; }
+
+    .feature-grid{ grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); }
+  }
+
+  /* ---- Small phones: tighten up so nothing crowds ---- */
+  @media (max-width:380px){
+    .landing-wrap{ padding:28px 16px 40px; }
+    .feature-grid{ grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar" id="topbar" style="display:none">
+  <div>
+    <div class="brand">Puente<em>digital</em></div>
+    <div class="tagline">Comunicación mediada</div>
+  </div>
+  <div class="user-chip" id="user-chip"></div>
+</header>
+
+<main id="main" style="display:none">
+
+  <section class="screen active" id="screen-inicio">
+    <div class="pad">
+      <div id="status-banner-slot"></div>
+      <div id="inicio-summary-slot"></div>
+      <h1 class="screen-title">Un tercer canal, no un árbitro.</h1>
+      <p class="screen-sub">Para cuando hay que seguir coordinando — horarios, entregas, acuerdos — pero cada mensaje corre el riesgo de escalar. La IA no decide quién tiene razón: ayuda a que lo que se dice quede centrado en hechos.</p>
+      <div class="hero-demo">
+        <div class="eyebrow">Así funciona</div>
+        <div class="bubble original"><div class="bubble-label">Mensaje original</div>Otra vez llegás tarde. Sos un desastre y nunca te importa nuestro hijo.</div>
+        <div class="bubble suggested"><div class="bubble-label">Alternativa sugerida por la IA</div>Hoy la entrega se realizó 25 minutos después del horario acordado. ¿Podemos confirmar el horario para la próxima entrega?</div>
+      </div>
+      <button class="primary" style="width:100%" onclick="goTo('invitar')" id="btn-configurar-canal">Configurar mi canal</button>
+      <p class="disclaimer">Esta app no reemplaza a un abogado, mediador, terapeuta o a la Justicia. En situaciones de violencia o riesgo, contactá a las autoridades correspondientes o a la línea 144 / 137.</p>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-invitar">
+    <div class="pad">
+      <h1 class="screen-title">Tu canal</h1>
+      <p class="screen-sub">Un canal conecta a dos cuentas de Google. Creá uno nuevo o unite con el código que te compartieron.</p>
+      <div id="invitar-content"></div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-chat">
+    <div class="pad" style="padding-bottom:6px">
+      <h1 class="screen-title" style="font-size:20px; margin-bottom:2px" id="chat-title">Chat mediado</h1>
+      <p class="screen-sub" style="margin-bottom:10px" id="chat-sub"></p>
+    </div>
+    <div class="pad" style="padding-top:0" id="chat-body"></div>
+  </section>
+
+  <section class="screen" id="screen-calendario">
+    <div class="pad">
+      <h1 class="screen-title">Calendario y acuerdos</h1>
+      <p class="screen-sub">Entregas, horarios y acuerdos. Un pedido queda pendiente hasta que la otra parte lo confirma.</p>
+      <div id="calendario-content"></div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-historial">
+    <div class="pad">
+      <h1 class="screen-title">Historial</h1>
+      <p class="screen-sub">Registro completo. Incluye mensajes, intervenciones de la IA y alertas de patrón.</p>
+      <div id="historial-content"></div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-asistente">
+    <div class="pad" style="padding-bottom:6px">
+      <h1 class="screen-title" style="font-size:20px; margin-bottom:2px">Asistente</h1>
+      <p class="screen-sub" style="margin-bottom:10px">Preguntale sobre lo que pasó o lo que viene en este canal — responde solo con datos reales del historial, no da consejo legal ni terapéutico.</p>
+    </div>
+    <div class="pad" style="padding-top:0" id="asistente-body"></div>
+  </section>
+
+</main>
+
+<div id="login-screen" class="landing-screen" style="display:none;">
+<header class="site-header">
+  <a href="/" class="brand">Puente<em>digital</em></a>
+  <nav class="site-nav">
+    <a href="/" class="active">Inicio</a>
+    <a href="/#faq">FAQ</a>
+    <a href="/legal.html">Marco legal</a>
+    <a href="/terminos.html">Términos</a>
+    <a href="/privacidad.html">Privacidad</a>
+  </nav>
+</header>
+<div class="landing-wrap">
+
+  <div class="brand-row"><div class="brand">Puente<em>digital</em></div></div>
+  <div class="tagline-center">Comunicación mediada por IA</div>
+
+  <div class="hero-row">
+    <div class="hero-copy">
+      <h1 class="screen-title">Un tercer canal, no un árbitro.</h1>
+      <p class="screen-sub">Para cuando hay que seguir coordinando con la otra persona —horarios, entregas, acuerdos— pero cada mensaje corre el riesgo de escalar. La IA no decide quién tiene razón: ayuda a que lo que se dice quede centrado en hechos.</p>
+    </div>
+    <div class="hero-demo">
+      <div class="eyebrow">Un ejemplo real</div>
+      <div class="bubble original"><div class="bubble-label">Mensaje original</div>Otra vez llegás tarde. Sos un desastre y nunca te importa nuestro hijo.</div>
+      <div class="bubble suggested"><div class="bubble-label">Alternativa sugerida por la IA</div>Hoy la entrega se realizó 25 minutos después del horario acordado. ¿Podemos confirmar el horario para la próxima entrega?</div>
+    </div>
+  </div>
+
+  <div class="cta-block">
+    <button class="google-btn" onclick="location.href='/auth/google'">
+      <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
+      Iniciar sesión con Google
+    </button>
+    <p class="cta-note">Gratis para empezar. El canal queda atado a tu cuenta de Google, no a un código que cualquiera pueda adivinar.</p>
+  </div>
+
+  <div class="section-heading">Cómo empezar</div>
+  <div class="steps">
+    <div class="step-item">
+      <div class="step-num">1</div>
+      <div class="step-body"><div class="t">Creá tu canal</div><div class="d">Iniciás sesión con Google y armás un canal en segundos. Queda atado a tu cuenta, no a un link que cualquiera pueda reusar.</div></div>
+    </div>
+    <div class="step-item">
+      <div class="step-num">2</div>
+      <div class="step-body"><div class="t">Invitás a la otra persona</div><div class="d">Le compartís el link. Puede entrar con su propia cuenta de Google, o como invitada sin crear nada si todavía no está lista para eso.</div></div>
+    </div>
+    <div class="step-item">
+      <div class="step-num">3</div>
+      <div class="step-body"><div class="t">Se comunican por el canal</div><div class="d">Cada mensaje pasa por la IA antes de llegar. Si detecta un tono que puede escalar, propone una alternativa antes de enviarlo.</div></div>
+    </div>
+  </div>
+
+  <div class="section-heading">Qué incluye</div>
+  <div class="feature-grid">
+    <div class="feature-item"><span class="ic">💬</span><div class="t">Chat moderado en vivo</div><div class="d">Mensajes y alertas en tiempo real, sin refrescar la página.</div></div>
+    <div class="feature-item"><span class="ic">📅</span><div class="t">Calendario de acuerdos</div><div class="d">Horarios y entregas quedan pendientes hasta que la otra parte los confirma.</div></div>
+    <div class="feature-item"><span class="ic">🗂</span><div class="t">Historial exportable</div><div class="d">Registro completo de mensajes e intervenciones de la IA, por si lo necesitás después.</div></div>
+    <div class="feature-item"><span class="ic">🔒</span><div class="t">Cuenta real, no un código</div><div class="d">Cada canal está atado a cuentas de Google verdaderas — no a un código adivinable.</div></div>
+    <div class="feature-item"><span class="ic">🤖</span><div class="t">Asistente de historial</div><div class="d">Preguntale qué pasó o qué viene — responde solo con datos reales de tu canal.</div></div>
+  </div>
+
+  <div class="section-heading">Para quién es</div>
+  <p class="guest-note">Pensado para <b>padres y madres separados</b> que necesitan seguir coordinando la crianza compartida, pero también sirve para cualquier situación —familiar, de convivencia, entre socios— donde hace falta un canal con registro y con menos fricción que un chat común.</p>
+
+  <div class="section-heading" id="faq">Preguntas frecuentes</div>
+  <div class="faq-list">
+    <details class="faq-item">
+      <summary>¿Cómo funciona la moderación con IA?</summary>
+      <p>Cada mensaje pasa por un análisis antes de enviarse. Si detecta lenguaje que puede escalar el conflicto (insultos, acusaciones, sarcasmo), te muestra una alternativa más neutral antes de que decidas — vos elegís si usarla o mandar el mensaje original igual.</p>
+    </details>
+    <details class="faq-item">
+      <summary>¿La otra persona necesita crear una cuenta de Google?</summary>
+      <p>No. Podés invitarla con un link que no requiere cuenta ni instalar nada — entra desde el navegador, escribe su nombre y ya puede leer y responder.</p>
+    </details>
+    <details class="faq-item">
+      <summary>¿Quién puede ver los mensajes del canal?</summary>
+      <p>Por defecto, solo las dos partes del canal. La única "tercera parte" automática es la IA, que analiza cada mensaje al momento de enviarse, no un archivo que alguien revisa después. Opcionalmente, cualquiera de las dos partes puede invitar a un mediador/a o a un estudio jurídico con acceso de <strong>solo lectura</strong> (no pueden escribir mensajes ni resolver acuerdos) — y ese ingreso siempre queda anunciado en el chat y visible para ambas partes, nunca es un acceso oculto.</p>
+    </details>
+    <details class="faq-item">
+      <summary>¿Esto reemplaza a un abogado, mediador o terapeuta?</summary>
+      <p>No. Es una herramienta de comunicación, no asesoramiento legal ni profesional. En situaciones de violencia o riesgo, contactá a las autoridades correspondientes o a la línea 144 / 137.</p>
+    </details>
+    <details class="faq-item">
+      <summary>¿Qué pasa con los horarios y entregas que acordamos?</summary>
+      <p>Quedan en el Calendario del canal: un pedido queda "pendiente" hasta que la otra parte lo confirma o rechaza, se pueden repetir automáticamente (semanal, quincenal, mensual) y podés sincronizarlos con tu Google o Apple Calendar.</p>
+    </details>
+    <details class="faq-item">
+      <summary>¿Puedo exportar el historial?</summary>
+      <p>Sí. Desde Historial podés descargar un informe con todos los mensajes, intervenciones de la IA y acuerdos del canal.</p>
+    </details>
+    <details class="faq-item">
+      <summary>¿Es gratis?</summary>
+      <p>Sí, para empezar no tiene costo.</p>
+    </details>
+  </div>
+
+  <div class="cta-block">
+    <button class="google-btn" onclick="location.href='/auth/google'">
+      <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
+      Iniciar sesión con Google
+    </button>
+  </div>
+
+  <p class="disclaimer">Esta app no reemplaza a un abogado, mediador, terapeuta o a la Justicia. En situaciones de violencia o riesgo, contactá a las autoridades correspondientes o a la línea 144 / 137.</p>
+
+</div>
+
+<footer class="site-footer">
+  <div class="site-footer-inner">
+    <a href="/" class="brand">Puente<em>digital</em></a>
+    <nav class="site-nav">
+      <a href="/#faq">FAQ</a>
+      <a href="/legal.html">Marco legal</a>
+      <a href="/terminos.html">Términos</a>
+      <a href="/privacidad.html">Privacidad</a>
+    </nav>
+  </div>
+  <p class="disclaimer">Puente Digital es una herramienta de comunicación, no asesoramiento legal, terapéutico ni una mediación homologada. Su objetivo es ayudar a desescalar el conflicto y dar tranquilidad, no reemplazar a un profesional.</p>
+</footer>
+
+</div>
+
+<div id="guest-name-screen" class="center-pad" style="display:none; margin-top:15vh;">
+  <div class="brand" style="font-size:26px;">Puente<em>digital</em></div>
+  <p class="screen-sub" style="max-width:320px;">Te invitaron a un canal de comunicación mediada. No hace falta que instales nada ni crees una cuenta — solo decinos cómo te llamás.</p>
+  <div class="card" style="width:100%; max-width:320px; text-align:left;">
+    <label class="field-label">Tu nombre</label>
+    <input type="text" id="guest-name-input" placeholder="Ej: María" style="margin-bottom:12px;">
+    <button class="primary" style="width:100%" onclick="submitGuestName()">Entrar al canal</button>
+    <p id="guest-name-error" style="color:var(--danger); font-size:12px; margin-top:8px;"></p>
+  </div>
+</div>
+
+<div id="guest-error-screen" class="center-pad" style="display:none; margin-top:15vh;">
+  <div class="brand" style="font-size:26px;">Puente<em>digital</em></div>
+  <p class="screen-sub" style="max-width:320px;" id="guest-error-text">Este enlace no es válido.</p>
+</div>
+
+<div id="pro-login-screen" class="center-pad" style="display:none; margin-top:15vh;">
+  <div class="brand" style="font-size:26px;">Puente<em>digital</em></div>
+  <p class="screen-sub" style="max-width:340px;">Te invitaron a este canal como <strong id="pro-login-role"></strong> (<span id="pro-login-label"></span>). Iniciá sesión con tu cuenta de Google para acceder — vas a poder ver la conversación, el calendario y el historial, pero no enviar mensajes ni resolver acuerdos en nombre de las partes.</p>
+  <button class="google-btn" id="pro-login-btn">
+    <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
+    Iniciar sesión con Google
+  </button>
+  <p class="disclaimer" style="max-width:340px;">Es de solo lectura: no queda como parte del canal, sino como acceso de acompañamiento profesional.</p>
+</div>
+
+<nav class="tabs" id="tabs" style="display:none">
+  <button class="active" data-screen="inicio" onclick="goTo('inicio')"><span class="ic">🏠</span>Inicio</button>
+  <button data-screen="invitar" onclick="goTo('invitar')"><span class="ic">🔗</span>Canal</button>
+  <button data-screen="chat" onclick="goTo('chat')"><span class="ic">💬</span>Chat<span class="dot-alert" id="dot-chat"></span></button>
+  <button data-screen="calendario" onclick="goTo('calendario')"><span class="ic">📅</span>Calendario<span class="dot-alert" id="dot-calendario"></span></button>
+  <button data-screen="historial" onclick="goTo('historial')"><span class="ic">🗂</span>Historial</button>
+  <button data-screen="asistente" onclick="goTo('asistente')"><span class="ic">🤖</span>Asistente</button>
+</nav>
+
+<script src="/app.js"></script>
+</body>
+</html>

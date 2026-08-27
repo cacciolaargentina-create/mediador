@@ -1,0 +1,11 @@
+node_modules/
+.env
+data.json
+.DS_Store
+npm-debug.log*
+acceso_bachi.txt
+*.pem
+*_id_ed25519
+*_id_rsa
+audit.json
+.claude/settings.local.json

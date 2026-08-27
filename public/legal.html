@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Puente Digital — Marco legal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#12181A; --surface:#1B2326; --surface-2:#222C30; --line:#2E393D;
+    --text:#E7EDEC; --text-dim:#93A3A2; --text-faint:#5E6E6D;
+    --calm:#5FA8A0; --calm-dim:#3E6E69; --warn:#D98C4A; --warn-dim:#5A4327;
+    --danger:#C4614A; --danger-dim:#4A2C23;
+    --serif:'Fraunces',serif; --sans:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ height:100%; }
+  body{ background:var(--bg); color:var(--text); font-family:var(--sans); -webkit-font-smoothing:antialiased; min-height:100vh; display:flex; flex-direction:column; }
+
+  .site-header{ position:sticky; top:0; z-index:20; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 20px; background:rgba(18,24,26,0.92); backdrop-filter:blur(6px); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .site-header .brand{ font-family:var(--serif); font-weight:600; font-size:17px; color:var(--text); text-decoration:none; flex-shrink:0; }
+  .site-header .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
+  .site-footer-inner .brand{ font-family:var(--serif); font-weight:600; font-size:16px; color:var(--text); text-decoration:none; }
+  .site-footer-inner .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
+  .site-nav{ display:flex; gap:18px; flex-wrap:wrap; }
+  .site-nav a{ font-size:12.5px; color:var(--text-dim); text-decoration:none; font-family:var(--sans); white-space:nowrap; }
+  .site-nav a:hover, .site-nav a.active{ color:var(--calm); }
+
+  .site-footer{ border-top:1px solid var(--line); padding:24px 20px 30px; margin-top:auto; }
+  .site-footer-inner{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px; max-width:720px; margin:0 auto 14px; }
+  .site-footer .disclaimer{ max-width:720px; margin:0 auto; font-size:11px; color:var(--text-faint); line-height:1.5; }
+
+  .legal-wrap{ max-width:720px; width:100%; margin:0 auto; padding:40px 22px 20px; box-sizing:border-box; flex:1; }
+  .legal-wrap h1{ font-family:var(--serif); font-size:28px; font-weight:600; margin-bottom:8px; }
+  .legal-wrap .updated{ font-family:var(--mono); font-size:11px; color:var(--text-faint); margin-bottom:22px; text-transform:uppercase; letter-spacing:0.05em; }
+  .legal-note{ background:var(--warn-dim); border:1px solid var(--warn); color:var(--warn); border-radius:8px; padding:12px 14px; font-size:12.5px; line-height:1.55; margin-bottom:28px; }
+  .legal-wrap h2{ font-family:var(--serif); font-size:18px; font-weight:600; margin:30px 0 10px; }
+  .legal-wrap p{ font-size:14px; color:var(--text-dim); line-height:1.7; margin-bottom:12px; }
+  .legal-wrap ul{ margin:0 0 12px 20px; padding:0; }
+  .legal-wrap li{ font-size:14px; color:var(--text-dim); line-height:1.7; margin-bottom:6px; }
+  .legal-wrap strong{ color:var(--text); }
+  .legal-wrap a{ color:var(--calm); }
+
+  .callout{ background:var(--surface); border:1px solid var(--calm-dim); border-radius:10px; padding:16px 18px; margin:20px 0; }
+  .callout .lab{ font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--calm); margin-bottom:6px; }
+  .callout p{ margin-bottom:0; color:var(--text); }
+  .danger-callout{ background:var(--danger-dim); border:1px solid var(--danger); border-radius:10px; padding:16px 18px; margin:20px 0; }
+  .danger-callout .lab{ font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--danger); margin-bottom:6px; }
+  .danger-callout p{ margin-bottom:0; color:var(--text); }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <a href="/" class="brand">Puente<em>digital</em></a>
+  <nav class="site-nav">
+    <a href="/">Inicio</a>
+    <a href="/#faq">FAQ</a>
+    <a href="/legal.html" class="active">Marco legal</a>
+    <a href="/terminos.html">Términos</a>
+    <a href="/privacidad.html">Privacidad</a>
+  </nav>
+</header>
+
+<div class="legal-wrap">
+  <h1>Marco legal</h1>
+  <div class="updated">Última actualización: agosto de 2026</div>
+
+  <div class="legal-note">Esta página es un texto general para orientarte sobre qué es y qué no es Puente Digital. No es asesoramiento legal individual sobre tu situación — para eso, consultá a un abogado o abogada matriculado/a.</div>
+
+  <h2>Qué es Puente Digital</h2>
+  <p>Puente Digital es una herramienta de <strong>comunicación asistida por inteligencia artificial</strong>, pensada para personas que necesitan seguir coordinando entre sí —típicamente en contextos de coparentalidad— pero para quienes escribirse directamente tiende a escalar el conflicto.</p>
+  <p>La IA analiza cada mensaje antes de que se envíe y, si detecta lenguaje que puede escalar una discusión (insultos, acusaciones, sarcasmo hiriente), sugiere una alternativa más neutral centrada en el hecho práctico de fondo. Quien escribe decide si usa esa alternativa o envía el mensaje original.</p>
+
+  <div class="callout">
+    <div class="lab">El objetivo</div>
+    <p>Desescalar la conversación y dar tranquilidad: que quede un registro claro de qué se dijo, qué se acordó y cuándo — sin que un tercero humano tenga que leer ni arbitrar la disputa.</p>
+  </div>
+
+  <h2>Qué NO es Puente Digital</h2>
+  <ul>
+    <li><strong>No es un estudio jurídico ni brinda asesoramiento legal.</strong> No interpreta leyes, no evalúa tu caso, no te dice qué régimen de tenencia o de visitas te conviene ni qué hacer en un juicio.</li>
+    <li><strong>No es un servicio de mediación profesional homologada.</strong> No hay una persona mediadora matriculada interviniendo; la IA no tiene formación ni habilitación para mediar conflictos.</li>
+    <li><strong>No es terapia ni acompañamiento psicológico.</strong> No evalúa el estado emocional de nadie ni reemplaza el trabajo de un profesional de la salud mental.</li>
+    <li><strong>No decide quién tiene razón.</strong> La IA reformula tono y lenguaje, no toma partido ni emite juicios sobre el conflicto de fondo.</li>
+  </ul>
+
+  <h2>Sobre el historial como posible prueba</h2>
+  <p>Puente Digital guarda un registro de los mensajes y acuerdos del canal, y permite exportarlo. Ese registro puede servir como ayuda memoria o como respaldo de lo conversado, pero <strong>su valor como prueba ante la Justicia depende de cada caso y de cómo lo evalúe un juez o jueza</strong>. No garantizamos que ese registro sea admitido o suficiente en un proceso judicial. Si estás pensando en usarlo con ese fin, consultá primero con tu abogado o abogada sobre cómo conservarlo y presentarlo correctamente.</p>
+
+  <h2>Sobre invitar a un mediador/a o estudio jurídico</h2>
+  <p>Cualquiera de las dos partes puede, opcionalmente, invitar a un mediador/a profesional o a un estudio jurídico a ver un canal puntual, según el conflicto de que se trate. Esa persona accede con su propia cuenta de Google (queda identificada) y con permisos de <strong>solo lectura</strong>: puede ver mensajes, calendario e historial, pero no puede escribir en nombre de las partes ni resolver acuerdos. Su ingreso al canal se anuncia siempre en el chat y queda listado entre los integrantes — nunca es un acceso oculto para ninguna de las partes.</p>
+  <p>Que un mediador o un estudio jurídico tenga acceso a un canal <strong>no crea de por sí una relación de mediación homologada ni de representación legal formal</strong> — eso depende del vínculo profesional que exista fuera de la app entre esa persona y las partes.</p>
+
+  <h2>No hay relación abogado-cliente con Puente Digital</h2>
+  <p>Usar Puente Digital no crea ningún tipo de relación profesional, de representación legal, ni de confidencialidad protegida como la que existe entre un abogado y su cliente (secreto profesional) con la plataforma en sí. Por defecto, los mensajes del canal son visibles para las dos partes que lo integran y, técnicamente, pasan por el proveedor de inteligencia artificial que analiza el texto para sugerir alternativas (ver <a href="/privacidad.html">Política de Privacidad</a>).</p>
+
+  <div class="danger-callout">
+    <div class="lab">Situaciones de riesgo o violencia</div>
+    <p>Si estás atravesando una situación de violencia de género, violencia familiar o cualquier tipo de riesgo, Puente Digital <strong>no es la herramienta adecuada</strong> para resolverla. Contactá de inmediato a las autoridades correspondientes o a la línea <strong>144</strong> (violencia de género) o <strong>137</strong> (víctimas de violencia familiar y sexual) en Argentina.</p>
+  </div>
+
+  <h2>Cuándo consultar a un profesional</h2>
+  <p>Te recomendamos buscar asesoramiento legal, mediación profesional homologada o acompañamiento terapéutico cuando:</p>
+  <ul>
+    <li>Necesites definir o modificar formalmente un régimen de tenencia, cuota alimentaria o comunicación con los hijos.</li>
+    <li>El conflicto involucre riesgo para vos, la otra persona o los niños, niñas o adolescentes.</li>
+    <li>Necesites que un acuerdo tenga validez legal (homologación judicial).</li>
+    <li>La comunicación por este canal no alcance para resolver el desacuerdo de fondo.</li>
+  </ul>
+  <p>Para más detalle sobre el servicio en sí, mirá los <a href="/terminos.html">Términos y condiciones</a> y la <a href="/privacidad.html">Política de privacidad</a>.</p>
+</div>
+
+<footer class="site-footer">
+  <div class="site-footer-inner">
+    <a href="/" class="brand">Puente<em>digital</em></a>
+    <nav class="site-nav">
+      <a href="/#faq">FAQ</a>
+      <a href="/legal.html">Marco legal</a>
+      <a href="/terminos.html">Términos</a>
+      <a href="/privacidad.html">Privacidad</a>
+    </nav>
+  </div>
+  <p class="disclaimer">Puente Digital es una herramienta de comunicación, no asesoramiento legal, terapéutico ni una mediación homologada. Su objetivo es ayudar a desescalar el conflicto y dar tranquilidad, no reemplazar a un profesional.</p>
+</footer>
+
+</body>
+</html>
