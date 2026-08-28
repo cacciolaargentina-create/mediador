@@ -19,7 +19,7 @@ async function postMessage(io, channel, { senderId, text, flagged, reason }) {
   const sender = db.users.find((u) => u.id === senderId);
   const msg = {
     id: nanoid(), channelId: channel.id, senderId,
-    text, flagged: !!flagged, reason: reason || null, pattern: false, createdAt: Date.now(),
+    text, flagged: !!flagged, reason: reason || null, pattern: false, readAt: null, createdAt: Date.now(),
   };
   db.messages.push(msg);
 

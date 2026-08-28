@@ -15,6 +15,7 @@ const { nanoid } = require('nanoid');
 const { getDB, commit } = require('../db');
 const { serializeMessage } = require('../serializers');
 const { isAdminUser } = require('../roles');
+const { logAudit } = require('../audit');
 
 const PROFESSIONAL_ROLE_LABELS = { mediador: 'mediador/a', estudio: 'estudio jurídico' };
 
@@ -212,6 +213,7 @@ module.exports = function (io) {
       flagged: false, reason: null, pattern: false, createdAt: Date.now(),
     };
     db.messages.push(sysMsg);
+    logAudit(db, { actorId: req.user.id, action: 'assign_professional', channelCode: channel.code, meta: { role, targetEmail: user.email } });
     await commit();
 
     if (io) {
@@ -245,6 +247,7 @@ module.exports = function (io) {
       flagged: false, reason: null, pattern: false, createdAt: Date.now(),
     };
     db.messages.push(sysMsg);
+    logAudit(db, { actorId: req.user.id, action: 'unassign_professional', channelCode: channel.code, meta: { role: membership.role, targetEmail: user ? user.email : null } });
     await commit();
 
     if (io) {
@@ -252,6 +255,30 @@ module.exports = function (io) {
       io.to(channel.code).emit('channel:update', { code: channel.code });
     }
     res.json({ ok: true });
+  });
+
+  // ---------- log de auditoría ----------
+  // Acciones sensibles, no un duplicado del chat: exports de informes,
+  // asignación/remoción de profesionales. Las últimas primero.
+  router.get('/audit', requireAdmin, (req, res) => {
+    const db = getDB();
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    const list = [...db.auditLog]
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, limit)
+      .map((a) => {
+        const actor = db.users.find((u) => u.id === a.actorId);
+        return {
+          id: a.id,
+          actorName: actor ? actor.name : 'Desconocido',
+          actorEmail: actor ? actor.email : null,
+          action: a.action,
+          channelCode: a.channelCode,
+          meta: a.meta,
+          createdAt: a.createdAt,
+        };
+      });
+    res.json(list);
   });
 
   return router;

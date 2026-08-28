@@ -335,11 +335,27 @@
     </div>
   </section>
 
+  <section class="screen" id="screen-gastos">
+    <div class="pad">
+      <h1 class="screen-title">Gastos compartidos</h1>
+      <p class="screen-sub">Registrá un gasto para dividir. Queda pendiente hasta que la otra parte lo confirma. No se procesan pagos reales, solo el registro.</p>
+      <div id="gastos-content"></div>
+    </div>
+  </section>
+
   <section class="screen" id="screen-historial">
     <div class="pad">
       <h1 class="screen-title">Historial</h1>
       <p class="screen-sub">Registro completo. Incluye mensajes, intervenciones de la IA y alertas de patrón.</p>
       <div id="historial-content"></div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-misCasos">
+    <div class="pad">
+      <h1 class="screen-title">Mis casos</h1>
+      <p class="screen-sub">Todos los canales de los que sos parte.</p>
+      <div id="misCasos-content"></div>
     </div>
   </section>
 
@@ -506,8 +522,10 @@
   <button data-screen="invitar" onclick="goTo('invitar')"><span class="ic">🔗</span>Canal</button>
   <button data-screen="chat" onclick="goTo('chat')"><span class="ic">💬</span>Chat<span class="dot-alert" id="dot-chat"></span></button>
   <button data-screen="calendario" onclick="goTo('calendario')"><span class="ic">📅</span>Calendario<span class="dot-alert" id="dot-calendario"></span></button>
+  <button data-screen="gastos" onclick="goTo('gastos')"><span class="ic">💰</span>Gastos</button>
   <button data-screen="historial" onclick="goTo('historial')"><span class="ic">🗂</span>Historial</button>
   <button data-screen="asistente" onclick="goTo('asistente')"><span class="ic">🤖</span>Asistente</button>
+  <button data-screen="misCasos" onclick="goTo('misCasos')"><span class="ic">📋</span>Mis casos</button>
 </nav>
 
 <script src="/app.js"></script>

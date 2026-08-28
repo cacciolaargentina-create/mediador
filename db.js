@@ -13,8 +13,11 @@ const EMPTY_DB = {
   channels: [],    // { id, code, createdAt }
   members: [],     // { id, channelId, userId, role: 'A'|'B', joinedAt }
   messages: [],    // { id, channelId, senderId|null, text, flagged, reason, original, pattern, createdAt }
-  events: [],      // { id, channelId, date, detail, requestedBy(userId), status, createdAt }
+  events: [],      // { id, channelId, date, detail, requestedBy(userId), status, createdAt, reminderSentAt }
   caseNotes: [],   // { id, channelId, authorId, text, createdAt } — solo visibles para mediador/a, estudio jurídico o admin del canal, nunca para las partes A/B
+  expenses: [],    // { id, channelId, amount, description, requestedBy(userId), status:'pendiente'|'confirmado'|'rechazado', createdAt, respondedAt }
+  checkins: [],    // { id, channelId, userId, lat, lng, createdAt } — la ubicación nunca se muestra en el texto del chat, solo queda en el registro
+  auditLog: [],    // { id, actorId, action, channelCode, meta, createdAt } — acciones sensibles para el panel de admin
 };
 
 function load() {

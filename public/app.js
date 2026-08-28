@@ -115,6 +115,8 @@ async function bootGuest(){
 
   const canalTab = document.querySelector('nav.tabs button[data-screen="invitar"]');
   if(canalTab) canalTab.style.display = 'none';
+  const misCasosTab = document.querySelector('nav.tabs button[data-screen="misCasos"]');
+  if(misCasosTab) misCasosTab.style.display = 'none';
   const btnConfigurar = document.getElementById('btn-configurar-canal');
   if(btnConfigurar) btnConfigurar.style.display = 'none';
 
@@ -384,7 +386,7 @@ async function tryLoadChannel(code){
       if(btnConfigurar) btnConfigurar.style.display = 'none';
     }
     connectSocket();
-    await Promise.all([loadMessages(), loadEvents()]);
+    await Promise.all([loadMessages(), loadEvents(), loadExpenses()]);
     seen.msgCount = messages.length;
     seen.evCount = events.length;
   }catch(e){
@@ -413,6 +415,18 @@ function connectSocket(){
   socket.on('event:new', (e)=>{ upsertEvent(e); if(currentScreen==='calendario') renderCalendario(); if(currentScreen==='chat') paintMessages(); updateNavBadges(); });
   socket.on('event:update', (e)=>{ upsertEvent(e); if(currentScreen==='calendario') renderCalendario(); if(currentScreen==='chat') paintMessages(); updateNavBadges(); });
   socket.on('channel:update', (info)=>{ channelInfo = info; if(currentScreen==='invitar') renderInvitar(); renderBanner(); });
+  socket.on('expense:new', (e)=>{ upsertExpense(e); if(currentScreen==='gastos') renderGastos(); });
+  socket.on('expense:update', (e)=>{ upsertExpense(e); if(currentScreen==='gastos') renderGastos(); });
+  socket.on('checkin:new', ()=>{ if(currentScreen==='calendario') loadCheckins(); });
+  socket.on('message:read', ({id, readAt})=>{
+    const m = messages.find(x=>x.id===id);
+    if(m){ m.readAt = readAt; if(currentScreen==='chat') paintMessages(); }
+  });
+}
+let expenses = [];
+function upsertExpense(e){
+  const idx = expenses.findIndex(x=>x.id===e.id);
+  if(idx>=0) expenses[idx] = e; else expenses.push(e);
 }
 function upsertEvent(e){
   const idx = events.findIndex(x=>x.id===e.id);
@@ -420,6 +434,17 @@ function upsertEvent(e){
 }
 async function loadMessages(){ messages = await api(`/api/channels/${channelCode}/messages`); }
 async function loadEvents(){ events = await api(`/api/channels/${channelCode}/events`); }
+async function loadExpenses(){ try{ expenses = await api(`/api/channels/${channelCode}/expenses`); }catch(e){ expenses = []; } }
+async function loadCheckins(){
+  try{
+    const list = await api(`/api/channels/${channelCode}/checkins`);
+    const el = document.getElementById('checkins-list');
+    if(!el) return;
+    el.innerHTML = list.length
+      ? list.slice(0,5).map(c => `<div class="hist-item"><div class="txt">${escapeHtml(c.user ? c.user.name : '—')} confirmó su llegada</div><div class="ts">${fmtTs(c.createdAt)}</div></div>`).join('')
+      : `<p class="empty-hint">Todavía no hay check-ins registrados.</p>`;
+  }catch(e){ /* la sección de check-ins simplemente no se actualiza si falla */ }
+}
 
 function updateUrl(code){
   const url = new URL(location.href);
@@ -439,8 +464,10 @@ function goTo(name){
   if(name === 'invitar') renderInvitar();
   if(name === 'chat'){ renderChatScreen(); seen.msgCount = messages.length; updateNavBadges(); }
   if(name === 'calendario'){ renderCalendario(); seen.evCount = events.length; updateNavBadges(); }
+  if(name === 'gastos') renderGastos();
   if(name === 'historial') renderHistorial();
   if(name === 'asistente') renderAsistenteScreen();
+  if(name === 'misCasos') renderMisCasos();
 }
 function updateNavBadges(){
   const chatDot = document.getElementById('dot-chat');
@@ -616,7 +643,7 @@ async function createChannel(){
     calendarLinkCache = null;
     updateUrl(channelCode);
     connectSocket();
-    await Promise.all([loadMessages(), loadEvents()]);
+    await Promise.all([loadMessages(), loadEvents(), loadExpenses()]);
     renderInvitar();
     renderBanner();
   }catch(e){ alert('No se pudo crear el canal. Probá de nuevo.'); }
@@ -634,7 +661,7 @@ async function joinChannelUI(){
     calendarLinkCache = null;
     updateUrl(channelCode);
     connectSocket();
-    await Promise.all([loadMessages(), loadEvents()]);
+    await Promise.all([loadMessages(), loadEvents(), loadExpenses()]);
     renderInvitar();
     renderBanner();
   }catch(e){
@@ -875,7 +902,8 @@ function paintMessages(){
       // sin esto, un mediador/estudio viendo el canal no tiene forma de saber
       // quién escribió qué — para las partes sigue implícito (si no es "mío" es "de la otra parte").
       const senderLabel = isProfessional() ? escapeHtml(m.sender.name) + ' · ' : '';
-      inner += '<div class="meta">' + senderLabel + fmtTs(m.createdAt) + (m.flagged ? ' · marcado por el sistema' : '') + '</div>';
+      const readLabel = (mine && m.readAt) ? ' · Visto ' + fmtTs(m.readAt) : '';
+      inner += '<div class="meta">' + senderLabel + fmtTs(m.createdAt) + (m.flagged ? ' · marcado por el sistema' : '') + readLabel + '</div>';
       if(m.flagged && m.reason && mine){
         inner += '<div class="flag-note">' + escapeHtml(m.reason) + '</div>';
       }
@@ -888,6 +916,21 @@ function paintMessages(){
     }
   });
   log.scrollTop = log.scrollHeight;
+  markVisibleMessagesRead();
+}
+
+// marca como "visto" los mensajes ajenos que todavía no lo tenían — solo
+// entre las partes (A/B); un mediador/a o estudio que mira el canal no
+// genera un "visto" en nombre de nadie.
+function markVisibleMessagesRead(){
+  if(isProfessional()) return;
+  messages
+    .filter(m => m.sender && m.sender.id !== me.id && !m.readAt)
+    .forEach(m => {
+      api(`/api/channels/${channelCode}/messages/${m.id}/read`, { method:'POST' })
+        .then(res => { m.readAt = res.readAt; })
+        .catch(()=>{ /* si falla, se reintenta la próxima vez que se pinte el chat */ });
+    });
 }
 
 async function requestNeutralReading(idx, btn){
@@ -1082,7 +1125,39 @@ function renderCalendario(){
         <button class="sync-link" onclick="setupCalendarSync()">🔗 Sincronizar calendario</button>
       </div>
     </div>
+    ${isProfessional() ? '' : `
+    <div class="card">
+      <div class="eyebrow">Check-in de llegada</div>
+      <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:12px; line-height:1.4;">Confirmá tu llegada al punto de encuentro. Tu ubicación queda en el registro del canal, nunca se muestra como texto en el chat.</p>
+      <button class="ghost" style="width:100%; margin-bottom:12px;" onclick="doCheckin()">📍 Confirmar llegada</button>
+      <div class="eyebrow">Check-ins recientes</div>
+      <div id="checkins-list"><p class="empty-hint">Cargando…</p></div>
+    </div>`}
   `;
+  if(!isProfessional()) loadCheckins();
+}
+
+function doCheckin(){
+  if(!navigator.geolocation){ alert('Tu navegador no soporta geolocalización.'); return; }
+  navigator.geolocation.getCurrentPosition(
+    async (pos)=>{
+      try{
+        await api(`/api/channels/${channelCode}/checkins`, {
+          method:'POST',
+          body: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        });
+        loadCheckins();
+      }catch(e){ alert(e.error || 'No se pudo registrar el check-in.'); }
+    },
+    (err)=>{
+      if(err.code === err.PERMISSION_DENIED){
+        alert('No se pudo confirmar la llegada: denegaste el permiso de ubicación. Podés habilitarlo desde la configuración del navegador si querés usar esta función.');
+      } else {
+        alert('No se pudo obtener tu ubicación. Probá de nuevo.');
+      }
+    },
+    { timeout: 10000 }
+  );
 }
 
 let calendarLinkCache = null;
@@ -1136,12 +1211,78 @@ async function respondEvent(id, decision){
 }
 
 // ==================================================================
+// SCREEN: GASTOS COMPARTIDOS
+// ==================================================================
+function renderGastos(){
+  const el = document.getElementById('gastos-content');
+  if(!channelInfo){ el.innerHTML = `<div class="empty-hint">Primero configurá tu canal en la pestaña "Canal".</div>`; return; }
+
+  const sorted = [...expenses].sort((a,b)=> b.createdAt - a.createdAt);
+  const confirmedTotal = expenses.filter(e=>e.status==='confirmado').reduce((s,e)=>s+e.amount,0);
+
+  const listHtml = sorted.length
+    ? sorted.map(e=>{
+        const needsMyConfirm = e.status === 'pendiente' && e.requestedBy && e.requestedBy.id !== me.id && !isProfessional();
+        const confirmHtml = needsMyConfirm ? `<div class="confirm-actions">
+            <button class="ghost small" onclick="respondExpense('${e.id}','rechazado')">Rechazar</button>
+            <button class="primary" style="padding:6px 12px; font-size:11.5px;" onclick="respondExpense('${e.id}','confirmado')">Confirmar</button>
+          </div>` : '';
+        return `<div class="event-item">
+          <div class="row1"><div class="day">$${e.amount}</div><div class="what">${escapeHtml(e.description)}</div><span class="ev-pill ${e.status}">${e.status}</span></div>
+          <div class="who">Pedido por ${escapeHtml(e.requestedBy ? e.requestedBy.name : '—')}</div>
+          ${confirmHtml}
+        </div>`;
+      }).join('')
+    : `<p class="empty-hint" style="padding:8px 0;">Todavía no hay gastos registrados.</p>`;
+
+  const formHtml = isProfessional() ? '' : `
+    <div class="card">
+      <div class="eyebrow">Registrar un gasto</div>
+      <label class="field-label">Monto</label>
+      <input type="number" id="exp-amount" min="0" step="0.01" placeholder="Ej: 5000" style="margin-bottom:10px">
+      <label class="field-label">Descripción</label>
+      <input type="text" id="exp-desc" placeholder="Ej: Útiles escolares" style="margin-bottom:12px">
+      <button class="primary" style="width:100%" onclick="addExpense()">Registrar</button>
+    </div>`;
+
+  el.innerHTML = `
+    <div class="card"><div class="eyebrow">Total confirmado</div><p style="font-size:22px; font-weight:600;">$${confirmedTotal}</p></div>
+    <div class="card">${listHtml}</div>
+    ${formHtml}
+  `;
+}
+
+async function addExpense(){
+  const amount = Number(document.getElementById('exp-amount').value);
+  const description = document.getElementById('exp-desc').value.trim();
+  if(!amount || amount <= 0 || !description) { alert('Completá un monto válido y una descripción.'); return; }
+  try{
+    const e = await api(`/api/channels/${channelCode}/expenses`, { method:'POST', body: JSON.stringify({ amount, description }) });
+    upsertExpense(e);
+    renderGastos();
+  }catch(err){ alert(err.error || 'No se pudo registrar el gasto.'); }
+}
+async function respondExpense(id, decision){
+  try{
+    const e = await api(`/api/channels/${channelCode}/expenses/${id}/respond`, { method:'POST', body: JSON.stringify({ decision }) });
+    upsertExpense(e);
+    renderGastos();
+  }catch(err){ alert('No se pudo registrar la respuesta.'); }
+}
+
+// ==================================================================
 // SCREEN: HISTORIAL
 // ==================================================================
-function renderHistorial(){
+let historialQuery = '';
+function filterHistorial(value){
+  historialQuery = value;
+  renderHistorial(true);
+}
+function renderHistorial(keepFocus){
   const el = document.getElementById('historial-content');
   if(!channelInfo){ el.innerHTML = `<div class="empty-hint">Primero configurá tu canal en la pestaña "Canal".</div>`; return; }
-  const items = messages.filter(m => m.sender || m.pattern);
+  const q = historialQuery.trim().toLowerCase();
+  const items = messages.filter(m => (m.sender || m.pattern) && (!q || m.text.toLowerCase().includes(q)));
   const listHtml = items.length
     ? items.map(m=>{
         if(!m.sender && m.pattern){
@@ -1154,7 +1295,7 @@ function renderHistorial(){
           ${m.flagged ? '<span class="flag">Intervención IA</span>' : ''}
         </div>`;
       }).join('')
-    : `<p class="empty-hint">Todavía no hay mensajes registrados.</p>`;
+    : `<p class="empty-hint">${q ? 'Sin resultados para "' + escapeHtml(historialQuery) + '".' : 'Todavía no hay mensajes registrados.'}</p>`;
 
   const notesHtml = isProfessional() ? `
     <div class="card" id="case-notes-card" style="margin-top:12px;">
@@ -1167,11 +1308,17 @@ function renderHistorial(){
   ` : '';
 
   el.innerHTML = `
+    <input type="text" id="historial-search" placeholder="Buscar en el historial…" value="${escapeHtml(historialQuery)}" oninput="filterHistorial(this.value)" style="width:100%; margin-bottom:12px; background:var(--surface-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:9px 12px; font-family:var(--sans); font-size:13.5px;">
     <div class="card">${listHtml}</div>
     <button class="ghost" style="width:100%; margin-top:12px;" onclick="exportReport()">Descargar informe (.txt)</button>
     <button class="ghost" style="width:100%; margin-top:8px;" onclick="exportCertifiedReport()">Descargar informe certificado (PDF)</button>
     ${notesHtml}
   `;
+  if(keepFocus){
+    const input = document.getElementById('historial-search');
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
   if(isProfessional()) loadCaseNotes();
 }
 function exportReport(){
@@ -1295,4 +1442,25 @@ async function handleAskAssistant(){
   entry.pending = false;
   paintAssistantLog();
   sendBtn.disabled = false;
+}
+
+// ==================================================================
+// SCREEN: MIS CASOS
+// ==================================================================
+async function renderMisCasos(){
+  const el = document.getElementById('misCasos-content');
+  el.innerHTML = `<p class="empty-hint">Cargando…</p>`;
+  let list;
+  try{ list = await api('/api/channels/mine'); }
+  catch(e){ el.innerHTML = `<p class="empty-hint">No se pudieron cargar tus casos.</p>`; return; }
+
+  if(!list.length){ el.innerHTML = `<p class="empty-hint">Todavía no sos parte de ningún canal.</p>`; return; }
+
+  el.innerHTML = list.map(c => `
+    <div class="card" style="margin-bottom:10px; cursor:pointer;" onclick="location.href='/?channel=${c.code}'">
+      <div class="row1"><div class="what" style="font-weight:600;">${escapeHtml(c.code)}</div><span class="ev-pill confirmado">${escapeHtml(c.myRoleLabel)}</span></div>
+      <div class="who">${c.otherNames.length ? 'Con ' + c.otherNames.map(escapeHtml).join(', ') : 'Esperando a la otra parte'}</div>
+      <div class="ts" style="margin-top:6px;">${c.messageCount} mensajes · última actividad ${fmtTs(c.lastActivity)}</div>
+    </div>
+  `).join('');
 }

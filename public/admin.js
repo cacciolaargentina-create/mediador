@@ -26,10 +26,10 @@ async function api(path, opts){
   if(!check.isAdmin){ renderNoAccess(app, me); return; }
 
   try{
-    const [overview, users, channels, trend, professionals] = await Promise.all([
-      api('/api/admin/overview'), api('/api/admin/users'), api('/api/admin/channels'), api('/api/admin/trend'), api('/api/admin/professionals'),
+    const [overview, users, channels, trend, professionals, audit] = await Promise.all([
+      api('/api/admin/overview'), api('/api/admin/users'), api('/api/admin/channels'), api('/api/admin/trend'), api('/api/admin/professionals'), api('/api/admin/audit'),
     ]);
-    renderDashboard(app, me, overview, users, channels, trend, professionals);
+    renderDashboard(app, me, overview, users, channels, trend, professionals, audit);
   }catch(e){
     app.innerHTML = `<div class="center-note"><span class="brand">Puente<em>digital</em></span>No se pudo cargar el panel. Probá recargar la página.</div>`;
   }
@@ -85,7 +85,14 @@ function renderNoAccess(app, me){
   `;
 }
 
-function renderDashboard(app, me, ov, users, channels, trend, professionals){
+const AUDIT_ACTION_LABELS = {
+  export_txt: 'Descargó informe (.txt)',
+  export_certified: 'Descargó informe certificado (PDF)',
+  assign_professional: 'Asignó un/a profesional',
+  unassign_professional: 'Quitó un/a profesional',
+};
+
+function renderDashboard(app, me, ov, users, channels, trend, professionals, audit){
   app.innerHTML = `
     <div class="wrap">
       <header>
@@ -227,6 +234,24 @@ function renderDashboard(app, me, ov, users, channels, trend, professionals){
           <input type="text" id="assign-label" placeholder="Ej: Estudio Pérez &amp; Asoc." style="margin-bottom:12px;">
           <button class="ghost" style="width:100%" onclick="assignProfessional()">Asignar al canal</button>
           <div id="assign-result" style="margin-top:10px; font-size:12.5px;"></div>
+        </div>
+      </section>
+
+      <section class="block">
+        <h2 class="block-title">Actividad reciente</h2>
+        <p class="chart-note" style="margin-bottom:12px;">Acciones sensibles: exportar informes, asignar o quitar profesionales. No es un log de cada clic.</p>
+        <div class="table-wrap">
+          <table class="min-w">
+            <thead><tr><th>Cuándo</th><th>Quién</th><th>Acción</th><th>Canal</th></tr></thead>
+            <tbody>
+              ${audit.length ? audit.map(a => `<tr>
+                <td>${fmtDate(a.createdAt)}</td>
+                <td class="strong">${escapeHtml(a.actorName)}</td>
+                <td>${escapeHtml(AUDIT_ACTION_LABELS[a.action] || a.action)}</td>
+                <td>${a.channelCode ? escapeHtml(a.channelCode) : '—'}</td>
+              </tr>`).join('') : `<tr><td colspan="4"><div class="empty-hint">Todavía no hay actividad registrada.</div></td></tr>`}
+            </tbody>
+          </table>
         </div>
       </section>
     </div>

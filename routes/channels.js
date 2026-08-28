@@ -7,9 +7,10 @@ const { analyzeMessage } = require('../moderation');
 const { askAssistant } = require('../assistant');
 const { publicUser, serializeChannel, serializeMessage, serializeEvent } = require('../serializers');
 const { buildCalendarFeed } = require('../ics');
-const { postMessage } = require('../messaging');
+const { postMessage, postSystemMessage } = require('../messaging');
 const { buildCertifiedReport } = require('../certificate');
 const { isAdminUser } = require('../roles');
+const { logAudit } = require('../audit');
 
 const genCode = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 6);
 const PATTERN_THRESHOLD = 3;
@@ -144,6 +145,38 @@ module.exports = function (io) {
     res.json(payload);
   });
 
+  // ---------- mis casos ----------
+  // Registrado ANTES de "/:code" a propósito: si no, Express interpretaría
+  // "mine" como si fuera un código de canal. Sirve tanto para las partes
+  // (si alguna vez tuvieron más de un canal) como para mediador/a y estudio
+  // jurídico, que suelen estar en varios a la vez.
+  router.get('/mine', requireAuth, (req, res) => {
+    const db = getDB();
+    const mine = db.members
+      .filter((m) => m.userId === req.user.id)
+      .map((m) => {
+        const channel = db.channels.find((c) => c.id === m.channelId);
+        if (!channel) return null;
+        const others = db.members
+          .filter((x) => x.channelId === channel.id && x.userId !== req.user.id)
+          .map((x) => (db.users.find((u) => u.id === x.userId) || {}).name)
+          .filter(Boolean);
+        const msgs = db.messages.filter((x) => x.channelId === channel.id);
+        return {
+          code: channel.code,
+          myRole: m.role,
+          myRoleLabel: m.role === 'A' ? 'Parte A' : m.role === 'B' ? 'Parte B' : (PROFESSIONAL_ROLE_LABELS[m.role] || m.role),
+          otherNames: others,
+          messageCount: msgs.length,
+          lastActivity: msgs.reduce((max, x) => Math.max(max, x.createdAt), channel.createdAt),
+          createdAt: channel.createdAt,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.lastActivity - a.lastActivity);
+    res.json(mine);
+  });
+
   // ---------- info del canal ----------
   router.get('/:code', requireAuth, requireMembership, (req, res) => {
     res.json(serializeChannel(req.channel));
@@ -247,6 +280,22 @@ module.exports = function (io) {
     if (!text || !text.trim()) return res.status(400).json({ error: 'Mensaje vacío' });
     const out = await postMessage(io, req.channel, { senderId: req.user.id, text, flagged: !!flagged, reason: reason || null });
     res.json(out);
+  });
+
+  // marca de "leído" — solo la pone quien NO escribió el mensaje, y solo la
+  // primera vez (no se reescribe si ya tenía valor). Nunca aplica a mensajes
+  // de sistema (senderId null), que no tienen un "destinatario" real.
+  router.post('/:code/messages/:id/read', requireAuth, requireMembership, async (req, res) => {
+    const db = getDB();
+    const msg = db.messages.find((m) => m.id === req.params.id && m.channelId === req.channel.id);
+    if (!msg) return res.status(404).json({ error: 'Mensaje no encontrado' });
+    if (!msg.senderId || msg.senderId === req.user.id || msg.readAt) {
+      return res.json({ id: msg.id, readAt: msg.readAt || null }); // no-op silencioso, no es un error de uso
+    }
+    msg.readAt = Date.now();
+    await commit();
+    io.to(req.channel.code).emit('message:read', { id: msg.id, readAt: msg.readAt });
+    res.json({ id: msg.id, readAt: msg.readAt });
   });
 
   // ---------- calendario ----------
@@ -379,6 +428,89 @@ module.exports = function (io) {
     res.send(buildCalendarFeed(channel.code, events));
   });
 
+  // ---------- gastos compartidos ----------
+  // Mismo patrón que los eventos: cualquier parte pide, la otra confirma o
+  // rechaza. Sin pagos reales todavía — solo registro y confirmación del
+  // monto, útil para llevar la cuenta de qué se dividió y qué falta saldar.
+  router.get('/:code/expenses', requireAuth, requireMembership, (req, res) => {
+    const db = getDB();
+    const list = db.expenses
+      .filter((e) => e.channelId === req.channel.id)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((e) => ({
+        id: e.id, amount: e.amount, description: e.description,
+        requestedBy: publicUser(e.requestedBy), status: e.status, createdAt: e.createdAt,
+      }));
+    res.json(list);
+  });
+
+  router.post('/:code/expenses', requireAuth, requireMembership, requireParty, async (req, res) => {
+    const { amount, description } = req.body;
+    const numAmount = Number(amount);
+    if (!Number.isFinite(numAmount) || numAmount <= 0) return res.status(400).json({ error: 'Monto inválido' });
+    if (!description || !description.trim()) return res.status(400).json({ error: 'Falta la descripción del gasto' });
+
+    const db = getDB();
+    const expense = {
+      id: nanoid(), channelId: req.channel.id, amount: numAmount, description: description.trim(),
+      requestedBy: req.user.id, status: 'pendiente', createdAt: Date.now(),
+    };
+    db.expenses.push(expense);
+    await commit();
+
+    await postSystemMessage(io, req.channel, `${req.user.name} registró un gasto compartido: ${description.trim()} ($${numAmount}).`);
+    const out = { id: expense.id, amount: expense.amount, description: expense.description, requestedBy: publicUser(expense.requestedBy), status: expense.status, createdAt: expense.createdAt };
+    io.to(req.channel.code).emit('expense:new', out);
+    res.json(out);
+  });
+
+  router.post('/:code/expenses/:id/respond', requireAuth, requireMembership, requireParty, async (req, res) => {
+    const { decision } = req.body;
+    if (!['confirmado', 'rechazado'].includes(decision)) return res.status(400).json({ error: 'Decisión inválida' });
+    const db = getDB();
+    const expense = db.expenses.find((e) => e.id === req.params.id && e.channelId === req.channel.id);
+    if (!expense) return res.status(404).json({ error: 'Gasto no encontrado' });
+    expense.status = decision;
+    expense.respondedAt = Date.now();
+    await commit();
+
+    const verb = decision === 'confirmado' ? 'confirmó' : 'rechazó';
+    await postSystemMessage(io, req.channel, `${req.user.name} ${verb} el gasto: ${expense.description} ($${expense.amount}).`);
+    const out = { id: expense.id, amount: expense.amount, description: expense.description, requestedBy: publicUser(expense.requestedBy), status: expense.status, createdAt: expense.createdAt };
+    io.to(req.channel.code).emit('expense:update', out);
+    res.json(out);
+  });
+
+  // ---------- check-in por geolocalización ----------
+  // Solo lo hacen las partes (son quienes se encuentran físicamente) y solo
+  // a pedido explícito de un botón — nunca automático. La ubicación exacta
+  // se guarda en el registro pero jamás se muestra en el texto del chat.
+  router.get('/:code/checkins', requireAuth, requireMembership, (req, res) => {
+    const db = getDB();
+    const list = db.checkins
+      .filter((c) => c.channelId === req.channel.id)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((c) => ({ id: c.id, user: publicUser(c.userId), createdAt: c.createdAt })); // sin lat/lng acá — esto sí lo ve cualquier miembro, incluido un mediador
+    res.json(list);
+  });
+
+  router.post('/:code/checkins', requireAuth, requireMembership, requireParty, async (req, res) => {
+    const { lat, lng } = req.body;
+    if (typeof lat !== 'number' || typeof lng !== 'number' || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      return res.status(400).json({ error: 'Ubicación inválida' });
+    }
+    const db = getDB();
+    const checkin = { id: nanoid(), channelId: req.channel.id, userId: req.user.id, lat, lng, createdAt: Date.now() };
+    db.checkins.push(checkin);
+    await commit();
+
+    // el mensaje de sistema avisa que hubo un check-in, sin exponer las coordenadas en el chat
+    await postSystemMessage(io, req.channel, `${req.user.name} confirmó su llegada al punto de encuentro.`);
+    const out = { id: checkin.id, user: publicUser(checkin.userId), createdAt: checkin.createdAt };
+    io.to(req.channel.code).emit('checkin:new', out);
+    res.json(out);
+  });
+
   // ---------- asistente (preguntas sobre el historial del canal) ----------
   router.post('/:code/assistant', assistantLimiter, requireAuth, requireMembership, async (req, res) => {
     const { question } = req.body;
@@ -413,10 +545,12 @@ module.exports = function (io) {
   });
 
   // ---------- informe exportable ----------
-  router.get('/:code/export', requireAuth, requireMembership, (req, res) => {
+  router.get('/:code/export', requireAuth, requireMembership, async (req, res) => {
     const db = getDB();
     const msgs = db.messages.filter((m) => m.channelId === req.channel.id).sort((a, b) => a.createdAt - b.createdAt);
     const events = db.events.filter((e) => e.channelId === req.channel.id).sort((a, b) => a.date.localeCompare(b.date));
+    const expenses = db.expenses.filter((e) => e.channelId === req.channel.id);
+    const confirmedTotal = expenses.filter((e) => e.status === 'confirmado').reduce((sum, e) => sum + e.amount, 0);
 
     const lines = [];
     lines.push('INFORME — PUENTE DIGITAL');
@@ -434,7 +568,20 @@ module.exports = function (io) {
       const who = publicUser(e.requestedBy)?.name || e.requestedBy;
       lines.push(`${e.date} — ${e.detail} · pedido por ${who} · estado: ${e.status}`);
     });
+    lines.push('');
+    lines.push('--- GASTOS COMPARTIDOS ---');
+    if (expenses.length === 0) {
+      lines.push('Sin gastos registrados.');
+    } else {
+      expenses.forEach((e) => {
+        const who = publicUser(e.requestedBy)?.name || e.requestedBy;
+        lines.push(`$${e.amount} — ${e.description} · pedido por ${who} · estado: ${e.status}`);
+      });
+      lines.push(`Total confirmado: $${confirmedTotal}`);
+    }
 
+    logAudit(db, { actorId: req.user.id, action: 'export_txt', channelCode: req.channel.code });
+    await commit();
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="informe-${req.channel.code}.txt"`);
     res.send(lines.join('\n'));
@@ -459,6 +606,8 @@ module.exports = function (io) {
         nameOf,
         generatedBy: { name: req.user.name, role: roleLabelForExport(req.membership.role) },
       });
+      logAudit(db, { actorId: req.user.id, action: 'export_certified', channelCode: req.channel.code });
+      await commit();
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="informe-certificado-${req.channel.code}.pdf"`);
       res.send(pdf);

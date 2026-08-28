@@ -29,6 +29,7 @@ function serializeMessage(m) {
     reason: m.reason,
     pattern: m.pattern || false,
     eventId: m.eventId || null,
+    readAt: m.readAt || null,
     createdAt: m.createdAt,
   };
 }

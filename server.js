@@ -117,3 +117,10 @@ io.on('connection', (socket) => {
 server.listen(PORT, () => {
   console.log(`Puente Digital backend corriendo en http://localhost:${PORT}`);
 });
+
+// recordatorio de eventos confirmados por WhatsApp, un día antes — revisa
+// cada hora mientras el proceso esté vivo; una corrida temprana evita
+// esperar hasta una hora completa después de cada deploy.
+const { checkAndSendReminders } = require('./reminders');
+setTimeout(() => checkAndSendReminders().catch((e) => console.error('Error en recordatorios:', e)), 10 * 1000);
+setInterval(() => checkAndSendReminders().catch((e) => console.error('Error en recordatorios:', e)), 60 * 60 * 1000);
