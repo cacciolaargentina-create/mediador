@@ -61,7 +61,7 @@ podés tener varias al mismo tiempo mientras migrás.
 
 ## 3. Desplegar
 
-Este backend es stateful en un solo proceso (guarda todo en `data.json` y
+Este backend es stateful en un solo proceso (guarda todo en `data.sqlite` y
 las conexiones de socket.io viven en memoria), así que para arrancar te
 sirve cualquier plataforma que corra un proceso Node persistente. Opciones
 simples que no requieren gestionar servidores vos mismo:
@@ -83,18 +83,27 @@ Pasos generales para cualquiera de las tres:
    - `GOOGLE_CALLBACK_URL` en el `.env` de producción
    - "Authorized redirect URIs" en Google Cloud Console
 
-## 4. Cuándo migrar de `data.json` a Postgres
+## 4. Almacenamiento: SQLite
 
-El archivo `db.js` está pensado como un mock de tablas relacionales
-(`users`, `channels`, `members`, `messages`, `events`) para que migrar sea
-sobre todo cambiar el `require('./db')` por queries SQL — la forma de los
-datos ya está pensada así. Migrá cuando:
+Los datos viven en `data.sqlite` (`node:sqlite`, nativo de Node — sin
+dependencias que compilar). Tablas e índices reales por canal/usuario, con
+escrituras atómicas (una transacción por `commit()`, no un `fs.writeFile`
+plano) — un crash a mitad de camino ya no puede corromper el archivo.
 
-- Vayas a tener más de un canal activo simultáneo con volumen real de
-  mensajes (escrituras concurrentes al mismo archivo empiezan a ser un
-  cuello de botella).
-- Quieras correr más de una instancia del server (con `data.json` no podés
-  escalar horizontalmente).
+`db.js` sigue exponiendo `getDB()` con la misma forma en memoria que usaba
+el `data.json` de antes (`{users:[], channels:[], ...}`), así que el resto
+del código no cambia. Si existe un `data.json` de una instalación anterior
+la primera vez que arranca lo migra solo a SQLite (ver `DB_PATH` /
+`SQLITE_PATH` en `.env.example`).
+
+Vale la pena pasar a Postgres (con consultas SQL reales en cada ruta, no
+solo el archivo) cuando:
+
+- Vayas a correr más de una instancia del server (SQLite es de un solo
+  proceso — no da para escalar horizontalmente).
+- El volumen de mensajes/canales crezca lo suficiente como para que las
+  consultas en memoria (`.filter()` sobre el array completo) empiecen a
+  pesar — a la escala actual no hace falta.
 
 ## 5. Frontend
 
@@ -114,7 +123,7 @@ Cómo funciona el canal ahora:
 ## 6. Qué falta para producción real
 - **HTTPS obligatorio** en producción (las plataformas sugeridas arriba lo
   dan gratis).
-- **Backups** de `data.json` (o migración a Postgres con backups
+- **Backups** de `data.sqlite` (o migración a Postgres con backups
   automáticos del proveedor).
 - Términos de uso claros sobre qué pasa con los datos si alguien deja de
   usar el canal — este backend no borra nada automáticamente todavía.
@@ -124,7 +133,7 @@ Cómo funciona el canal ahora:
 ```
 puente-digital-backend/
 ├── server.js          # Express + Socket.IO + sesión compartida
-├── db.js               # almacenamiento en data.json (swap-eable por Postgres)
+├── db.js               # almacenamiento en SQLite (node:sqlite), swap-eable por Postgres
 ├── moderation.js        # llamada a la API de Anthropic
 ├── routes/
 │   ├── auth.js          # login con Google (Passport)
