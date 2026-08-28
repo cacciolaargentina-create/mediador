@@ -81,7 +81,7 @@ io.engine.use(passport.session());
 
 const channelRoutes = require('./routes/channels')(io);
 const guestRoutes = require('./routes/guest')(io);
-const adminRoutes = require('./routes/admin')();
+const adminRoutes = require('./routes/admin')(io);
 const whatsappRoutes = require('./routes/whatsapp')(io);
 
 app.use('/auth', authRoutes);

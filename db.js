@@ -14,6 +14,7 @@ const EMPTY_DB = {
   members: [],     // { id, channelId, userId, role: 'A'|'B', joinedAt }
   messages: [],    // { id, channelId, senderId|null, text, flagged, reason, original, pattern, createdAt }
   events: [],      // { id, channelId, date, detail, requestedBy(userId), status, createdAt }
+  caseNotes: [],   // { id, channelId, authorId, text, createdAt } — solo visibles para mediador/a, estudio jurídico o admin del canal, nunca para las partes A/B
 };
 
 function load() {
@@ -22,7 +23,13 @@ function load() {
   }
   const raw = fs.readFileSync(DB_PATH, 'utf-8');
   try {
-    return JSON.parse(raw);
+    const data = JSON.parse(raw);
+    // migración suave: un data.json de antes de sumar una colección nueva no
+    // la tiene — la completamos en memoria en vez de romper en el primer push.
+    for (const key of Object.keys(EMPTY_DB)) {
+      if (!Array.isArray(data[key])) data[key] = [];
+    }
+    return data;
   } catch (e) {
     console.error('data.json corrupto, reiniciando con base vacía', e);
     return structuredClone(EMPTY_DB);

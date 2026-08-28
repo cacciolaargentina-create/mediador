@@ -2,8 +2,12 @@
 function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function fmtDate(ms){ return new Date(ms).toLocaleString('es-AR', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'}); }
 
-async function api(path){
-  const resp = await fetch(path, { credentials:'same-origin' });
+async function api(path, opts){
+  const resp = await fetch(path, {
+    credentials:'same-origin',
+    ...opts,
+    headers: opts && opts.body ? { 'Content-Type':'application/json' } : undefined,
+  });
   let data = null;
   try{ data = await resp.json(); }catch(e){}
   if(!resp.ok) throw { status: resp.status, ...(data || {}) };
@@ -22,10 +26,10 @@ async function api(path){
   if(!check.isAdmin){ renderNoAccess(app, me); return; }
 
   try{
-    const [overview, users, channels, trend] = await Promise.all([
-      api('/api/admin/overview'), api('/api/admin/users'), api('/api/admin/channels'), api('/api/admin/trend'),
+    const [overview, users, channels, trend, professionals] = await Promise.all([
+      api('/api/admin/overview'), api('/api/admin/users'), api('/api/admin/channels'), api('/api/admin/trend'), api('/api/admin/professionals'),
     ]);
-    renderDashboard(app, me, overview, users, channels, trend);
+    renderDashboard(app, me, overview, users, channels, trend, professionals);
   }catch(e){
     app.innerHTML = `<div class="center-note"><span class="brand">Puente<em>digital</em></span>No se pudo cargar el panel. Probá recargar la página.</div>`;
   }
@@ -81,7 +85,7 @@ function renderNoAccess(app, me){
   `;
 }
 
-function renderDashboard(app, me, ov, users, channels, trend){
+function renderDashboard(app, me, ov, users, channels, trend, professionals){
   app.innerHTML = `
     <div class="wrap">
       <header>
@@ -127,6 +131,11 @@ function renderDashboard(app, me, ov, users, channels, trend){
           <div class="num">${ov.events.confirmado}</div>
           <div class="lab">Acuerdos confirmados</div>
           <div class="sub">${ov.events.pendiente} pendientes · ${ov.events.rechazado} rechazados</div>
+        </div>
+        <div class="stat-card">
+          <div class="num">${ov.professionals.totalProfessionals}</div>
+          <div class="lab">Mediadores/estudios activos</div>
+          <div class="sub">${ov.professionals.mediadores} mediador/a · ${ov.professionals.estudios} estudio jurídico · en ${ov.professionals.channelsWithProfessional} canales</div>
         </div>
       </div>
 
@@ -178,8 +187,68 @@ function renderDashboard(app, me, ov, users, channels, trend){
           </table>
         </div>
       </section>
+
+      <section class="block">
+        <h2 class="block-title">Mediadores/as y estudios jurídicos (${professionals.length})</h2>
+        <p class="chart-note" style="margin-bottom:12px;">
+          Las partes ya pueden invitar a su propio profesional desde el chat del canal. Acá podés ver a todos los que
+          ya participan, y asignar uno directamente a un canal si hace falta (tiene que haber iniciado sesión con Google al menos una vez).
+        </p>
+        <div class="table-wrap">
+          <table class="min-w">
+            <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Canales asignados</th></tr></thead>
+            <tbody>
+              ${professionals.length ? professionals.map(p => `<tr>
+                <td class="strong">${escapeHtml(p.name)}</td>
+                <td>${p.email ? escapeHtml(p.email) : '—'}</td>
+                <td>${[...new Set(p.channels.map(c=>c.roleLabel))].map(escapeHtml).join(', ')}</td>
+                <td>${p.channels.map(c => `<span class="pill google" title="${escapeHtml(c.label||'')}">${escapeHtml(c.code)}</span>`).join(' ')}</td>
+              </tr>`).join('') : `<tr><td colspan="4"><div class="empty-hint">Todavía no hay mediadores ni estudios jurídicos vinculados a ningún canal.</div></td></tr>`}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card" style="margin-top:16px; max-width:480px;">
+          <div class="eyebrow">Asignar mediador/a o estudio a un canal</div>
+          <label class="field-label">Código de canal</label>
+          <input type="text" id="assign-code" placeholder="Ej: AB12CD" style="margin-bottom:10px; text-transform:uppercase;">
+          <label class="field-label">Email del usuario (ya tiene que haberse logueado alguna vez)</label>
+          <input type="email" id="assign-email" placeholder="mediador@ejemplo.com" style="margin-bottom:10px;">
+          <label class="field-label">Rol</label>
+          <select id="assign-role" style="margin-bottom:10px;">
+            <option value="mediador">Mediador/a</option>
+            <option value="estudio">Estudio jurídico</option>
+          </select>
+          <label class="field-label">Nombre o estudio a mostrar</label>
+          <input type="text" id="assign-label" placeholder="Ej: Estudio Pérez &amp; Asoc." style="margin-bottom:12px;">
+          <button class="ghost" style="width:100%" onclick="assignProfessional()">Asignar al canal</button>
+          <div id="assign-result" style="margin-top:10px; font-size:12.5px;"></div>
+        </div>
+      </section>
     </div>
   `;
+}
+
+async function assignProfessional(){
+  const code = document.getElementById('assign-code').value.trim().toUpperCase();
+  const email = document.getElementById('assign-email').value.trim();
+  const role = document.getElementById('assign-role').value;
+  const label = document.getElementById('assign-label').value.trim();
+  const resultEl = document.getElementById('assign-result');
+  if(!code || !email || !label){
+    resultEl.innerHTML = `<span style="color:var(--danger)">Completá código de canal, email y nombre.</span>`;
+    return;
+  }
+  resultEl.textContent = 'Asignando...';
+  try{
+    await api(`/api/admin/channels/${code}/assign-professional`, {
+      method:'POST', body: JSON.stringify({ email, role, label }),
+    });
+    resultEl.innerHTML = `<span style="color:var(--calm)">Listo — se avisó en el canal ${escapeHtml(code)}.</span>`;
+    setTimeout(() => location.reload(), 1200);
+  }catch(e){
+    resultEl.innerHTML = `<span style="color:var(--danger)">${escapeHtml(e.error || 'No se pudo asignar.')}</span>`;
+  }
 }
 
 async function logout(){

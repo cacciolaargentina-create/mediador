@@ -1,22 +1,24 @@
 // routes/admin.js
-// Panel de administración: sin rol nuevo en la base de datos — el acceso se
-// decide por una lista de emails en ADMIN_EMAILS (.env). "Mediadores" acá es
-// la moderación automática por IA (no hay mediadores humanos en el producto
-// todavía), así que las métricas reflejan eso: cuánto interviene la IA y qué
-// pasa con esas intervenciones.
+// Panel de administración de la plataforma: el acceso se decide por una
+// lista de emails en ADMIN_EMAILS (.env), no por un campo de rol en la
+// base — así el primer admin no depende de que otro admin ya exista.
+//
+// Dos cosas distintas conviven acá: la moderación automática por IA (cuánto
+// interviene y qué pasa con esas intervenciones), y los mediadores/estudios
+// jurídicos humanos que las partes ya pueden invitar a su canal desde
+// routes/channels.js (acceso de solo lectura, sin poder escribir en nombre
+// de las partes). Este panel suma la vista "de plataforma" sobre eso
+// segundo: cuántos hay, en qué canales, y una vía para que un admin los
+// asigne directamente a un canal sin depender de que las partes lo inviten.
 const express = require('express');
-const { getDB } = require('../db');
+const { nanoid } = require('nanoid');
+const { getDB, commit } = require('../db');
+const { serializeMessage } = require('../serializers');
+const { isAdminUser } = require('../roles');
 
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
-  .split(',')
-  .map((e) => e.trim().toLowerCase())
-  .filter(Boolean);
+const PROFESSIONAL_ROLE_LABELS = { mediador: 'mediador/a', estudio: 'estudio jurídico' };
 
-function isAdminUser(user) {
-  return !!user && !!user.email && ADMIN_EMAILS.includes(user.email.toLowerCase());
-}
-
-module.exports = function () {
+module.exports = function (io) {
   const router = express.Router();
 
   function requireAdmin(req, res, next) {
@@ -45,11 +47,21 @@ module.exports = function () {
     const events = db.events;
     const byStatus = (status) => events.filter((e) => e.status === status).length;
 
+    const proMembers = db.members.filter((m) => m.role === 'mediador' || m.role === 'estudio');
+    const proUserIds = new Set(proMembers.map((m) => m.userId));
+    const channelsWithProfessional = new Set(proMembers.map((m) => m.channelId)).size;
+
     res.json({
       totalUsers: db.users.length,
       guestUsers: db.users.filter((u) => u.guest).length,
       totalChannels: db.channels.length,
       activeChannels,
+      professionals: {
+        mediadores: new Set(proMembers.filter((m) => m.role === 'mediador').map((m) => m.userId)).size,
+        estudios: new Set(proMembers.filter((m) => m.role === 'estudio').map((m) => m.userId)).size,
+        totalProfessionals: proUserIds.size,
+        channelsWithProfessional,
+      },
       totalMessages: db.messages.length,
       messagesLast7d: db.messages.filter((m) => m.createdAt >= weekAgo).length,
       moderation: {
@@ -139,6 +151,74 @@ module.exports = function () {
       })
       .sort((a, b) => b.lastActivity - a.lastActivity);
     res.json(list);
+  });
+
+  // ---------- mediadores/as y estudios jurídicos (vista de plataforma) ----------
+  // Las partes ya pueden invitar a su propio profesional desde el canal
+  // (routes/channels.js); esto agrega la vista agregada "todos los
+  // profesionales del sistema" y una asignación directa por si el admin de
+  // la plataforma necesita sumar uno sin depender de que las partes lo hagan.
+  router.get('/professionals', requireAdmin, (req, res) => {
+    const db = getDB();
+    const proMembers = db.members.filter((m) => m.role === 'mediador' || m.role === 'estudio');
+    const byUser = new Map();
+    for (const m of proMembers) {
+      const user = db.users.find((u) => u.id === m.userId);
+      if (!user) continue;
+      if (!byUser.has(user.id)) {
+        byUser.set(user.id, { id: user.id, name: user.name, email: user.email || null, channels: [] });
+      }
+      const channel = db.channels.find((c) => c.id === m.channelId);
+      byUser.get(user.id).channels.push({
+        code: channel ? channel.code : '—',
+        role: m.role,
+        roleLabel: PROFESSIONAL_ROLE_LABELS[m.role] || m.role,
+        label: m.label || null,
+        joinedAt: m.joinedAt,
+      });
+    }
+    res.json([...byUser.values()].sort((a, b) => b.channels.length - a.channels.length));
+  });
+
+  // Asigna un usuario YA REGISTRADO (por email, tiene que haber entrado alguna
+  // vez con Google) como mediador/a o estudio jurídico de un canal. Mismo
+  // efecto que la invitación que hacen las partes desde el chat — mismo
+  // aviso en el canal, misma transparencia — solo que la dispara un admin.
+  router.post('/channels/:code/assign-professional', requireAdmin, async (req, res) => {
+    const { email, role, label } = req.body;
+    if (!PROFESSIONAL_ROLE_LABELS[role]) return res.status(400).json({ error: 'Rol inválido' });
+    if (!label || !label.trim()) return res.status(400).json({ error: 'Falta el nombre del mediador/a o del estudio' });
+    if (!email || !email.trim()) return res.status(400).json({ error: 'Falta el email del usuario a asignar' });
+
+    const db = getDB();
+    const channel = db.channels.find((c) => c.code === req.params.code.toUpperCase());
+    if (!channel) return res.status(404).json({ error: 'Canal no encontrado' });
+
+    const user = db.users.find((u) => (u.email || '').toLowerCase() === email.trim().toLowerCase());
+    if (!user) {
+      return res.status(404).json({ error: 'No hay ningún usuario registrado con ese email — tiene que haber iniciado sesión con Google al menos una vez antes de poder asignarlo.' });
+    }
+
+    const existing = db.members.find((m) => m.channelId === channel.id && m.userId === user.id);
+    if (existing) return res.status(409).json({ error: 'Ese usuario ya es parte de este canal' });
+
+    db.members.push({
+      id: nanoid(), channelId: channel.id, userId: user.id,
+      role, label: label.trim(), joinedAt: Date.now(), assignedByAdmin: true,
+    });
+    const sysMsg = {
+      id: nanoid(), channelId: channel.id, senderId: null,
+      text: `${user.name} se sumó al canal como ${PROFESSIONAL_ROLE_LABELS[role]} (${label.trim()}), asignado por un administrador.`,
+      flagged: false, reason: null, pattern: false, createdAt: Date.now(),
+    };
+    db.messages.push(sysMsg);
+    await commit();
+
+    if (io) {
+      io.to(channel.code).emit('message:new', serializeMessage(sysMsg));
+      io.to(channel.code).emit('channel:update', { code: channel.code });
+    }
+    res.json({ ok: true });
   });
 
   return router;

@@ -1156,10 +1156,57 @@ function renderHistorial(){
       }).join('')
     : `<p class="empty-hint">Todavía no hay mensajes registrados.</p>`;
 
-  el.innerHTML = `<div class="card">${listHtml}</div><button class="ghost" style="width:100%" onclick="exportReport()">Descargar informe (.txt)</button>`;
+  const notesHtml = isProfessional() ? `
+    <div class="card" id="case-notes-card" style="margin-top:12px;">
+      <div class="eyebrow">Notas privadas del caso</div>
+      <p style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">Solo las ven mediador/a, estudio jurídico o administración — nunca las partes.</p>
+      <div id="case-notes-list"><p class="empty-hint">Cargando notas…</p></div>
+      <textarea id="case-note-input" placeholder="Escribí una nota…" style="width:100%; min-height:70px; margin-top:10px; background:var(--surface-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:10px; font-family:var(--sans); font-size:13px;"></textarea>
+      <button class="ghost" style="width:100%; margin-top:8px;" onclick="addCaseNote()">Agregar nota</button>
+    </div>
+  ` : '';
+
+  el.innerHTML = `
+    <div class="card">${listHtml}</div>
+    <button class="ghost" style="width:100%; margin-top:12px;" onclick="exportReport()">Descargar informe (.txt)</button>
+    <button class="ghost" style="width:100%; margin-top:8px;" onclick="exportCertifiedReport()">Descargar informe certificado (PDF)</button>
+    ${notesHtml}
+  `;
+  if(isProfessional()) loadCaseNotes();
 }
 function exportReport(){
   window.location.href = `/api/channels/${channelCode}/export`;
+}
+function exportCertifiedReport(){
+  window.location.href = `/api/channels/${channelCode}/export/certified`;
+}
+
+async function loadCaseNotes(){
+  const el = document.getElementById('case-notes-list');
+  try{
+    const notes = await api(`/api/channels/${channelCode}/notes`);
+    el.innerHTML = notes.length
+      ? notes.map(n => `
+          <div class="hist-item">
+            <div class="top"><span class="who">${escapeHtml(n.author ? n.author.name : '—')}</span><span class="ts">${fmtTs(n.createdAt)}</span></div>
+            <div class="txt">${escapeHtml(n.text)}</div>
+          </div>`).join('')
+      : `<p class="empty-hint">Todavía no hay notas en este caso.</p>`;
+  }catch(e){
+    el.innerHTML = `<p class="empty-hint">No se pudieron cargar las notas.</p>`;
+  }
+}
+async function addCaseNote(){
+  const input = document.getElementById('case-note-input');
+  const text = input.value.trim();
+  if(!text) return;
+  try{
+    await api(`/api/channels/${channelCode}/notes`, { method:'POST', body: JSON.stringify({ text }) });
+    input.value = '';
+    loadCaseNotes();
+  }catch(e){
+    alert(e.error || 'No se pudo guardar la nota.');
+  }
 }
 
 // ==================================================================

@@ -60,6 +60,20 @@
   .center-note .brand{ font-size:25px; margin-bottom:14px; display:block; }
   button.google-btn{ display:flex; align-items:center; gap:10px; background:#fff; color:#1F1F1F; border:none; font-weight:600; font-size:14px; padding:12px 22px; border-radius:8px; cursor:pointer; font-family:var(--sans); margin:18px auto 0; }
   .empty-hint{ padding:18px; color:var(--text-faint); font-size:12.5px; text-align:center; }
+
+  .card{ background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .eyebrow{ font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-faint); margin-bottom:10px; }
+  .field-label{ display:block; font-size:11.5px; color:var(--text-dim); margin-bottom:5px; }
+  .card input, .card select{
+    width:100%; background:var(--surface-2); border:1px solid var(--line); color:var(--text);
+    font-family:var(--sans); font-size:13px; padding:9px 10px; border-radius:7px;
+  }
+  .card input:focus, .card select:focus{ outline:none; border-color:var(--calm-dim); }
+  button.ghost{
+    background:var(--calm-dim); color:var(--text); border:1px solid var(--calm-dim);
+    font-family:var(--sans); font-size:13px; font-weight:600; padding:10px 14px; border-radius:7px; cursor:pointer;
+  }
+  button.ghost:hover{ border-color:var(--calm); }
 </style>
 </head>
 <body>

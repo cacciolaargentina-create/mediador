@@ -8,6 +8,8 @@ const { askAssistant } = require('../assistant');
 const { publicUser, serializeChannel, serializeMessage, serializeEvent } = require('../serializers');
 const { buildCalendarFeed } = require('../ics');
 const { postMessage } = require('../messaging');
+const { buildCertifiedReport } = require('../certificate');
+const { isAdminUser } = require('../roles');
 
 const genCode = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 6);
 const PATTERN_THRESHOLD = 3;
@@ -90,6 +92,14 @@ module.exports = function (io) {
       return res.status(403).json({ error: 'Esta acción es solo para las partes del canal, no para perfiles invitados como mediador/a o estudio jurídico' });
     }
     next();
+  }
+  // notas privadas de caso: solo para mediador/a, estudio jurídico o un admin
+  // de la plataforma — nunca para las partes A/B, que no deben ver
+  // anotaciones profesionales sobre su propio conflicto.
+  function requireProfessionalOrAdmin(req, res, next) {
+    if (req.membership.role === 'mediador' || req.membership.role === 'estudio') return next();
+    if (isAdminUser(req.user)) return next();
+    return res.status(403).json({ error: 'Esta sección es solo para mediador/a, estudio jurídico o administración' });
   }
 
   // ---------- crear canal ----------
@@ -428,6 +438,61 @@ module.exports = function (io) {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="informe-${req.channel.code}.txt"`);
     res.send(lines.join('\n'));
+  });
+
+  // ---------- informe certificado (PDF con membrete + hash de integridad) ----------
+  // Mismo contenido que el .txt de arriba, pensado para llevar a otro ámbito
+  // (juzgado, mediación presencial). No es una certificación notarial — el
+  // propio documento lo aclara — pero incluye un hash SHA-256 verificable
+  // del contenido al momento de generarse.
+  router.get('/:code/export/certified', requireAuth, requireMembership, async (req, res) => {
+    const db = getDB();
+    const msgs = db.messages.filter((m) => m.channelId === req.channel.id).sort((a, b) => a.createdAt - b.createdAt);
+    const events = db.events.filter((e) => e.channelId === req.channel.id).sort((a, b) => a.date.localeCompare(b.date));
+    const nameOf = (id) => publicUser(id)?.name || id;
+
+    try {
+      const pdf = await buildCertifiedReport({
+        channel: req.channel,
+        messages: msgs,
+        events,
+        nameOf,
+        generatedBy: { name: req.user.name, role: roleLabelForExport(req.membership.role) },
+      });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="informe-certificado-${req.channel.code}.pdf"`);
+      res.send(pdf);
+    } catch (err) {
+      console.error('Error generando el PDF certificado:', err);
+      res.status(500).json({ error: 'No se pudo generar el informe certificado' });
+    }
+  });
+
+  function roleLabelForExport(role) {
+    if (role === 'A' || role === 'B') return null;
+    return PROFESSIONAL_ROLE_LABELS[role] || null;
+  }
+
+  // ---------- notas privadas del caso ----------
+  // Visibles solo para mediador/a, estudio jurídico o admin de plataforma —
+  // nunca aparecen en el chat ni son visibles para las partes A/B.
+  router.get('/:code/notes', requireAuth, requireMembership, requireProfessionalOrAdmin, (req, res) => {
+    const db = getDB();
+    const notes = db.caseNotes
+      .filter((n) => n.channelId === req.channel.id)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((n) => ({ id: n.id, text: n.text, author: publicUser(n.authorId), createdAt: n.createdAt }));
+    res.json(notes);
+  });
+
+  router.post('/:code/notes', requireAuth, requireMembership, requireProfessionalOrAdmin, async (req, res) => {
+    const { text } = req.body;
+    if (!text || !text.trim()) return res.status(400).json({ error: 'Nota vacía' });
+    const db = getDB();
+    const note = { id: nanoid(), channelId: req.channel.id, authorId: req.user.id, text: text.trim(), createdAt: Date.now() };
+    db.caseNotes.push(note);
+    await commit();
+    res.json({ id: note.id, text: note.text, author: publicUser(note.authorId), createdAt: note.createdAt });
   });
 
   return router;
