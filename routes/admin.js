@@ -221,5 +221,38 @@ module.exports = function (io) {
     res.json({ ok: true });
   });
 
+  // Quita a un mediador/a o estudio jurídico de un canal — nunca a una parte
+  // A/B (esas no se "desasignan" desde acá). Igual que al asignar, queda
+  // avisado en el chat para que no sea un cambio silencioso.
+  router.delete('/channels/:code/professionals/:userId', requireAdmin, async (req, res) => {
+    const db = getDB();
+    const channel = db.channels.find((c) => c.code === req.params.code.toUpperCase());
+    if (!channel) return res.status(404).json({ error: 'Canal no encontrado' });
+
+    const membership = db.members.find((m) => m.channelId === channel.id && m.userId === req.params.userId);
+    if (!membership) return res.status(404).json({ error: 'Ese usuario no es parte de este canal' });
+    if (membership.role !== 'mediador' && membership.role !== 'estudio') {
+      return res.status(400).json({ error: 'Este endpoint solo quita mediadores/as o estudios jurídicos, no a las partes A/B' });
+    }
+
+    const user = db.users.find((u) => u.id === req.params.userId);
+    const roleLabel = PROFESSIONAL_ROLE_LABELS[membership.role] || membership.role;
+    db.members = db.members.filter((m) => m.id !== membership.id);
+
+    const sysMsg = {
+      id: nanoid(), channelId: channel.id, senderId: null,
+      text: `${user ? user.name : 'Un usuario'} (${roleLabel}) fue quitado del canal por un administrador.`,
+      flagged: false, reason: null, pattern: false, createdAt: Date.now(),
+    };
+    db.messages.push(sysMsg);
+    await commit();
+
+    if (io) {
+      io.to(channel.code).emit('message:new', serializeMessage(sysMsg));
+      io.to(channel.code).emit('channel:update', { code: channel.code });
+    }
+    res.json({ ok: true });
+  });
+
   return router;
 };

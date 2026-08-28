@@ -202,7 +202,11 @@ function renderDashboard(app, me, ov, users, channels, trend, professionals){
                 <td class="strong">${escapeHtml(p.name)}</td>
                 <td>${p.email ? escapeHtml(p.email) : '—'}</td>
                 <td>${[...new Set(p.channels.map(c=>c.roleLabel))].map(escapeHtml).join(', ')}</td>
-                <td>${p.channels.map(c => `<span class="pill google" title="${escapeHtml(c.label||'')}">${escapeHtml(c.code)}</span>`).join(' ')}</td>
+                <td>${p.channels.map(c => `
+                  <span class="pill google" title="${escapeHtml(c.label||'')}" style="display:inline-flex; align-items:center; gap:5px; margin:2px 4px 2px 0;">
+                    ${escapeHtml(c.code)}
+                    <button onclick="unassignProfessional('${c.code}','${p.id}','${escapeHtml(p.name)}','${escapeHtml(c.code)}')" title="Quitar de este canal" style="background:none; border:none; color:inherit; cursor:pointer; font-size:11px; line-height:1; padding:0;">✕</button>
+                  </span>`).join('')}</td>
               </tr>`).join('') : `<tr><td colspan="4"><div class="empty-hint">Todavía no hay mediadores ni estudios jurídicos vinculados a ningún canal.</div></td></tr>`}
             </tbody>
           </table>
@@ -227,6 +231,16 @@ function renderDashboard(app, me, ov, users, channels, trend, professionals){
       </section>
     </div>
   `;
+}
+
+async function unassignProfessional(code, userId, name, channelCode){
+  if(!confirm(`¿Quitar a ${name} del canal ${channelCode}? Queda avisado en el chat de ese canal.`)) return;
+  try{
+    await api(`/api/admin/channels/${code}/professionals/${userId}`, { method:'DELETE' });
+    location.reload();
+  }catch(e){
+    alert(e.error || 'No se pudo quitar.');
+  }
 }
 
 async function assignProfessional(){
