@@ -61,17 +61,33 @@ async function buildCertifiedReport({ channel, messages, events, nameOf, generat
     doc.on('error', reject);
 
     // ---- membrete ----
-    doc.fontSize(20).fillColor('#1a1a2e').font('Helvetica-Bold').text('PUENTE DIGITAL', { align: 'left' });
-    doc.fontSize(11).fillColor('#555').font('Helvetica').text('Informe certificado de mediación digital', { align: 'left' });
+    // el QR va arriba, junto al membrete (no en el pie) — abajo del todo se
+    // perdía entre el resto del texto del pie de página.
+    const qrSize = 68;
+    const headerTextWidth = qrBuffer ? 495 - qrSize - 15 : 495;
+    if (qrBuffer) {
+      doc.image(qrBuffer, 545 - qrSize, 50, { width: qrSize, height: qrSize });
+      doc.fontSize(6.5).fillColor('#777').font('Helvetica').text('Verificar autenticidad', 545 - qrSize - 8, 50 + qrSize + 2, { width: qrSize + 16, align: 'center' });
+    }
+
+    doc.fontSize(20).fillColor('#1a1a2e').font('Helvetica-Bold').text('PUENTE DIGITAL', { align: 'left', width: headerTextWidth });
+    doc.fontSize(11).fillColor('#555').font('Helvetica').text('Informe certificado de mediación digital', { align: 'left', width: headerTextWidth });
     doc.moveDown(0.3);
+    // el texto del título es más bajo que el QR — si no se empuja el cursor,
+    // la línea separadora de acá abajo pasaría por ARRIBA del QR (dibujado
+    // antes) y quedaría como un tachado cruzándolo.
+    if (qrBuffer) {
+      const qrBottomY = 50 + qrSize + 16;
+      if (doc.y < qrBottomY) doc.y = qrBottomY;
+    }
     doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#1a1a2e').lineWidth(1.5).stroke();
     doc.moveDown(1);
 
     doc.fontSize(10).fillColor('#000');
-    doc.font('Helvetica-Bold').text('Código de canal: ', { continued: true }).font('Helvetica').text(channel.code);
-    doc.font('Helvetica-Bold').text('Generado: ', { continued: true }).font('Helvetica').text(now.toLocaleString('es-AR', { dateStyle: 'long', timeStyle: 'short' }));
+    doc.font('Helvetica-Bold').text('Código de canal: ', { continued: true, width: headerTextWidth }).font('Helvetica').text(channel.code);
+    doc.font('Helvetica-Bold').text('Generado: ', { continued: true, width: headerTextWidth }).font('Helvetica').text(now.toLocaleString('es-AR', { dateStyle: 'long', timeStyle: 'short' }));
     if (generatedBy) {
-      doc.font('Helvetica-Bold').text('Generado por: ', { continued: true }).font('Helvetica').text(`${generatedBy.name}${generatedBy.role ? ' (' + generatedBy.role + ')' : ''}`);
+      doc.font('Helvetica-Bold').text('Generado por: ', { continued: true, width: headerTextWidth }).font('Helvetica').text(`${generatedBy.name}${generatedBy.role ? ' (' + generatedBy.role + ')' : ''}`);
     }
     doc.moveDown(1);
 
@@ -102,8 +118,6 @@ async function buildCertifiedReport({ channel, messages, events, nameOf, generat
 
     // ---- pie legal + hash de integridad en cada página ----
     const range = doc.bufferedPageRange();
-    const qrSize = 55;
-    const textWidth = qrBuffer ? 495 - qrSize - 12 : 495;
     for (let i = range.start; i < range.start + range.count; i++) {
       doc.switchToPage(i);
       const bottom = doc.page.height - 60;
@@ -111,14 +125,9 @@ async function buildCertifiedReport({ channel, messages, events, nameOf, generat
       doc.text(
         'Documento generado automáticamente por Puente Digital a partir del registro digital del canal. ' +
         'No constituye una certificación notarial ni pericial, pero es un registro fiel del contenido del canal al momento de su generación.',
-        50, bottom, { width: textWidth, align: 'left' }
+        50, bottom, { width: 495, align: 'left' }
       );
-      doc.text(`Hash de integridad (SHA-256): ${hash}`, 50, bottom + 20, { width: textWidth, align: 'left' });
-      if (qrBuffer) {
-        const qrX = 50 + textWidth + 12;
-        doc.image(qrBuffer, qrX, bottom - 5, { width: qrSize, height: qrSize });
-        doc.fontSize(6.5).fillColor('#777').font('Helvetica').text('Verificar autenticidad', qrX - 8, bottom + qrSize - 3, { width: qrSize + 16, align: 'center' });
-      }
+      doc.text(`Hash de integridad (SHA-256): ${hash}`, 50, bottom + 20, { width: 495, align: 'left' });
     }
 
     doc.end();
