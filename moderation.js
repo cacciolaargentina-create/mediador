@@ -20,13 +20,21 @@ async function analyzeMessage(text) {
     return { flagged: false, category: '', reason: '', reformulation: '' };
   }
 
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-api-key': process.env.ANTHROPIC_API_KEY,
+    'anthropic-version': '2023-06-01',
+  };
+  // algunas API keys quedan "vinculadas a la identidad" de quien las crea en
+  // vez de a un workspace fijo — Anthropic exige este header en ese caso.
+  // No hace falta si la key ya es de un workspace fijo.
+  if (process.env.ANTHROPIC_WORKSPACE_ID) {
+    headers['anthropic-workspace-id'] = process.env.ANTHROPIC_WORKSPACE_ID;
+  }
+
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
+    headers,
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
       max_tokens: 500,

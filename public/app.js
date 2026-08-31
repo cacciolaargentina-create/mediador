@@ -1532,10 +1532,22 @@ async function runDraftAnalyze(){
     const result = await api('/api/draft/analyze', { method:'POST', body: JSON.stringify({ text }) });
     resultEl.innerHTML = renderAnalysisResult(text, result, 'draft-result');
   }catch(e){
-    resultEl.innerHTML = `<p class="empty-hint" style="color:var(--danger)">${escapeHtml(e.error || 'No se pudo analizar el mensaje. Probá de nuevo.')}</p>`;
+    resultEl.innerHTML = renderAnalysisError(e);
   }
   btn.disabled = false;
   btn.textContent = 'Revisar';
+}
+
+// (e.status === 429): límite real (cuota mensual o rate limit) — es
+// información útil y accionable, se muestra tal cual manda el backend.
+// Cualquier otro fallo (sin crédito de la cuenta, error de red, etc.) no es
+// algo que el usuario pueda resolver — un tono neutral evita alarmar por
+// algo que no depende de él.
+function renderAnalysisError(e){
+  if(e.status === 429){
+    return `<p class="empty-hint" style="color:var(--warn)">${escapeHtml(e.error || 'Llegaste al límite por ahora — probá de nuevo más tarde.')}</p>`;
+  }
+  return `<p class="empty-hint">La revisión automática no está disponible en este momento. Tu mensaje no se modificó — podés probar de nuevo en un rato.</p>`;
 }
 
 // compartido entre el borrador (Tarea A) y la demo pública (Tarea B) — mismo
@@ -1579,10 +1591,10 @@ async function runDemo(){
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ text }),
     });
     const data = await resp.json();
-    if(!resp.ok) throw data;
+    if(!resp.ok) throw { status: resp.status, ...data };
     resultEl.innerHTML = renderAnalysisResult(text, data, 'demo-result');
   }catch(e){
-    resultEl.innerHTML = `<p class="empty-hint" style="color:var(--danger)">${escapeHtml(e.error || 'No se pudo analizar el mensaje. Probá de nuevo en un rato.')}</p>`;
+    resultEl.innerHTML = renderAnalysisError(e);
   }
   btn.disabled = false;
   btn.textContent = 'Revisar mensaje';
