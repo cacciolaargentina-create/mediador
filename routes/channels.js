@@ -9,7 +9,7 @@ const { publicUser, serializeChannel, serializeMessage, serializeEvent } = requi
 const { buildCalendarFeed } = require('../ics');
 const { postMessage, postSystemMessage } = require('../messaging');
 const { buildCertifiedReport, integrityHash, buildPlainContent } = require('../certificate');
-const { isAdminUser } = require('../roles');
+const { isAdminUser, PROFESSIONAL_ROLE_LABELS } = require('../roles');
 const { logAudit } = require('../audit');
 const { requireQuotaOrSubscription } = require('../quota');
 
@@ -17,7 +17,6 @@ const genCode = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 6);
 const PATTERN_THRESHOLD = 3;
 
 const REPEAT_LABELS = { weekly: 'semanal', biweekly: 'quincenal', monthly: 'mensual' };
-const PROFESSIONAL_ROLE_LABELS = { mediador: 'mediador/a', estudio: 'estudio jurídico' };
 const MAX_SERIES_OCCURRENCES = 52; // tope de seguridad para no generar series infinitas por error
 
 // calcula la ocurrencia n-ésima siempre a partir de la fecha ancla original

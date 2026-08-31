@@ -14,7 +14,7 @@ const express = require('express');
 const { nanoid } = require('nanoid');
 const { getDB, commit } = require('../db');
 const { serializeMessage } = require('../serializers');
-const { isAdminUser } = require('../roles');
+const { isAdminUser, PROFESSIONAL_ROLE_LABELS } = require('../roles');
 const { logAudit } = require('../audit');
 const wa = require('../whatsapp');
 const { getPendingNotificationsCount } = require('../messaging');
@@ -29,8 +29,6 @@ const WHATSAPP_EVENT_LABELS = {
   inbound_processed: 'Mensaje procesado',
   webhook_invalid_signature: 'Firma de webhook inválida',
 };
-
-const PROFESSIONAL_ROLE_LABELS = { mediador: 'mediador/a', estudio: 'estudio jurídico' };
 
 module.exports = function (io) {
   const router = express.Router();
@@ -267,6 +265,77 @@ module.exports = function (io) {
       io.to(channel.code).emit('message:new', serializeMessage(sysMsg));
       io.to(channel.code).emit('channel:update', { code: channel.code });
     }
+    res.json({ ok: true });
+  });
+
+  // ---------- solicitudes de autoregistro de profesionales ----------
+  // Distinto del alta que hace una parte desde su canal (routes/channels.js):
+  // acá el profesional llega solo, sin ningún caso todavía, vía el
+  // formulario público, y queda "pendiente" hasta que un admin lo revisa.
+  router.get('/professional-applications', requireAdmin, (req, res) => {
+    const db = getDB();
+    const status = req.query.status; // opcional: filtra por estado, default todas
+    const list = db.professionalApplications
+      .filter((a) => !status || a.status === status)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((a) => {
+        const user = db.users.find((u) => u.id === a.userId);
+        return {
+          id: a.id,
+          userId: a.userId,
+          userName: user ? user.name : 'Desconocido',
+          userEmail: user ? user.email : null,
+          role: a.role,
+          roleLabel: PROFESSIONAL_ROLE_LABELS[a.role] || a.role,
+          orgName: a.orgName,
+          status: a.status,
+          createdAt: a.createdAt,
+          decidedAt: a.decidedAt || null,
+        };
+      });
+    res.json(list);
+  });
+
+  router.post('/professional-applications/:id/approve', requireAdmin, async (req, res) => {
+    const db = getDB();
+    const application = db.professionalApplications.find((a) => a.id === req.params.id);
+    if (!application) return res.status(404).json({ error: 'Solicitud no encontrada' });
+    if (application.status !== 'pending') return res.status(409).json({ error: 'Esta solicitud ya fue resuelta' });
+
+    const user = db.users.find((u) => u.id === application.userId);
+    if (!user) return res.status(404).json({ error: 'El usuario que hizo la solicitud ya no existe' });
+
+    application.status = 'approved';
+    application.decidedAt = Date.now();
+    application.decidedBy = req.user.id;
+    user.verifiedProfessional = true;
+    user.verifiedProfessionalRole = application.role;
+    user.verifiedProfessionalOrg = application.orgName;
+
+    logAudit(db, {
+      actorId: req.user.id, action: 'approve_professional_application',
+      meta: { targetEmail: user.email, role: application.role, orgName: application.orgName },
+    });
+    await commit();
+    res.json({ ok: true });
+  });
+
+  router.post('/professional-applications/:id/reject', requireAdmin, async (req, res) => {
+    const db = getDB();
+    const application = db.professionalApplications.find((a) => a.id === req.params.id);
+    if (!application) return res.status(404).json({ error: 'Solicitud no encontrada' });
+    if (application.status !== 'pending') return res.status(409).json({ error: 'Esta solicitud ya fue resuelta' });
+
+    application.status = 'rejected';
+    application.decidedAt = Date.now();
+    application.decidedBy = req.user.id;
+
+    const user = db.users.find((u) => u.id === application.userId);
+    logAudit(db, {
+      actorId: req.user.id, action: 'reject_professional_application',
+      meta: { targetEmail: user ? user.email : null, role: application.role, orgName: application.orgName },
+    });
+    await commit();
     res.json({ ok: true });
   });
 

@@ -26,12 +26,12 @@ async function api(path, opts){
   if(!check.isAdmin){ renderNoAccess(app, me); return; }
 
   try{
-    const [overview, users, channels, trend, professionals, audit, waStatus, waLog, waUsers] = await Promise.all([
+    const [overview, users, channels, trend, professionals, applications, audit, waStatus, waLog, waUsers] = await Promise.all([
       api('/api/admin/overview'), api('/api/admin/users'), api('/api/admin/channels'), api('/api/admin/trend'),
-      api('/api/admin/professionals'), api('/api/admin/audit'),
+      api('/api/admin/professionals'), api('/api/admin/professional-applications'), api('/api/admin/audit'),
       api('/api/admin/whatsapp/status'), api('/api/admin/whatsapp/log'), api('/api/admin/whatsapp/users'),
     ]);
-    renderDashboard(app, me, overview, users, channels, trend, professionals, audit, waStatus, waLog, waUsers);
+    renderDashboard(app, me, overview, users, channels, trend, professionals, applications, audit, waStatus, waLog, waUsers);
   }catch(e){
     app.innerHTML = `<div class="center-note"><span class="brand">Puente<em>digital</em></span>No se pudo cargar el panel. Probá recargar la página.</div>`;
   }
@@ -92,9 +92,11 @@ const AUDIT_ACTION_LABELS = {
   export_certified: 'Descargó informe certificado (PDF)',
   assign_professional: 'Asignó un/a profesional',
   unassign_professional: 'Quitó un/a profesional',
+  approve_professional_application: 'Aprobó una solicitud de profesional',
+  reject_professional_application: 'Rechazó una solicitud de profesional',
 };
 
-function renderDashboard(app, me, ov, users, channels, trend, professionals, audit, waStatus, waLog, waUsers){
+function renderDashboard(app, me, ov, users, channels, trend, professionals, applications, audit, waStatus, waLog, waUsers){
   app.innerHTML = `
     <div class="wrap">
       <header>
@@ -192,6 +194,32 @@ function renderDashboard(app, me, ov, users, channels, trend, professionals, aud
                 <td>${c.events.confirmado} / ${c.events.pendiente} / ${c.events.rechazado}</td>
                 <td>${fmtDate(c.lastActivity)}</td>
               </tr>`).join('') : `<tr><td colspan="6"><div class="empty-hint">Todavía no hay canales creados.</div></td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="block">
+        <h2 class="block-title">Solicitudes de profesionales ${applications.filter(a=>a.status==='pending').length ? `(${applications.filter(a=>a.status==='pending').length} pendiente${applications.filter(a=>a.status==='pending').length===1?'':'s'})` : ''}</h2>
+        <p class="chart-note" style="margin-bottom:12px;">
+          Autoregistro desde el formulario público — a diferencia de la invitación desde un canal, acá el profesional todavía no tiene ningún caso. Aprobar lo marca como profesional verificado.
+        </p>
+        <div class="table-wrap">
+          <table class="min-w">
+            <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Estudio/organización</th><th>Solicitado</th><th>Estado</th><th></th></tr></thead>
+            <tbody>
+              ${applications.length ? applications.map(a => `<tr>
+                <td class="strong">${escapeHtml(a.userName)}</td>
+                <td>${a.userEmail ? escapeHtml(a.userEmail) : '—'}</td>
+                <td>${escapeHtml(a.roleLabel)}</td>
+                <td>${escapeHtml(a.orgName)}</td>
+                <td>${fmtDate(a.createdAt)}</td>
+                <td><span class="pill ${a.status === 'approved' ? 'google' : a.status === 'rejected' ? 'danger' : 'guest'}">${a.status === 'pending' ? 'pendiente' : a.status === 'approved' ? 'aprobada' : 'rechazada'}</span></td>
+                <td>${a.status === 'pending' ? `
+                  <button class="ghost" style="padding:4px 10px; font-size:11.5px;" onclick="decideApplication('${a.id}','approve','${escapeHtml(a.userName)}')">Aprobar</button>
+                  <button class="danger-link" style="margin-left:8px;" onclick="decideApplication('${a.id}','reject','${escapeHtml(a.userName)}')">Rechazar</button>
+                ` : '—'}</td>
+              </tr>`).join('') : `<tr><td colspan="7"><div class="empty-hint">Todavía no hay solicitudes.</div></td></tr>`}
             </tbody>
           </table>
         </div>
@@ -318,6 +346,17 @@ function renderDashboard(app, me, ov, users, channels, trend, professionals, aud
       </section>
     </div>
   `;
+}
+
+async function decideApplication(id, action, name){
+  const verb = action === 'approve' ? 'aprobar' : 'rechazar';
+  if(!confirm(`¿Seguro que querés ${verb} la solicitud de ${name}?`)) return;
+  try{
+    await api(`/api/admin/professional-applications/${id}/${action}`, { method:'POST' });
+    location.reload();
+  }catch(e){
+    alert(e.error || `No se pudo ${verb} la solicitud.`);
+  }
 }
 
 async function unassignProfessional(code, userId, name, channelCode){

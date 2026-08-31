@@ -13,4 +13,9 @@ function isAdminUser(user) {
   return !!user && !!user.email && ADMIN_EMAILS.includes(user.email.toLowerCase());
 }
 
-module.exports = { isAdminUser };
+// roles de acceso profesional (solo lectura) que una parte puede invitar a
+// su canal, o que un admin puede aprobar por autoregistro — compartido para
+// no repetir el mismo mapa en channels.js, admin.js y professionals.js.
+const PROFESSIONAL_ROLE_LABELS = { mediador: 'mediador/a', estudio: 'estudio jurídico' };
+
+module.exports = { isAdminUser, PROFESSIONAL_ROLE_LABELS };

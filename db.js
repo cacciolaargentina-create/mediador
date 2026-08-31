@@ -36,12 +36,15 @@ const EMPTY_DB = {
   whatsappLog: [],      // { id, kind, phone, userName, channelCode, detail, createdAt } — notificaciones enviadas, onboarding, mensajes entrantes procesados
   whatsappWebhookRaw: [], // { id, payload, createdAt } — últimos payloads crudos del webhook de Meta, para debug técnico
   certifiedExports: [], // { id, hash, channelCode, generatedByName, generatedByRole, createdAt } — un registro por cada export certificado en PDF, para que la página pública de verificación (/verificar/:hash) pueda confirmar que el documento realmente salió de acá
+  professionalApplications: [], // { id, userId, role, orgName, status:'pending'|'approved'|'rejected', createdAt, decidedAt, decidedBy } — autoregistro de mediador/a o estudio jurídico, pendiente de aprobación manual de un admin
 };
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY, googleId TEXT, email TEXT, name TEXT, avatar TEXT,
-  phone TEXT, guest INTEGER DEFAULT 0, aiUsage TEXT, createdAt INTEGER
+  phone TEXT, guest INTEGER DEFAULT 0, aiUsage TEXT,
+  verifiedProfessional INTEGER DEFAULT 0, verifiedProfessionalRole TEXT, verifiedProfessionalOrg TEXT,
+  createdAt INTEGER
 );
 CREATE TABLE IF NOT EXISTS channels (
   id TEXT PRIMARY KEY, code TEXT UNIQUE, guestToken TEXT, calendarToken TEXT,
@@ -83,7 +86,12 @@ CREATE TABLE IF NOT EXISTS certified_exports (
   id TEXT PRIMARY KEY, hash TEXT UNIQUE, channelCode TEXT, generatedByName TEXT,
   generatedByRole TEXT, createdAt INTEGER
 );
+CREATE TABLE IF NOT EXISTS professional_applications (
+  id TEXT PRIMARY KEY, userId TEXT, role TEXT, orgName TEXT, status TEXT,
+  createdAt INTEGER, decidedAt INTEGER, decidedBy TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_certified_exports_hash ON certified_exports(hash);
+CREATE INDEX IF NOT EXISTS idx_professional_applications_user ON professional_applications(userId);
 CREATE INDEX IF NOT EXISTS idx_members_channel ON members(channelId);
 CREATE INDEX IF NOT EXISTS idx_members_user ON members(userId);
 CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channelId);
@@ -97,7 +105,7 @@ CREATE INDEX IF NOT EXISTS idx_checkins_channel ON checkins(channelId);
 // declaradas por tabla para poder convertir en los dos sentidos sin
 // tener que acordarse a mano en cada función.
 const BOOL_COLUMNS = {
-  users: ['guest'],
+  users: ['guest', 'verifiedProfessional'],
   members: ['assignedByAdmin'],
   messages: ['flagged', 'pattern'],
 };
@@ -112,7 +120,7 @@ const TABLE_NAMES = {
   events: 'events', caseNotes: 'case_notes', expenses: 'expenses',
   checkins: 'checkins', auditLog: 'audit_log',
   whatsappLog: 'whatsapp_log', whatsappWebhookRaw: 'whatsapp_webhook_raw',
-  certifiedExports: 'certified_exports',
+  certifiedExports: 'certified_exports', professionalApplications: 'professional_applications',
 };
 
 function rowToRecord(collectionKey, row) {
@@ -151,7 +159,10 @@ function openDb() {
   const sqlite = new DatabaseSync(SQLITE_PATH);
   sqlite.exec('PRAGMA journal_mode = WAL;');
   sqlite.exec(SCHEMA);
-  ensureColumns(sqlite, 'users', { aiUsage: 'TEXT' });
+  ensureColumns(sqlite, 'users', {
+    aiUsage: 'TEXT', verifiedProfessional: 'INTEGER DEFAULT 0',
+    verifiedProfessionalRole: 'TEXT', verifiedProfessionalOrg: 'TEXT',
+  });
   ensureColumns(sqlite, 'channels', { remindedAt: 'INTEGER', lastSummary: 'TEXT' });
   if (isNew && fs.existsSync(LEGACY_JSON_PATH)) {
     migrateFromJson(sqlite, LEGACY_JSON_PATH);

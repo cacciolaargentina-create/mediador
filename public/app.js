@@ -74,6 +74,12 @@ async function api(path, opts={}){
     return;
   }
   document.getElementById('login-screen').style.display = 'none';
+
+  if(params.get('proSignup')){
+    await renderProSignup();
+    return;
+  }
+
   document.getElementById('topbar').style.display = 'flex';
   document.getElementById('main').style.display = 'block';
   document.getElementById('tabs').style.display = 'flex';
@@ -87,6 +93,87 @@ async function api(path, opts={}){
   }
   goTo(channelInfo ? 'chat' : 'inicio');
 })();
+
+// ==================================================================
+// AUTOREGISTRO DE MEDIADOR/A O ESTUDIO JURÍDICO
+// ==================================================================
+// Llega por /auth/google?next=/%3FproSignup%3D1 desde el link "Registrate"
+// del landing. A diferencia de bootProfessional(), acá la persona todavía
+// no tiene ningún canal — es un alta de plataforma, pendiente de que un
+// admin la revise a mano desde /admin.html.
+async function renderProSignup(){
+  document.getElementById('pro-signup-screen').style.display = 'flex';
+  const el = document.getElementById('pro-signup-content');
+  el.innerHTML = `<p class="screen-sub">Cargando…</p>`;
+
+  let status;
+  try{ status = await api('/api/professionals/me'); }
+  catch(e){ el.innerHTML = `<p class="screen-sub">No se pudo cargar. Probá recargar la página.</p>`; return; }
+
+  if(status.verifiedProfessional){
+    el.innerHTML = `
+      <p class="screen-sub">Ya sos profesional verificado en Puente Digital (${escapeHtml(status.verifiedProfessionalRole === 'estudio' ? 'estudio jurídico' : 'mediador/a')} — ${escapeHtml(status.verifiedProfessionalOrg || '')}).</p>
+      <button class="primary" style="width:100%; margin-top:10px;" onclick="closeProSignup()">Continuar a la app</button>
+    `;
+    return;
+  }
+
+  if(status.application && status.application.status === 'pending'){
+    el.innerHTML = `
+      <p class="screen-sub">Tu solicitud como ${escapeHtml(status.application.roleLabel)} (${escapeHtml(status.application.orgName)}) está en revisión. Te avisamos apenas la veamos.</p>
+      <button class="ghost" style="width:100%; margin-top:10px;" onclick="closeProSignup()">Continuar a la app</button>
+    `;
+    return;
+  }
+
+  const rejected = status.application && status.application.status === 'rejected';
+
+  el.innerHTML = `
+    ${rejected ? `<p class="screen-sub" style="color:var(--warn)">Tu solicitud anterior no fue aprobada. Podés volver a intentarlo o escribirnos por WhatsApp.</p>` : `<p class="screen-sub">Registrate como mediador/a o estudio jurídico. Un administrador revisa la solicitud antes de habilitarla.</p>`}
+    <div class="card" style="text-align:left; margin-top:10px;">
+      <label class="field-label">Rol</label>
+      <select id="pro-signup-role" style="margin-bottom:10px;">
+        <option value="mediador">Mediador/a</option>
+        <option value="estudio">Estudio jurídico</option>
+      </select>
+      <label class="field-label">Nombre del estudio u organización</label>
+      <input type="text" id="pro-signup-org" placeholder="Ej: Estudio Pérez &amp; Asoc." style="margin-bottom:12px;">
+      <button class="primary" style="width:100%" onclick="submitProSignup()" id="pro-signup-btn">Enviar solicitud</button>
+      <div id="pro-signup-result" style="margin-top:10px; font-size:12.5px;"></div>
+    </div>
+    <button class="ghost" style="width:100%; margin-top:10px;" onclick="closeProSignup()">Ahora no, llevame a la app</button>
+  `;
+}
+
+async function submitProSignup(){
+  const role = document.getElementById('pro-signup-role').value;
+  const orgName = document.getElementById('pro-signup-org').value.trim();
+  const resultEl = document.getElementById('pro-signup-result');
+  const btn = document.getElementById('pro-signup-btn');
+  if(!orgName){ resultEl.innerHTML = `<span style="color:var(--danger)">Falta el nombre del estudio u organización.</span>`; return; }
+  btn.disabled = true;
+  try{
+    await api('/api/professionals/apply', { method:'POST', body: JSON.stringify({ role, orgName }) });
+    await renderProSignup();
+  }catch(e){
+    resultEl.innerHTML = `<span style="color:var(--danger)">${escapeHtml(e.error || 'No se pudo enviar la solicitud.')}</span>`;
+    btn.disabled = false;
+  }
+}
+
+function closeProSignup(){
+  document.getElementById('pro-signup-screen').style.display = 'none';
+  const url = new URL(location.href);
+  url.searchParams.delete('proSignup');
+  history.pushState({}, '', url); // limpia el ?proSignup=1 de la URL sin tocar otros params
+  document.getElementById('topbar').style.display = 'flex';
+  document.getElementById('main').style.display = 'block';
+  document.getElementById('tabs').style.display = 'flex';
+  renderUserChip();
+  checkAdminLink();
+  initNotifications();
+  goTo('inicio');
+}
 
 async function bootGuest(){
   let entered;
