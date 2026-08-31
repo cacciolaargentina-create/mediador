@@ -49,7 +49,7 @@
   .eyebrow{ font-family:var(--mono); font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-faint); margin-bottom:8px; }
   button.primary{ background:var(--calm); color:#0E1A19; border:none; font-weight:600; font-size:14px; padding:12px 18px; border-radius:8px; cursor:pointer; font-family:var(--sans); }
   button.primary:disabled{ opacity:0.4; cursor:not-allowed; }
-  button.ghost{ background:none; border:1px solid var(--line); color:var(--text); font-size:13px; padding:10px 14px; border-radius:8px; cursor:pointer; font-family:var(--sans); }
+  button.ghost, a.ghost{ background:none; border:1px solid var(--line); color:var(--text); font-size:13px; padding:10px 14px; border-radius:8px; cursor:pointer; font-family:var(--sans); }
   button.ghost.small{ padding:6px 10px; font-size:11.5px; }
   button.google-btn{ display:flex; align-items:center; gap:10px; background:#fff; color:#1F1F1F; border:none; font-weight:600; font-size:14px; padding:12px 22px; border-radius:8px; cursor:pointer; font-family:var(--sans); }
   button.danger-link{ background:none; border:none; color:var(--danger); font-size:12px; cursor:pointer; padding:0; font-family:var(--sans); text-decoration:underline; }
@@ -406,12 +406,21 @@
     </div>
   </div>
 
+  <div class="card" style="max-width:480px; margin:0 auto 24px;">
+    <div class="eyebrow">Antes de que preguntes</div>
+    <p style="font-size:13px; margin-bottom:12px;"><strong>¿Alguien lee mis mensajes?</strong><br><span style="color:var(--text-dim)">Pasan por un sistema automático antes de enviarse. Nadie de una oficina los mira.</span></p>
+    <p style="font-size:13px;"><strong>¿Esto va a cambiar cómo me responde la otra persona?</strong><br><span style="color:var(--text-dim)">Eso no está en nuestras manos. Sí te ayuda a que lo que vos mandás no te juegue en contra.</span></p>
+  </div>
+
   <div class="cta-block">
+    <a href="https://wa.me/15753222446?text=CREAR" target="_blank" rel="noopener" class="ghost" style="text-align:center; text-decoration:none; padding:14px; display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:10px; max-width:280px; margin-left:auto; margin-right:auto;">
+      💬 Empezar por WhatsApp — escribí CREAR
+    </a>
     <button class="google-btn" onclick="location.href='/auth/google'">
       <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
       Iniciar sesión con Google
     </button>
-    <p class="cta-note">Gratis para empezar. El canal queda atado a tu cuenta de Google, no a un código que cualquiera pueda adivinar.</p>
+    <p class="cta-note">Gratis para empezar. El canal queda atado a tu cuenta (de Google o tu número de WhatsApp), no a un código que cualquiera pueda adivinar.</p>
   </div>
 
   <div class="section-heading">Cómo empezar</div>
@@ -437,6 +446,22 @@
     <div class="feature-item"><span class="ic">🗂</span><div class="t">Historial exportable</div><div class="d">Registro completo de mensajes e intervenciones de la IA, por si lo necesitás después.</div></div>
     <div class="feature-item"><span class="ic">🔒</span><div class="t">Cuenta real, no un código</div><div class="d">Cada canal está atado a cuentas de Google verdaderas — no a un código adivinable.</div></div>
     <div class="feature-item"><span class="ic">🤖</span><div class="t">Asistente de historial</div><div class="d">Preguntale qué pasó o qué viene — responde solo con datos reales de tu canal.</div></div>
+  </div>
+
+  <div class="card" style="max-width:600px; margin:0 auto 24px;">
+    <div class="eyebrow">La misma función, a otro precio</div>
+    <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--line);">
+      <span style="font-size:13px; color:var(--text-dim);">OurFamilyWizard</span>
+      <span style="font-size:13px; color:var(--text-dim);">USD 9–25/mes</span>
+    </div>
+    <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--line);">
+      <span style="font-size:13px; color:var(--text-dim);">TalkingParents</span>
+      <span style="font-size:13px; color:var(--text-dim);">USD 77–353/año</span>
+    </div>
+    <div style="display:flex; justify-content:space-between; padding:10px 0;">
+      <span style="font-size:13px; color:var(--calm); font-weight:600;">Puente Digital</span>
+      <span style="font-size:13px; color:var(--calm); font-weight:600;">gratis para empezar</span>
+    </div>
   </div>
 
   <div class="section-heading">Para quién es</div>
