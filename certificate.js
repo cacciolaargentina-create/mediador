@@ -64,18 +64,23 @@ async function buildCertifiedReport({ channel, messages, events, nameOf, generat
     // el QR va arriba, junto al membrete (no en el pie) — abajo del todo se
     // perdía entre el resto del texto del pie de página.
     const qrSize = 68;
-    const headerTextWidth = qrBuffer ? 495 - qrSize - 15 : 495;
     if (qrBuffer) {
       doc.image(qrBuffer, 545 - qrSize, 50, { width: qrSize, height: qrSize });
       doc.fontSize(6.5).fillColor('#777').font('Helvetica').text('Verificar autenticidad', 545 - qrSize - 8, 50 + qrSize + 2, { width: qrSize + 16, align: 'center' });
+      // el .text() de arriba usa x,y absolutos (para caer justo debajo del
+      // QR) y eso deja el cursor de pdfkit ahí — sin este reset, el resto
+      // del membrete (título, subtítulo, etc., que sí fluyen con el cursor)
+      // arrancaba desde esa posición y quedaba todo corrido a la derecha.
+      doc.x = 50;
+      doc.y = 50;
     }
 
-    doc.fontSize(20).fillColor('#1a1a2e').font('Helvetica-Bold').text('PUENTE DIGITAL', { align: 'left', width: headerTextWidth });
-    doc.fontSize(11).fillColor('#555').font('Helvetica').text('Informe certificado de mediación digital', { align: 'left', width: headerTextWidth });
+    doc.fontSize(20).fillColor('#1a1a2e').font('Helvetica-Bold').text('PUENTE DIGITAL', { align: 'left' });
+    doc.fontSize(11).fillColor('#555').font('Helvetica').text('Informe certificado de mediación digital', { align: 'left' });
     doc.moveDown(0.3);
-    // el texto del título es más bajo que el QR — si no se empuja el cursor,
-    // la línea separadora de acá abajo pasaría por ARRIBA del QR (dibujado
-    // antes) y quedaría como un tachado cruzándolo.
+    // el título+subtítulo son más bajos que el QR — si no se empuja el
+    // cursor, la línea separadora de acá abajo pasaría por ARRIBA del QR
+    // (dibujado antes) y quedaría como un tachado cruzándolo.
     if (qrBuffer) {
       const qrBottomY = 50 + qrSize + 16;
       if (doc.y < qrBottomY) doc.y = qrBottomY;
@@ -84,10 +89,10 @@ async function buildCertifiedReport({ channel, messages, events, nameOf, generat
     doc.moveDown(1);
 
     doc.fontSize(10).fillColor('#000');
-    doc.font('Helvetica-Bold').text('Código de canal: ', { continued: true, width: headerTextWidth }).font('Helvetica').text(channel.code);
-    doc.font('Helvetica-Bold').text('Generado: ', { continued: true, width: headerTextWidth }).font('Helvetica').text(now.toLocaleString('es-AR', { dateStyle: 'long', timeStyle: 'short' }));
+    doc.font('Helvetica-Bold').text('Código de canal: ', { continued: true }).font('Helvetica').text(channel.code);
+    doc.font('Helvetica-Bold').text('Generado: ', { continued: true }).font('Helvetica').text(now.toLocaleString('es-AR', { dateStyle: 'long', timeStyle: 'short' }));
     if (generatedBy) {
-      doc.font('Helvetica-Bold').text('Generado por: ', { continued: true, width: headerTextWidth }).font('Helvetica').text(`${generatedBy.name}${generatedBy.role ? ' (' + generatedBy.role + ')' : ''}`);
+      doc.font('Helvetica-Bold').text('Generado por: ', { continued: true }).font('Helvetica').text(`${generatedBy.name}${generatedBy.role ? ' (' + generatedBy.role + ')' : ''}`);
     }
     doc.moveDown(1);
 
