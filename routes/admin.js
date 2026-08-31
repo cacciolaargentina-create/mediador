@@ -16,6 +16,19 @@ const { getDB, commit } = require('../db');
 const { serializeMessage } = require('../serializers');
 const { isAdminUser } = require('../roles');
 const { logAudit } = require('../audit');
+const wa = require('../whatsapp');
+const { getPendingNotificationsCount } = require('../messaging');
+const waRoutes = require('./whatsapp');
+
+const WHATSAPP_EVENT_LABELS = {
+  notification_sent: 'Notificación enviada',
+  notification_failed: 'Notificación falló',
+  onboarding_create: 'Creó canal (CREAR)',
+  onboarding_join: 'Se unió a canal (UNIRSE)',
+  onboarding_error: 'Onboarding con error',
+  inbound_processed: 'Mensaje procesado',
+  webhook_invalid_signature: 'Firma de webhook inválida',
+};
 
 const PROFESSIONAL_ROLE_LABELS = { mediador: 'mediador/a', estudio: 'estudio jurídico' };
 
@@ -278,6 +291,53 @@ module.exports = function (io) {
           createdAt: a.createdAt,
         };
       });
+    res.json(list);
+  });
+
+  // ---------- panel de WhatsApp ----------
+  router.get('/whatsapp/status', requireAdmin, (req, res) => {
+    const db = getDB();
+    res.json({
+      configured: wa.configured(),
+      webhookConfigured: !!(process.env.WHATSAPP_VERIFY_TOKEN && process.env.WHATSAPP_APP_SECRET),
+      usersWithPhone: db.users.filter((u) => u.phone).length,
+      pendingNotifications: getPendingNotificationsCount(),
+      pendingConfirmations: waRoutes.getPendingConfirmationsCount(),
+    });
+  });
+
+  router.get('/whatsapp/log', requireAdmin, (req, res) => {
+    const db = getDB();
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    const list = [...db.whatsappLog]
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, limit)
+      .map((e) => ({ ...e, kindLabel: WHATSAPP_EVENT_LABELS[e.kind] || e.kind }));
+    res.json(list);
+  });
+
+  router.get('/whatsapp/users', requireAdmin, (req, res) => {
+    const db = getDB();
+    const list = db.users
+      .filter((u) => u.phone)
+      .map((u) => ({
+        id: u.id, name: u.name, phone: u.phone, createdAt: u.createdAt,
+        channels: db.members
+          .filter((m) => m.userId === u.id)
+          .map((m) => (db.channels.find((c) => c.id === m.channelId) || {}).code)
+          .filter(Boolean),
+      }))
+      .sort((a, b) => b.createdAt - a.createdAt);
+    res.json(list);
+  });
+
+  // payloads crudos del webhook — solo debug técnico, se muestra recortado
+  router.get('/whatsapp/webhook-log', requireAdmin, (req, res) => {
+    const db = getDB();
+    const limit = Math.min(Number(req.query.limit) || 50, 100);
+    const list = [...db.whatsappWebhookRaw]
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, limit);
     res.json(list);
   });
 

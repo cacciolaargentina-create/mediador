@@ -7,6 +7,7 @@ const { nanoid } = require('nanoid');
 const { getDB, commit } = require('./db');
 const { serializeMessage } = require('./serializers');
 const { sendText } = require('./whatsapp');
+const { logWhatsappEvent } = require('./whatsappLog');
 
 const PATTERN_THRESHOLD = 3;
 const NOTIFY_DEBOUNCE_MS = Number(process.env.WHATSAPP_NOTIFY_DEBOUNCE_MS) || 2 * 60 * 1000;
@@ -129,9 +130,22 @@ async function fireNotification(key) {
   const text = `Tenés ${plural} de ${entry.fromName} en Puente Digital. Verlo: ${link}`;
   try {
     await sendText(toUser.phone, text);
+    logWhatsappEvent(db, {
+      kind: 'notification_sent', phone: toUser.phone, userName: toUser.name,
+      channelCode: channel.code, detail: `${plural} de ${entry.fromName}`,
+    });
   } catch (err) {
     console.error('No se pudo enviar la notificación de WhatsApp:', err);
+    logWhatsappEvent(db, {
+      kind: 'notification_failed', phone: toUser.phone, userName: toUser.name,
+      channelCode: channel.code, detail: err.message || String(err),
+    });
   }
+  await commit();
 }
 
-module.exports = { postMessage, postSystemMessage, scheduleNotification, accessLinkFor };
+function getPendingNotificationsCount() {
+  return pendingNotifications.size;
+}
+
+module.exports = { postMessage, postSystemMessage, scheduleNotification, accessLinkFor, getPendingNotificationsCount };

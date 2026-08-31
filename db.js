@@ -33,6 +33,8 @@ const EMPTY_DB = {
   expenses: [],    // { id, channelId, amount, description, requestedBy(userId), status:'pendiente'|'confirmado'|'rechazado', respondedAt, createdAt }
   checkins: [],    // { id, channelId, userId, lat, lng, createdAt } — la ubicación nunca se muestra en el texto del chat, solo queda en el registro
   auditLog: [],    // { id, actorId, action, channelCode, meta, createdAt } — acciones sensibles para el panel de admin
+  whatsappLog: [],      // { id, kind, phone, userName, channelCode, detail, createdAt } — notificaciones enviadas, onboarding, mensajes entrantes procesados
+  whatsappWebhookRaw: [], // { id, payload, createdAt } — últimos payloads crudos del webhook de Meta, para debug técnico
 };
 
 const SCHEMA = `
@@ -70,6 +72,12 @@ CREATE TABLE IF NOT EXISTS checkins (
 CREATE TABLE IF NOT EXISTS audit_log (
   id TEXT PRIMARY KEY, actorId TEXT, action TEXT, channelCode TEXT, meta TEXT, createdAt INTEGER
 );
+CREATE TABLE IF NOT EXISTS whatsapp_log (
+  id TEXT PRIMARY KEY, kind TEXT, phone TEXT, userName TEXT, channelCode TEXT, detail TEXT, createdAt INTEGER
+);
+CREATE TABLE IF NOT EXISTS whatsapp_webhook_raw (
+  id TEXT PRIMARY KEY, payload TEXT, createdAt INTEGER
+);
 CREATE INDEX IF NOT EXISTS idx_members_channel ON members(channelId);
 CREATE INDEX IF NOT EXISTS idx_members_user ON members(userId);
 CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channelId);
@@ -96,6 +104,7 @@ const TABLE_NAMES = {
   users: 'users', channels: 'channels', members: 'members', messages: 'messages',
   events: 'events', caseNotes: 'case_notes', expenses: 'expenses',
   checkins: 'checkins', auditLog: 'audit_log',
+  whatsappLog: 'whatsapp_log', whatsappWebhookRaw: 'whatsapp_webhook_raw',
 };
 
 function rowToRecord(collectionKey, row) {

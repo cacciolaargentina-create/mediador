@@ -26,10 +26,12 @@ async function api(path, opts){
   if(!check.isAdmin){ renderNoAccess(app, me); return; }
 
   try{
-    const [overview, users, channels, trend, professionals, audit] = await Promise.all([
-      api('/api/admin/overview'), api('/api/admin/users'), api('/api/admin/channels'), api('/api/admin/trend'), api('/api/admin/professionals'), api('/api/admin/audit'),
+    const [overview, users, channels, trend, professionals, audit, waStatus, waLog, waUsers] = await Promise.all([
+      api('/api/admin/overview'), api('/api/admin/users'), api('/api/admin/channels'), api('/api/admin/trend'),
+      api('/api/admin/professionals'), api('/api/admin/audit'),
+      api('/api/admin/whatsapp/status'), api('/api/admin/whatsapp/log'), api('/api/admin/whatsapp/users'),
     ]);
-    renderDashboard(app, me, overview, users, channels, trend, professionals, audit);
+    renderDashboard(app, me, overview, users, channels, trend, professionals, audit, waStatus, waLog, waUsers);
   }catch(e){
     app.innerHTML = `<div class="center-note"><span class="brand">Puente<em>digital</em></span>No se pudo cargar el panel. Probá recargar la página.</div>`;
   }
@@ -92,7 +94,7 @@ const AUDIT_ACTION_LABELS = {
   unassign_professional: 'Quitó un/a profesional',
 };
 
-function renderDashboard(app, me, ov, users, channels, trend, professionals, audit){
+function renderDashboard(app, me, ov, users, channels, trend, professionals, audit, waStatus, waLog, waUsers){
   app.innerHTML = `
     <div class="wrap">
       <header>
@@ -238,6 +240,66 @@ function renderDashboard(app, me, ov, users, channels, trend, professionals, aud
       </section>
 
       <section class="block">
+        <h2 class="block-title">WhatsApp</h2>
+        <div class="stat-grid" style="margin-bottom:16px;">
+          <div class="stat-card">
+            <div class="num" style="font-size:18px; color:${waStatus.configured ? 'var(--calm)' : 'var(--danger)'}">${waStatus.configured ? '✓ Configurado' : '✗ Sin configurar'}</div>
+            <div class="lab">Envío de mensajes (token/número)</div>
+          </div>
+          <div class="stat-card">
+            <div class="num" style="font-size:18px; color:${waStatus.webhookConfigured ? 'var(--calm)' : 'var(--danger)'}">${waStatus.webhookConfigured ? '✓ Configurado' : '✗ Sin configurar'}</div>
+            <div class="lab">Webhook (verify token/app secret)</div>
+          </div>
+          <div class="stat-card">
+            <div class="num">${waStatus.usersWithPhone}</div>
+            <div class="lab">Usuarios vinculados por teléfono</div>
+          </div>
+          <div class="stat-card">
+            <div class="num">${waStatus.pendingNotifications + waStatus.pendingConfirmations}</div>
+            <div class="lab">En cola ahora mismo</div>
+            <div class="sub">${waStatus.pendingNotifications} notificación/es agrupándose · ${waStatus.pendingConfirmations} confirmación/es esperando respuesta</div>
+          </div>
+        </div>
+
+        <h3 style="font-size:13px; margin-bottom:8px; color:var(--text-dim);">Usuarios vinculados por teléfono (${waUsers.length})</h3>
+        <div class="table-wrap" style="margin-bottom:16px;">
+          <table class="min-w">
+            <thead><tr><th>Nombre</th><th>Teléfono</th><th>Canales</th><th>Vinculado</th></tr></thead>
+            <tbody>
+              ${waUsers.length ? waUsers.map(u => `<tr>
+                <td class="strong">${escapeHtml(u.name)}</td>
+                <td>${escapeHtml(u.phone)}</td>
+                <td>${u.channels.map(escapeHtml).join(', ') || '—'}</td>
+                <td>${fmtDate(u.createdAt)}</td>
+              </tr>`).join('') : `<tr><td colspan="4"><div class="empty-hint">Nadie se vinculó por WhatsApp todavía.</div></td></tr>`}
+            </tbody>
+          </table>
+        </div>
+
+        <h3 style="font-size:13px; margin-bottom:8px; color:var(--text-dim);">Actividad reciente de WhatsApp (${waLog.length})</h3>
+        <div class="table-wrap" style="margin-bottom:16px;">
+          <table class="min-w">
+            <thead><tr><th>Cuándo</th><th>Evento</th><th>Teléfono</th><th>Nombre</th><th>Canal</th><th>Detalle</th></tr></thead>
+            <tbody>
+              ${waLog.length ? waLog.map(e => `<tr>
+                <td>${fmtDate(e.createdAt)}</td>
+                <td>${escapeHtml(e.kindLabel)}</td>
+                <td>${e.phone ? escapeHtml(e.phone) : '—'}</td>
+                <td>${e.userName ? escapeHtml(e.userName) : '—'}</td>
+                <td>${e.channelCode ? escapeHtml(e.channelCode) : '—'}</td>
+                <td>${e.detail ? escapeHtml(e.detail) : '—'}</td>
+              </tr>`).join('') : `<tr><td colspan="6"><div class="empty-hint">Todavía no hay actividad de WhatsApp.</div></td></tr>`}
+            </tbody>
+          </table>
+        </div>
+
+        <details>
+          <summary style="cursor:pointer; font-size:12.5px; color:var(--text-dim); margin-bottom:10px;">Debug: payloads crudos del webhook</summary>
+          <div id="wa-webhook-log" style="margin-top:10px;"><button class="ghost" onclick="loadWebhookRawLog()">Cargar</button></div>
+        </details>
+      </section>
+
+      <section class="block">
         <h2 class="block-title">Actividad reciente</h2>
         <p class="chart-note" style="margin-bottom:12px;">Acciones sensibles: exportar informes, asignar o quitar profesionales. No es un log de cada clic.</p>
         <div class="table-wrap">
@@ -265,6 +327,23 @@ async function unassignProfessional(code, userId, name, channelCode){
     location.reload();
   }catch(e){
     alert(e.error || 'No se pudo quitar.');
+  }
+}
+
+async function loadWebhookRawLog(){
+  const el = document.getElementById('wa-webhook-log');
+  el.innerHTML = `<p class="empty-hint">Cargando…</p>`;
+  try{
+    const list = await api('/api/admin/whatsapp/webhook-log');
+    el.innerHTML = list.length
+      ? list.map(r => `
+          <div class="card" style="margin-bottom:8px;">
+            <div class="chart-note" style="margin-bottom:6px;">${fmtDate(r.createdAt)}</div>
+            <pre style="white-space:pre-wrap; word-break:break-all; font-family:var(--mono); font-size:10.5px; color:var(--text-dim); max-height:200px; overflow:auto;">${escapeHtml(r.payload)}</pre>
+          </div>`).join('')
+      : `<p class="empty-hint">Sin payloads registrados todavía.</p>`;
+  }catch(e){
+    el.innerHTML = `<p class="empty-hint">No se pudo cargar.</p>`;
   }
 }
 

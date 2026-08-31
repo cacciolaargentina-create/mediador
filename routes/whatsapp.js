@@ -10,6 +10,7 @@ const { getDB, commit } = require('../db');
 const { analyzeMessage } = require('../moderation');
 const { postMessage, postSystemMessage } = require('../messaging');
 const { sendText, sendButtons, verifySignature } = require('../whatsapp');
+const { logWhatsappEvent, logWebhookRaw } = require('../whatsappLog');
 
 const genCode = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 6);
 
@@ -88,8 +89,17 @@ module.exports = function (io) {
 
     if (!verifySignature(req.rawBody, req.headers['x-hub-signature-256'])) {
       console.warn('Firma de webhook de WhatsApp inválida — mensaje descartado.');
+      const db = getDB();
+      logWhatsappEvent(db, { kind: 'webhook_invalid_signature', detail: 'Firma X-Hub-Signature-256 inválida o ausente' });
+      await commit();
       return;
     }
+
+    // guardado para debug técnico — recortado a las últimas N entradas,
+    // separado del log de actividad porque es más pesado/sensible.
+    const dbRaw = getDB();
+    logWebhookRaw(dbRaw, req.body);
+    await commit();
 
     const value = req.body?.entry?.[0]?.changes?.[0]?.value;
     const incoming = value?.messages?.[0];
@@ -120,11 +130,14 @@ module.exports = function (io) {
   async function handleOnboarding(phone, text) {
     const crearMatch = text.match(/^crear\s+(.+)$/i);
     const unirseMatch = text.match(/^unirse\s+(\S+)\s+(.+)$/i);
+    const db = getDB();
 
     if (crearMatch) {
       const name = crearMatch[1].trim();
       const channel = await createChannelFromWhatsApp(phone, name);
       await sendText(phone, `¡Listo, ${name}! Creé tu canal en Puente Digital. Código: ${channel.code}\nCompartiselo a la otra persona para que mande: UNIRSE ${channel.code} Su Nombre`);
+      logWhatsappEvent(db, { kind: 'onboarding_create', phone, userName: name, channelCode: channel.code });
+      await commit();
       return;
     }
     if (unirseMatch) {
@@ -133,13 +146,19 @@ module.exports = function (io) {
       const result = await joinChannelFromWhatsApp(phone, name, code);
       if (result.error) {
         await sendText(phone, result.error);
+        logWhatsappEvent(db, { kind: 'onboarding_error', phone, userName: name, channelCode: code.toUpperCase(), detail: result.error });
+        await commit();
         return;
       }
       await sendText(phone, `¡Listo, ${name}! Te uniste al canal ${result.channel.code}.`);
       await postSystemMessage(io, result.channel, `${name} se unió al canal.`);
+      logWhatsappEvent(db, { kind: 'onboarding_join', phone, userName: name, channelCode: result.channel.code });
+      await commit();
       return;
     }
     await sendText(phone, USAGE_TEXT);
+    logWhatsappEvent(db, { kind: 'onboarding_error', phone, detail: 'Comando no reconocido' });
+    await commit();
   }
 
   async function handleFreeText(phone, text, { channel, user }, io) {
@@ -166,6 +185,9 @@ module.exports = function (io) {
       return;
     }
     await postMessage(io, channel, { senderId: user.id, text, flagged: false, reason: null });
+    const db = getDB();
+    logWhatsappEvent(db, { kind: 'inbound_processed', phone, userName: user.name, channelCode: channel.code });
+    await commit();
   }
 
   async function handleButtonReply(phone, buttonId, io) {
@@ -178,12 +200,19 @@ module.exports = function (io) {
     const channel = db.channels.find((c) => c.id === pending.channelId);
     if (!channel) return;
 
+    let sender = null;
     if (buttonId === 'use_alt') {
-      await postMessage(io, channel, { senderId: pending.senderId, text: pending.reformulation, flagged: true, reason: pending.reason });
+      sender = await postMessage(io, channel, { senderId: pending.senderId, text: pending.reformulation, flagged: true, reason: pending.reason });
     } else if (buttonId === 'use_orig') {
-      await postMessage(io, channel, { senderId: pending.senderId, text: pending.original, flagged: true, reason: 'Enviado sin cambios pese a la señal del sistema.' });
+      sender = await postMessage(io, channel, { senderId: pending.senderId, text: pending.original, flagged: true, reason: 'Enviado sin cambios pese a la señal del sistema.' });
+    }
+    if (sender) {
+      logWhatsappEvent(db, { kind: 'inbound_processed', phone, userName: sender.sender ? sender.sender.name : null, channelCode: channel.code, detail: buttonId === 'use_alt' ? 'usó la sugerencia' : 'envió igual' });
+      await commit();
     }
   }
 
   return router;
 };
+
+module.exports.getPendingConfirmationsCount = () => pendingConfirmations.size;
