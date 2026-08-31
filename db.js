@@ -35,6 +35,7 @@ const EMPTY_DB = {
   auditLog: [],    // { id, actorId, action, channelCode, meta, createdAt } — acciones sensibles para el panel de admin
   whatsappLog: [],      // { id, kind, phone, userName, channelCode, detail, createdAt } — notificaciones enviadas, onboarding, mensajes entrantes procesados
   whatsappWebhookRaw: [], // { id, payload, createdAt } — últimos payloads crudos del webhook de Meta, para debug técnico
+  certifiedExports: [], // { id, hash, channelCode, generatedByName, generatedByRole, createdAt } — un registro por cada export certificado en PDF, para que la página pública de verificación (/verificar/:hash) pueda confirmar que el documento realmente salió de acá
 };
 
 const SCHEMA = `
@@ -78,6 +79,11 @@ CREATE TABLE IF NOT EXISTS whatsapp_log (
 CREATE TABLE IF NOT EXISTS whatsapp_webhook_raw (
   id TEXT PRIMARY KEY, payload TEXT, createdAt INTEGER
 );
+CREATE TABLE IF NOT EXISTS certified_exports (
+  id TEXT PRIMARY KEY, hash TEXT UNIQUE, channelCode TEXT, generatedByName TEXT,
+  generatedByRole TEXT, createdAt INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_certified_exports_hash ON certified_exports(hash);
 CREATE INDEX IF NOT EXISTS idx_members_channel ON members(channelId);
 CREATE INDEX IF NOT EXISTS idx_members_user ON members(userId);
 CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channelId);
@@ -106,6 +112,7 @@ const TABLE_NAMES = {
   events: 'events', caseNotes: 'case_notes', expenses: 'expenses',
   checkins: 'checkins', auditLog: 'audit_log',
   whatsappLog: 'whatsapp_log', whatsappWebhookRaw: 'whatsapp_webhook_raw',
+  certifiedExports: 'certified_exports',
 };
 
 function rowToRecord(collectionKey, row) {

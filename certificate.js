@@ -8,6 +8,7 @@
 
 const crypto = require('crypto');
 const PDFDocument = require('pdfkit');
+const QRCode = require('qrcode');
 
 function fmt(ts) {
   return new Date(ts).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
@@ -38,11 +39,19 @@ function integrityHash(plainContent) {
   return crypto.createHash('sha256').update(plainContent, 'utf-8').digest('hex');
 }
 
-// { channel, messages, events, nameOf, generatedBy: {name, role} } -> Promise<Buffer>
-function buildCertifiedReport({ channel, messages, events, nameOf, generatedBy }) {
+// { channel, messages, events, nameOf, generatedBy: {name, role}, verifyUrl } -> Promise<Buffer>
+// verifyUrl es opcional: si se pasa, se imprime un QR que lleva a una página
+// pública (fuera de la app, sin login) que confirma que el documento salió
+// de Puente Digital — pensado para cuando el PDF se lleva a un ámbito donde
+// quien lo recibe no tiene cuenta ni contexto de la app.
+async function buildCertifiedReport({ channel, messages, events, nameOf, generatedBy, verifyUrl }) {
   const plainContent = buildPlainContent({ channel, messages, events, nameOf });
   const hash = integrityHash(plainContent);
   const now = new Date();
+
+  const qrBuffer = verifyUrl
+    ? await QRCode.toBuffer(verifyUrl, { type: 'png', width: 200, margin: 1, color: { dark: '#1a1a2e', light: '#ffffff' } })
+    : null;
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
@@ -93,6 +102,8 @@ function buildCertifiedReport({ channel, messages, events, nameOf, generatedBy }
 
     // ---- pie legal + hash de integridad en cada página ----
     const range = doc.bufferedPageRange();
+    const qrSize = 55;
+    const textWidth = qrBuffer ? 495 - qrSize - 12 : 495;
     for (let i = range.start; i < range.start + range.count; i++) {
       doc.switchToPage(i);
       const bottom = doc.page.height - 60;
@@ -100,9 +111,14 @@ function buildCertifiedReport({ channel, messages, events, nameOf, generatedBy }
       doc.text(
         'Documento generado automáticamente por Puente Digital a partir del registro digital del canal. ' +
         'No constituye una certificación notarial ni pericial, pero es un registro fiel del contenido del canal al momento de su generación.',
-        50, bottom, { width: 495, align: 'left' }
+        50, bottom, { width: textWidth, align: 'left' }
       );
-      doc.text(`Hash de integridad (SHA-256): ${hash}`, 50, bottom + 20, { width: 495, align: 'left' });
+      doc.text(`Hash de integridad (SHA-256): ${hash}`, 50, bottom + 20, { width: textWidth, align: 'left' });
+      if (qrBuffer) {
+        const qrX = 50 + textWidth + 12;
+        doc.image(qrBuffer, qrX, bottom - 5, { width: qrSize, height: qrSize });
+        doc.fontSize(6.5).fillColor('#777').font('Helvetica').text('Verificar autenticidad', qrX - 8, bottom + qrSize - 3, { width: qrSize + 16, align: 'center' });
+      }
     }
 
     doc.end();

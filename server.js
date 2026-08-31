@@ -84,6 +84,7 @@ const guestRoutes = require('./routes/guest')(io);
 const adminRoutes = require('./routes/admin')(io);
 const whatsappRoutes = require('./routes/whatsapp')(io);
 const draftRoutes = require('./routes/draft')();
+const verifyRoutes = require('./routes/verify');
 
 app.use('/auth', authRoutes);
 app.use('/api/channels', channelRoutes);
@@ -91,6 +92,7 @@ app.use('/api/guest', guestRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/webhook/whatsapp', whatsappRoutes);
 app.use('/api/draft', draftRoutes);
+app.use('/verificar', verifyRoutes);
 
 app.get('/api/health', (req, res) => res.json({ ok: true, users: getDB().users.length }));
 

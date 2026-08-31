@@ -8,7 +8,7 @@ const { askAssistant } = require('../assistant');
 const { publicUser, serializeChannel, serializeMessage, serializeEvent } = require('../serializers');
 const { buildCalendarFeed } = require('../ics');
 const { postMessage, postSystemMessage } = require('../messaging');
-const { buildCertifiedReport } = require('../certificate');
+const { buildCertifiedReport, integrityHash, buildPlainContent } = require('../certificate');
 const { isAdminUser } = require('../roles');
 const { logAudit } = require('../audit');
 const { requireQuotaOrSubscription } = require('../quota');
@@ -605,14 +605,28 @@ module.exports = function (io) {
     const nameOf = (id) => publicUser(id)?.name || id;
 
     try {
+      // el hash se calcula acá (no adentro de buildCertifiedReport) porque
+      // hace falta ANTES de armar el PDF, para poder meter la URL de
+      // verificación (con el hash incluido) en el QR del propio documento.
+      const hash = integrityHash(buildPlainContent({ channel: req.channel, messages: msgs, events, nameOf }));
+      const generatedBy = { name: req.user.name, role: roleLabelForExport(req.membership.role) };
+      const verifyUrl = `${req.protocol}://${req.get('host')}/verificar/${hash}`;
+
       const pdf = await buildCertifiedReport({
         channel: req.channel,
         messages: msgs,
         events,
         nameOf,
-        generatedBy: { name: req.user.name, role: roleLabelForExport(req.membership.role) },
+        generatedBy,
+        verifyUrl,
       });
-      logAudit(db, { actorId: req.user.id, action: 'export_certified', channelCode: req.channel.code });
+
+      db.certifiedExports.push({
+        id: nanoid(), hash, channelCode: req.channel.code,
+        generatedByName: generatedBy.name, generatedByRole: generatedBy.role,
+        createdAt: Date.now(),
+      });
+      logAudit(db, { actorId: req.user.id, action: 'export_certified', channelCode: req.channel.code, meta: { hash } });
       await commit();
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="informe-certificado-${req.channel.code}.pdf"`);

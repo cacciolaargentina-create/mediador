@@ -19,6 +19,7 @@
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "pdfkit": "^0.20.1",
+    "qrcode": "^1.5.4",
     "socket.io": "^4.7.5"
   }
 }

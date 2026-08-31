@@ -1324,6 +1324,7 @@ function renderHistorial(keepFocus){
     <div class="card">${listHtml}</div>
     <button class="ghost" style="width:100%; margin-top:12px;" onclick="exportReport()">Descargar informe (.txt)</button>
     <button class="ghost" style="width:100%; margin-top:8px;" onclick="exportCertifiedReport()">Descargar informe certificado (PDF)</button>
+    <div class="empty-hint" style="margin-top:4px; text-align:center;">Incluye un código QR para verificar su autenticidad</div>
     ${notesHtml}
   `;
   if(keepFocus){
