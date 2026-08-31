@@ -311,6 +311,14 @@
     </div>
   </section>
 
+  <section class="screen" id="screen-borrador">
+    <div class="pad">
+      <h1 class="screen-title">Borrador privado</h1>
+      <p class="screen-sub">Probá la reformulación sin crear ni unirte a ningún canal. Nada de esto se guarda — cada vez que entrás acá arranca en blanco. Copiá el resultado y pegalo donde ya le escribís a la otra persona.</p>
+      <div id="borrador-content"></div>
+    </div>
+  </section>
+
   <section class="screen" id="screen-invitar">
     <div class="pad">
       <h1 class="screen-title">Tu canal</h1>
@@ -390,10 +398,11 @@
       <h1 class="screen-title">Un tercer canal, no un árbitro.</h1>
       <p class="screen-sub">Para cuando hay que seguir coordinando con la otra persona —horarios, entregas, acuerdos— pero cada mensaje corre el riesgo de escalar. La IA no decide quién tiene razón: ayuda a que lo que se dice quede centrado en hechos.</p>
     </div>
-    <div class="hero-demo">
-      <div class="eyebrow">Un ejemplo real</div>
-      <div class="bubble original"><div class="bubble-label">Mensaje original</div>Otra vez llegás tarde. Sos un desastre y nunca te importa nuestro hijo.</div>
-      <div class="bubble suggested"><div class="bubble-label">Alternativa sugerida por la IA</div>Hoy la entrega se realizó 25 minutos después del horario acordado. ¿Podemos confirmar el horario para la próxima entrega?</div>
+    <div class="hero-demo" id="hero-demo">
+      <div class="eyebrow">Probalo vos mismo — sin registrarte</div>
+      <textarea id="demo-input" placeholder="Escribí un mensaje como el que le mandarías a la otra persona…" style="min-height:70px; margin-bottom:10px;"></textarea>
+      <button class="ghost" style="width:100%;" onclick="runDemo()" id="demo-btn">Revisar mensaje</button>
+      <div id="demo-result" style="margin-top:12px;"></div>
     </div>
   </div>
 
@@ -519,6 +528,7 @@
 
 <nav class="tabs" id="tabs" style="display:none">
   <button class="active" data-screen="inicio" onclick="goTo('inicio')"><span class="ic">🏠</span>Inicio</button>
+  <button data-screen="borrador" onclick="goTo('borrador')"><span class="ic">📝</span>Borrador</button>
   <button data-screen="invitar" onclick="goTo('invitar')"><span class="ic">🔗</span>Canal</button>
   <button data-screen="chat" onclick="goTo('chat')"><span class="ic">💬</span>Chat<span class="dot-alert" id="dot-chat"></span></button>
   <button data-screen="calendario" onclick="goTo('calendario')"><span class="ic">📅</span>Calendario<span class="dot-alert" id="dot-calendario"></span></button>

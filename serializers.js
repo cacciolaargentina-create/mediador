@@ -17,7 +17,10 @@ function serializeChannel(channel) {
   const members = db.members
     .filter((m) => m.channelId === channel.id)
     .map((m) => ({ role: m.role, label: m.label || null, user: publicUser(m.userId) }));
-  return { code: channel.code, createdAt: channel.createdAt, guestToken: channel.guestToken || null, members };
+  return {
+    code: channel.code, createdAt: channel.createdAt, guestToken: channel.guestToken || null, members,
+    lastSummary: channel.lastSummary || null,
+  };
 }
 
 function serializeMessage(m) {

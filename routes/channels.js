@@ -11,6 +11,7 @@ const { postMessage, postSystemMessage } = require('../messaging');
 const { buildCertifiedReport } = require('../certificate');
 const { isAdminUser } = require('../roles');
 const { logAudit } = require('../audit');
+const { requireQuotaOrSubscription } = require('../quota');
 
 const genCode = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 6);
 const PATTERN_THRESHOLD = 3;
@@ -260,7 +261,7 @@ module.exports = function (io) {
   });
 
   // analiza sin guardar — el frontend decide si usa la reformulación
-  router.post('/:code/analyze', analyzeLimiter, requireAuth, requireMembership, async (req, res) => {
+  router.post('/:code/analyze', analyzeLimiter, requireAuth, requireMembership, requireQuotaOrSubscription, async (req, res) => {
     const { text } = req.body;
     if (!text || !text.trim()) return res.status(400).json({ error: 'Mensaje vacío' });
     try {

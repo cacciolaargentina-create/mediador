@@ -40,11 +40,11 @@ const EMPTY_DB = {
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY, googleId TEXT, email TEXT, name TEXT, avatar TEXT,
-  phone TEXT, guest INTEGER DEFAULT 0, createdAt INTEGER
+  phone TEXT, guest INTEGER DEFAULT 0, aiUsage TEXT, createdAt INTEGER
 );
 CREATE TABLE IF NOT EXISTS channels (
   id TEXT PRIMARY KEY, code TEXT UNIQUE, guestToken TEXT, calendarToken TEXT,
-  professionalInvites TEXT, createdAt INTEGER
+  professionalInvites TEXT, remindedAt INTEGER, lastSummary TEXT, createdAt INTEGER
 );
 CREATE TABLE IF NOT EXISTS members (
   id TEXT PRIMARY KEY, channelId TEXT, userId TEXT, role TEXT, label TEXT,
@@ -97,8 +97,9 @@ const BOOL_COLUMNS = {
 };
 // columnas que viajan como objeto/array en JS pero se guardan como texto JSON
 const JSON_COLUMNS = {
-  channels: ['professionalInvites'],
+  channels: ['professionalInvites', 'lastSummary'],
   auditLog: ['meta'],
+  users: ['aiUsage'],
 };
 const TABLE_NAMES = {
   users: 'users', channels: 'channels', members: 'members', messages: 'messages',
@@ -125,11 +126,26 @@ function recordToRow(collectionKey, rec) {
   return row;
 }
 
+// agrega columnas nuevas a una tabla que ya existía de una versión anterior
+// del esquema — CREATE TABLE IF NOT EXISTS no las suma sola en una base que
+// ya está creada. Sin esto, un data.sqlite de producción de antes de sumar
+// un campo se queda corto y explota en el primer INSERT.
+function ensureColumns(sqlite, table, columns) {
+  const existing = new Set(sqlite.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name));
+  for (const [name, type] of Object.entries(columns)) {
+    if (!existing.has(name)) {
+      sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+    }
+  }
+}
+
 function openDb() {
   const isNew = !fs.existsSync(SQLITE_PATH);
   const sqlite = new DatabaseSync(SQLITE_PATH);
   sqlite.exec('PRAGMA journal_mode = WAL;');
   sqlite.exec(SCHEMA);
+  ensureColumns(sqlite, 'users', { aiUsage: 'TEXT' });
+  ensureColumns(sqlite, 'channels', { remindedAt: 'INTEGER', lastSummary: 'TEXT' });
   if (isNew && fs.existsSync(LEGACY_JSON_PATH)) {
     migrateFromJson(sqlite, LEGACY_JSON_PATH);
   }

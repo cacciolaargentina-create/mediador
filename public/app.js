@@ -468,6 +468,7 @@ function goTo(name){
   if(name === 'historial') renderHistorial();
   if(name === 'asistente') renderAsistenteScreen();
   if(name === 'misCasos') renderMisCasos();
+  if(name === 'borrador') renderBorrador();
 }
 function updateNavBadges(){
   const chatDot = document.getElementById('dot-chat');
@@ -494,23 +495,31 @@ function renderInicioSummary(){
   const slot = document.getElementById('inicio-summary-slot');
   if(!slot) return;
   if(!channelInfo){ slot.innerHTML = ''; return; }
+
+  const summaryHtml = channelInfo.lastSummary ? `
+    <div class="card">
+      <div class="eyebrow">Resumen de la semana</div>
+      <p style="font-size:13px; line-height:1.5;">${channelInfo.lastSummary.stats.messages} mensajes revisados · ${channelInfo.lastSummary.stats.flagged} marcados por el sistema · ${channelInfo.lastSummary.stats.confirmedEvents} acuerdos confirmados.</p>
+    </div>
+  ` : '';
+
   const upcoming = [...events]
     .filter(ev => ev.status !== 'rechazado')
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(0, 4);
-  if(!upcoming.length){ slot.innerHTML = ''; return; }
-  const rows = upcoming.map(ev => {
-    const d = new Date(ev.date + 'T00:00:00');
-    const dayLabel = d.toLocaleDateString('es-AR', {day:'2-digit', month:'short'}).replace('.','');
-    return `<div class="mini-event"><span class="day">${dayLabel}</span><span class="what">${escapeHtml(ev.detail)}</span><span class="ev-pill ${ev.status}">${ev.status}</span></div>`;
-  }).join('');
-  slot.innerHTML = `
+  const eventsHtml = upcoming.length ? `
     <div class="card">
       <div class="eyebrow">Tus próximos eventos</div>
-      ${rows}
+      ${upcoming.map(ev => {
+        const d = new Date(ev.date + 'T00:00:00');
+        const dayLabel = d.toLocaleDateString('es-AR', {day:'2-digit', month:'short'}).replace('.','');
+        return `<div class="mini-event"><span class="day">${dayLabel}</span><span class="what">${escapeHtml(ev.detail)}</span><span class="ev-pill ${ev.status}">${ev.status}</span></div>`;
+      }).join('')}
       <button class="text-link" style="margin-top:8px;" onclick="goTo('calendario')">Ver calendario completo →</button>
     </div>
-  `;
+  ` : '';
+
+  slot.innerHTML = summaryHtml + eventsHtml;
 }
 
 // ==================================================================
@@ -568,6 +577,9 @@ function renderInvitar(){
           <button class="ghost small" onclick="copyShareUrl()">Copiar</button>
         </div>
         <div class="status-banner ${other && other.user ? 'ok' : 'warn'}"><span class="dot"></span>${other && other.user ? escapeHtml(other.user.name) + ' está en el canal' : 'Esperando a que se una'}</div>
+        ${(!other?.user && (Date.now() - channelInfo.createdAt > 3*24*60*60*1000)) ? `
+          <div class="status-banner warn" style="margin-top:8px;"><span class="dot"></span>Todavía nadie se unió — ¿le reenviás el link de arriba a la otra persona?</div>
+        ` : ''}
       </div>
       ${guestCard}
       ${membersCard}
@@ -1463,4 +1475,115 @@ async function renderMisCasos(){
       <div class="ts" style="margin-top:6px;">${c.messageCount} mensajes · última actividad ${fmtTs(c.lastActivity)}</div>
     </div>
   `).join('');
+}
+
+// ==================================================================
+// COPIAR TEXTO — clipboard API con fallback tipo el que ya usa
+// copyShareUrl() (execCommand sobre un elemento temporal), para navegadores
+// o contextos (ej. http sin TLS en dev) donde navigator.clipboard no está.
+// ==================================================================
+async function copyText(text, btn){
+  const original = btn ? btn.textContent : null;
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(text);
+    } else {
+      throw new Error('sin clipboard API');
+    }
+  }catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try{ document.execCommand('copy'); }catch(e2){ /* último recurso agotado, no hay más fallback */ }
+    document.body.removeChild(ta);
+  }
+  if(btn){
+    btn.textContent = 'Copiado ✓';
+    setTimeout(() => { btn.textContent = original; }, 1500);
+  }
+}
+
+// ==================================================================
+// TAREA A — BORRADOR PRIVADO (sin canal, sin login de "compartir", nada se guarda)
+// ==================================================================
+function renderBorrador(){
+  const el = document.getElementById('borrador-content');
+  el.innerHTML = `
+    <div class="card">
+      <textarea id="draft-input" placeholder="Escribí el mensaje que le querés mandar a la otra persona…" style="min-height:100px; margin-bottom:10px;"></textarea>
+      <button class="primary" style="width:100%" onclick="runDraftAnalyze()" id="draft-btn">Revisar</button>
+      <div id="draft-result" style="margin-top:12px;"></div>
+    </div>
+  `;
+}
+
+async function runDraftAnalyze(){
+  const input = document.getElementById('draft-input');
+  const text = input.value.trim();
+  const resultEl = document.getElementById('draft-result');
+  const btn = document.getElementById('draft-btn');
+  if(!text) return;
+  btn.disabled = true;
+  btn.textContent = 'Revisando…';
+  try{
+    const result = await api('/api/draft/analyze', { method:'POST', body: JSON.stringify({ text }) });
+    resultEl.innerHTML = renderAnalysisResult(text, result, 'draft-result');
+  }catch(e){
+    resultEl.innerHTML = `<p class="empty-hint" style="color:var(--danger)">${escapeHtml(e.error || 'No se pudo analizar el mensaje. Probá de nuevo.')}</p>`;
+  }
+  btn.disabled = false;
+  btn.textContent = 'Revisar';
+}
+
+// compartido entre el borrador (Tarea A) y la demo pública (Tarea B) — mismo
+// shape de respuesta {flagged, category, reason, reformulation}, mismo layout.
+function renderAnalysisResult(original, result, scopeId){
+  if(!result.flagged){
+    return `<p class="empty-hint">Este mensaje no muestra señales de conflicto.</p>`;
+  }
+  const idOrig = scopeId + '-orig-btn';
+  const idRef = scopeId + '-ref-btn';
+  return `
+    <div class="reform-card">
+      <div class="block orig">
+        <div class="bubble-label">Mensaje original</div>
+        <div class="txt">${escapeHtml(original)}</div>
+        <button class="ghost small" id="${idOrig}" onclick="copyText(${JSON.stringify(original)}, document.getElementById('${idOrig}'))" style="margin-top:6px;">Copiar</button>
+      </div>
+      <div class="block alt" style="margin-top:10px;">
+        <div class="bubble-label">Alternativa sugerida (${escapeHtml(result.category || 'lenguaje conflictivo')})</div>
+        <div class="txt">${escapeHtml(result.reformulation)}</div>
+        <button class="ghost small" id="${idRef}" onclick="copyText(${JSON.stringify(result.reformulation)}, document.getElementById('${idRef}'))" style="margin-top:6px;">Copiar</button>
+      </div>
+      <p style="font-size:11.5px; color:var(--text-faint); margin-top:8px;">${escapeHtml(result.reason || '')}</p>
+    </div>
+  `;
+}
+
+// ==================================================================
+// TAREA B — DEMO PÚBLICA (login-screen, sin sesión)
+// ==================================================================
+async function runDemo(){
+  const input = document.getElementById('demo-input');
+  const text = input.value.trim();
+  const resultEl = document.getElementById('demo-result');
+  const btn = document.getElementById('demo-btn');
+  if(!text) return;
+  btn.disabled = true;
+  btn.textContent = 'Revisando…';
+  try{
+    const resp = await fetch('/api/draft/demo', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ text }),
+    });
+    const data = await resp.json();
+    if(!resp.ok) throw data;
+    resultEl.innerHTML = renderAnalysisResult(text, data, 'demo-result');
+  }catch(e){
+    resultEl.innerHTML = `<p class="empty-hint" style="color:var(--danger)">${escapeHtml(e.error || 'No se pudo analizar el mensaje. Probá de nuevo en un rato.')}</p>`;
+  }
+  btn.disabled = false;
+  btn.textContent = 'Revisar mensaje';
 }

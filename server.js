@@ -83,12 +83,14 @@ const channelRoutes = require('./routes/channels')(io);
 const guestRoutes = require('./routes/guest')(io);
 const adminRoutes = require('./routes/admin')(io);
 const whatsappRoutes = require('./routes/whatsapp')(io);
+const draftRoutes = require('./routes/draft')();
 
 app.use('/auth', authRoutes);
 app.use('/api/channels', channelRoutes);
 app.use('/api/guest', guestRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/webhook/whatsapp', whatsappRoutes);
+app.use('/api/draft', draftRoutes);
 
 app.get('/api/health', (req, res) => res.json({ ok: true, users: getDB().users.length }));
 
@@ -124,3 +126,12 @@ server.listen(PORT, () => {
 const { checkAndSendReminders } = require('./reminders');
 setTimeout(() => checkAndSendReminders().catch((e) => console.error('Error en recordatorios:', e)), 10 * 1000);
 setInterval(() => checkAndSendReminders().catch((e) => console.error('Error en recordatorios:', e)), 60 * 60 * 1000);
+
+// canales sin unir (Tarea C) y resumen semanal (Tarea D) — corren cada
+// 2hs; cada función internamente decide si le toca actuar o no en esa
+// corrida, así que no hace falta un intervalo más fino que ese.
+const { checkUnjoinedChannels, generateWeeklySummaries } = require('./jobs');
+setTimeout(() => checkUnjoinedChannels().catch((e) => console.error('Error en job de canales sin unir:', e)), 15 * 1000);
+setInterval(() => checkUnjoinedChannels().catch((e) => console.error('Error en job de canales sin unir:', e)), 2 * 60 * 60 * 1000);
+setTimeout(() => generateWeeklySummaries().catch((e) => console.error('Error en job de resumen semanal:', e)), 20 * 1000);
+setInterval(() => generateWeeklySummaries().catch((e) => console.error('Error en job de resumen semanal:', e)), 2 * 60 * 60 * 1000);
