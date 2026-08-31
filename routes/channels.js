@@ -153,6 +153,8 @@ module.exports = function (io) {
   // jurídico, que suelen estar en varios a la vez.
   router.get('/mine', requireAuth, (req, res) => {
     const db = getDB();
+    const now = Date.now();
+    const monthKey = new Date(now).toISOString().slice(0, 7); // "2026-08"
     const mine = db.members
       .filter((m) => m.userId === req.user.id)
       .map((m) => {
@@ -163,13 +165,16 @@ module.exports = function (io) {
           .map((x) => (db.users.find((u) => u.id === x.userId) || {}).name)
           .filter(Boolean);
         const msgs = db.messages.filter((x) => x.channelId === channel.id);
+        const lastActivity = msgs.reduce((max, x) => Math.max(max, x.createdAt), channel.createdAt);
         return {
           code: channel.code,
           myRole: m.role,
           myRoleLabel: m.role === 'A' ? 'Parte A' : m.role === 'B' ? 'Parte B' : (PROFESSIONAL_ROLE_LABELS[m.role] || m.role),
           otherNames: others,
           messageCount: msgs.length,
-          lastActivity: msgs.reduce((max, x) => Math.max(max, x.createdAt), channel.createdAt),
+          lastActivity,
+          inactiveDays: Math.floor((now - lastActivity) / 86400000),
+          flaggedThisMonth: msgs.filter((x) => x.flagged && new Date(x.createdAt).toISOString().slice(0, 7) === monthKey).length,
           createdAt: channel.createdAt,
         };
       })

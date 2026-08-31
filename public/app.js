@@ -1466,15 +1466,82 @@ async function renderMisCasos(){
   try{ list = await api('/api/channels/mine'); }
   catch(e){ el.innerHTML = `<p class="empty-hint">No se pudieron cargar tus casos.</p>`; return; }
 
-  if(!list.length){ el.innerHTML = `<p class="empty-hint">Todavía no sos parte de ningún canal.</p>`; return; }
+  const inactive = list.filter(c => c.inactiveDays > 3).length;
+  const flaggedTotal = list.reduce((sum, c) => sum + (c.flaggedThisMonth || 0), 0);
 
-  el.innerHTML = list.map(c => `
+  const statsHtml = list.length ? `
+    <div class="card" style="margin-bottom:14px; display:flex; gap:18px; flex-wrap:wrap; font-size:12.5px; color:var(--text-dim);">
+      <div><span style="font-size:18px; font-weight:700; color:var(--text);">${list.length}</span><br>caso${list.length === 1 ? '' : 's'}</div>
+      <div><span style="font-size:18px; font-weight:700; color:${inactive ? 'var(--warn)' : 'var(--text)'};">${inactive}</span><br>sin actividad hace +3 días</div>
+      <div><span style="font-size:18px; font-weight:700; color:var(--text);">${flaggedTotal}</span><br>mensajes moderados este mes</div>
+    </div>
+  ` : '';
+
+  const listHtml = list.length ? list.map(c => `
     <div class="card" style="margin-bottom:10px; cursor:pointer;" onclick="location.href='/?channel=${c.code}'">
-      <div class="row1"><div class="what" style="font-weight:600;">${escapeHtml(c.code)}</div><span class="ev-pill confirmado">${escapeHtml(c.myRoleLabel)}</span></div>
+      <div class="row1">
+        <div class="what" style="font-weight:600;">${escapeHtml(c.code)}</div>
+        <div style="display:flex; gap:6px;">
+          ${c.inactiveDays > 3 ? `<span class="ev-pill pendiente">sin actividad hace ${c.inactiveDays}d</span>` : ''}
+          <span class="ev-pill confirmado">${escapeHtml(c.myRoleLabel)}</span>
+        </div>
+      </div>
       <div class="who">${c.otherNames.length ? 'Con ' + c.otherNames.map(escapeHtml).join(', ') : 'Esperando a la otra parte'}</div>
       <div class="ts" style="margin-top:6px;">${c.messageCount} mensajes · última actividad ${fmtTs(c.lastActivity)}</div>
     </div>
-  `).join('');
+  `).join('') : `<p class="empty-hint">Todavía no sos parte de ningún canal.</p>`;
+
+  const linkBoxHtml = `
+    <div class="card" style="margin-top:16px;">
+      <div style="font-size:12.5px; color:var(--text-dim); margin-bottom:8px;">¿Sos mediador/a o estudio jurídico y tenés un código de invitación a un caso? Pegalo acá:</div>
+      <div style="display:flex; gap:8px;">
+        <input id="pro-link-input" type="text" placeholder="Código o link de invitación" style="flex:1;">
+        <button class="primary" onclick="linkProfessionalToken()" id="pro-link-btn">Vincular</button>
+      </div>
+      <div id="pro-link-result" style="margin-top:8px;"></div>
+    </div>
+  `;
+
+  el.innerHTML = statsHtml + listHtml + linkBoxHtml;
+}
+
+// extrae el token de invitación tanto si pegaron la URL completa
+// (https://.../?pro=XXXX) como si pegaron solo el token pelado
+function extractProToken(raw){
+  const s = (raw || '').trim();
+  if(!s) return null;
+  try{
+    const u = new URL(s, location.origin);
+    const t = u.searchParams.get('pro');
+    if(t) return t;
+  }catch(e){ /* no era una URL completa, asumimos que ya es el token */ }
+  return s;
+}
+
+async function linkProfessionalToken(){
+  const input = document.getElementById('pro-link-input');
+  const resultEl = document.getElementById('pro-link-result');
+  const btn = document.getElementById('pro-link-btn');
+  const token = extractProToken(input.value);
+  if(!token) return;
+
+  btn.disabled = true;
+  resultEl.innerHTML = '';
+  try{
+    const info = await api(`/api/channels/professional/${encodeURIComponent(token)}`);
+    if(info.used){
+      resultEl.innerHTML = `<p class="empty-hint" style="color:var(--danger)">Esta invitación ya fue utilizada.</p>`;
+      btn.disabled = false;
+      return;
+    }
+    await api(`/api/channels/professional/${encodeURIComponent(token)}/accept`, { method:'POST' });
+    input.value = '';
+    resultEl.innerHTML = `<p class="empty-hint" style="color:var(--calm)">Listo, te sumaste al caso.</p>`;
+    await renderMisCasos();
+  }catch(e){
+    resultEl.innerHTML = `<p class="empty-hint" style="color:var(--danger)">${escapeHtml(e.error || 'No se pudo procesar la invitación.')}</p>`;
+  }
+  btn.disabled = false;
 }
 
 // ==================================================================
