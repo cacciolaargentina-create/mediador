@@ -47,7 +47,7 @@
   .screen-sub{ color:var(--text-dim); font-size:13.5px; margin-bottom:18px; line-height:1.5; }
   .card{ background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:14px; }
   .eyebrow{ font-family:var(--mono); font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-faint); margin-bottom:8px; }
-  button.primary{ background:var(--calm); color:#0E1A19; border:none; font-weight:600; font-size:14px; padding:12px 18px; border-radius:8px; cursor:pointer; font-family:var(--sans); }
+  button.primary, a.primary{ background:var(--calm); color:#0E1A19; border:none; font-weight:600; font-size:14px; padding:12px 18px; border-radius:8px; cursor:pointer; font-family:var(--sans); }
   button.primary:disabled{ opacity:0.4; cursor:not-allowed; }
   button.ghost, a.ghost{ background:none; border:1px solid var(--line); color:var(--text); font-size:13px; padding:10px 14px; border-radius:8px; cursor:pointer; font-family:var(--sans); }
   button.ghost.small{ padding:6px 10px; font-size:11.5px; }
@@ -413,14 +413,14 @@
   </div>
 
   <div class="cta-block">
-    <a href="https://wa.me/15753222446?text=CREAR" target="_blank" rel="noopener" class="ghost" style="text-align:center; text-decoration:none; padding:14px; display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:10px; max-width:280px; margin-left:auto; margin-right:auto;">
+    <a href="https://wa.me/15753222446?text=CREAR" target="_blank" rel="noopener" class="primary" style="text-align:center; text-decoration:none; padding:14px; display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:10px; max-width:280px; margin-left:auto; margin-right:auto; color:#0E1A19;">
       💬 Empezar por WhatsApp — escribí CREAR
     </a>
-    <button class="google-btn" onclick="location.href='/auth/google'">
-      <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
-      Iniciar sesión con Google
+    <button class="ghost" style="width:auto; margin:0 auto; display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 18px; background:#fff; color:#1F1F1F; border:none;" onclick="location.href='/auth/google'">
+      <svg width="16" height="16" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
+      O iniciá sesión con Google
     </button>
-    <p class="cta-note">Gratis para empezar. El canal queda atado a tu cuenta (de Google o tu número de WhatsApp), no a un código que cualquiera pueda adivinar.</p>
+    <p class="cta-note">Gratis para empezar, sin tarjeta ni plan pago todavía. El canal queda atado a tu cuenta (de Google o tu número de WhatsApp), no a un código que cualquiera pueda adivinar.</p>
   </div>
 
   <div class="section-heading">Cómo empezar</div>
@@ -464,27 +464,6 @@
     </div>
   </div>
 
-  <div style="max-width:600px; margin:0 auto 28px; display:flex; gap:10px;">
-    <div style="flex:1; text-align:center;">
-      <div style="font-size:22px; margin-bottom:6px;">✍️</div>
-      <p style="font-size:11.5px; color:var(--text-dim); line-height:1.35;">IA que reescribe de verdad, no un semáforo de palabras</p>
-    </div>
-    <div style="flex:1; text-align:center;">
-      <div style="font-size:22px; margin-bottom:6px;">📲</div>
-      <p style="font-size:11.5px; color:var(--text-dim); line-height:1.35;">Sin instalar nada — arranca por WhatsApp</p>
-    </div>
-    <div style="flex:1; text-align:center;">
-      <div style="font-size:22px; margin-bottom:6px;">🔒</div>
-      <p style="font-size:11.5px; color:var(--text-dim); line-height:1.35;">Historial inalterable, atado a tu cuenta</p>
-    </div>
-  </div>
-
-  <div class="card" style="max-width:600px; margin:0 auto 24px; text-align:center;">
-    <div class="eyebrow">¿Trabajás con familias?</div>
-    <p style="font-size:13px; color:var(--text-dim); margin-bottom:14px;">Si sos mediador/a o abogado/a de familia, armamos un plan pensado para varios casos a la vez, con informes en formato prolijo para adjuntar a un expediente.</p>
-    <a href="https://wa.me/15753222446?text=SOY%20MEDIADOR" target="_blank" rel="noopener" class="ghost" style="display:inline-block; text-decoration:none; padding:10px 20px;">Contarme más</a>
-  </div>
-
   <div class="section-heading">Para quién es</div>
   <p class="guest-note">Pensado para <b>padres y madres separados</b> que necesitan seguir coordinando la crianza compartida, pero también sirve para cualquier situación —familiar, de convivencia, entre socios— donde hace falta un canal con registro y con menos fricción que un chat común.</p>
 
@@ -521,10 +500,19 @@
   </div>
 
   <div class="cta-block">
-    <button class="google-btn" onclick="location.href='/auth/google'">
-      <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
-      Iniciar sesión con Google
+    <a href="https://wa.me/15753222446?text=CREAR" target="_blank" rel="noopener" class="primary" style="text-align:center; text-decoration:none; padding:14px; display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:10px; max-width:280px; margin-left:auto; margin-right:auto; color:#0E1A19;">
+      💬 Empezar por WhatsApp — escribí CREAR
+    </a>
+    <button class="ghost" style="width:auto; margin:0 auto; display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 18px; background:#fff; color:#1F1F1F; border:none;" onclick="location.href='/auth/google'">
+      <svg width="16" height="16" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
+      O iniciá sesión con Google
     </button>
+  </div>
+
+  <div class="card" style="max-width:600px; margin:32px auto 24px; text-align:center; border-style:dashed;">
+    <div class="eyebrow">¿Sos profesional? — aparte de lo anterior</div>
+    <p style="font-size:13px; color:var(--text-dim); margin-bottom:14px;">Si sos mediador/a o abogado/a de familia, armamos un plan pensado para varios casos a la vez, con informes en formato prolijo para adjuntar a un expediente.</p>
+    <a href="https://wa.me/15753222446?text=SOY%20MEDIADOR" target="_blank" rel="noopener" class="ghost" style="display:inline-block; text-decoration:none; padding:10px 20px;">Contarme más</a>
   </div>
 
   <p class="disclaimer">Esta app no reemplaza a un abogado, mediador, terapeuta o a la Justicia. En situaciones de violencia o riesgo, contactá a las autoridades correspondientes o a la línea 144 / 137.</p>
