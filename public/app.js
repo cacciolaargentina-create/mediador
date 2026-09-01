@@ -90,8 +90,21 @@ async function api(path, opts={}){
   const codeFromUrl = params.get('channel');
   if(codeFromUrl){
     await tryLoadChannel(codeFromUrl.toUpperCase());
+    goTo(channelInfo ? 'chat' : 'inicio');
+  } else {
+    // sin ?channel= explícito: el caso más común es una persona con UN solo
+    // canal (una pareja coparentando) — obligarla a pasar por la lista de
+    // Inicio para tocar el único caso que tiene es un paso de más. Con 0 o
+    // 2+ casos, la lista sigue siendo el punto de entrada normal.
+    const mine = await refreshInicioBadge();
+    if(mine.length === 1){
+      await tryLoadChannel(mine[0].code);
+      goTo(channelInfo ? 'chat' : 'inicio');
+    } else {
+      goTo('inicio');
+    }
   }
-  goTo(channelInfo ? 'chat' : 'inicio');
+  document.addEventListener('visibilitychange', () => { if(!document.hidden) refreshInicioBadge(); });
 })();
 
 // ==================================================================
@@ -196,16 +209,16 @@ async function bootGuest(){
   document.getElementById('guest-error-screen').style.display = 'none';
   document.getElementById('topbar').style.display = 'flex';
   document.getElementById('main').style.display = 'block';
-  document.getElementById('tabs').style.display = 'flex';
+  document.getElementById('main').style.paddingBottom = '20px'; // sin nav de abajo, no hace falta el espacio reservado para esa barra
+  // el/la invitada de solo lectura tiene un único canal fijo, ninguno propio:
+  // "Inicio" (lista de casos) y "Nuevo/Unirme" no aplican porque no tiene
+  // más casos ni puede crear uno, y "Borrador" tampoco porque es personal
+  // del usuario (un espacio propio para redactar), no del caso ajeno que
+  // está mirando desde afuera. Sin ningún ítem global que le corresponda,
+  // el nav de abajo (#tabs) directamente no se muestra — todo lo suyo es
+  // el Nivel 2 del caso al que fue invitada.
   renderUserChip();
   initNotifications();
-
-  // el/la invitada de solo lectura tiene un único canal fijo — "Inicio"
-  // (lista de casos) y "Nuevo/Unirme" no aplican, así que se ocultan.
-  const inicioTab = document.querySelector('nav.tabs button[data-screen="inicio"]');
-  if(inicioTab) inicioTab.style.display = 'none';
-  const nuevoTab = document.querySelector('nav.tabs button[data-screen="nuevo"]');
-  if(nuevoTab) nuevoTab.style.display = 'none';
 
   channelInfo = await api('/api/channels/' + channelCode);
   const mine = channelInfo.members.find(m => m.user && m.user.id === me.id);
@@ -263,6 +276,7 @@ async function acceptProfessionalInvite(token){
   channelCode = channelInfo.code;
   const mine = channelInfo.members.find(m => m.user && m.user.id === me.id);
   myRole = mine ? mine.role : null;
+  markVisited(channelCode);
 
   document.getElementById('pro-login-screen').style.display = 'none';
   document.getElementById('guest-error-screen').style.display = 'none';
@@ -469,6 +483,7 @@ async function tryLoadChannel(code){
     await Promise.all([loadMessages(), loadEvents(), loadExpenses()]);
     seen.msgCount = messages.length;
     seen.evCount = events.length;
+    markVisited(code);
     return true;
   }catch(e){
     channelInfo = null; channelCode = null; myRole = null;
@@ -559,6 +574,8 @@ function goTo(name){
   // por bookmark a un estado raro) — no tiene sentido, volvemos a Inicio.
   if(CONTEXTUAL_SCREENS.includes(name) && !channelCode) name = 'inicio';
 
+  closeCaseSwitcher();
+
   currentScreen = name;
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+name).classList.add('active');
@@ -570,7 +587,6 @@ function goTo(name){
   if(CONTEXTUAL_SCREENS.includes(name)) renderCaseTabsInfo();
 
   if(name === 'inicio') renderInicio();
-  if(name === 'nuevo') renderNuevo();
   if(name === 'config') renderConfig();
   if(name === 'chat'){ renderChatScreen(); renderCaseSummary(); seen.msgCount = messages.length; updateNavBadges(); }
   if(name === 'calendario'){ renderCalendario(); seen.evCount = events.length; updateNavBadges(); }
@@ -578,12 +594,72 @@ function goTo(name){
   if(name === 'historial') renderHistorial();
   if(name === 'asistente') renderAsistenteScreen();
   if(name === 'borrador') renderBorrador();
+
+  if(name === 'inicio' && document.getElementById('dot-inicio')) document.getElementById('dot-inicio').classList.remove('show');
 }
 function updateNavBadges(){
   const chatDot = document.getElementById('dot-chat');
   const calDot = document.getElementById('dot-calendario');
   if(chatDot) chatDot.classList.toggle('show', currentScreen!=='chat' && messages.length > seen.msgCount);
   if(calDot) calDot.classList.toggle('show', currentScreen!=='calendario' && events.length > seen.evCount);
+}
+
+// ------------------------------------------------------------------
+// Badge de "hay novedades" en Inicio, agregado across TODOS los casos
+// (no solo el que se está viendo) — se guarda por localStorage cuándo
+// se visitó cada caso por última vez, y se compara contra su
+// lastActivity real (que ya viene de /api/channels/mine).
+// ------------------------------------------------------------------
+function getLastVisited(code){
+  try{ return Number(localStorage.getItem('pd_last_visited_' + code)) || 0; }catch(e){ return 0; }
+}
+function markVisited(code){
+  try{ localStorage.setItem('pd_last_visited_' + code, String(Date.now())); }catch(e){ /* localStorage no disponible — el badge simplemente no persiste entre recargas */ }
+}
+function updateInicioDot(list){
+  const hasNews = list.some(c => c.lastActivity > getLastVisited(c.code));
+  const dot = document.getElementById('dot-inicio');
+  if(dot) dot.classList.toggle('show', hasNews && currentScreen !== 'inicio');
+}
+async function refreshInicioBadge(){
+  let list = [];
+  try{ list = await api('/api/channels/mine'); }catch(e){ return list; }
+  updateInicioDot(list);
+  return list;
+}
+
+// ------------------------------------------------------------------
+// Selector rápido de caso: tocar el nombre del caso actual (Nivel 2)
+// despliega los otros casos sin tener que volver a Inicio.
+// ------------------------------------------------------------------
+let caseSwitcherOpen = false;
+async function toggleCaseSwitcher(){
+  caseSwitcherOpen = !caseSwitcherOpen;
+  const el = document.getElementById('case-switcher');
+  if(!caseSwitcherOpen){ el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.innerHTML = `<p class="empty-hint">Cargando…</p>`;
+  let list;
+  try{ list = await api('/api/channels/mine'); }catch(e){ el.innerHTML = `<p class="empty-hint">No se pudo cargar.</p>`; return; }
+  const others = list.filter(c => c.code !== channelCode);
+  el.innerHTML = others.length ? others.map(c => `
+    <div class="card" style="margin-bottom:8px; cursor:pointer;" onclick="switchToCase('${c.code}')">
+      <div class="row1">
+        <div class="what" style="font-weight:600;">${escapeHtml(c.code)}</div>
+        ${c.inactiveDays > 3 ? `<span class="ev-pill pendiente">sin actividad ${c.inactiveDays}d</span>` : ''}
+      </div>
+      <div class="who">${c.otherNames.length ? 'Con ' + c.otherNames.map(escapeHtml).join(', ') : 'Esperando a la otra parte'}</div>
+    </div>
+  `).join('') : `<p class="empty-hint">No tenés otros casos activos.</p>`;
+}
+function closeCaseSwitcher(){
+  caseSwitcherOpen = false;
+  const el = document.getElementById('case-switcher');
+  if(el) el.style.display = 'none';
+}
+async function switchToCase(code){
+  closeCaseSwitcher();
+  await openCase(code);
 }
 
 // franja arriba de las 5 tabs contextuales: con quién es el caso y su
@@ -597,7 +673,7 @@ function renderCaseTabsInfo(){
     ? `${professionalRoleLabel(myRole)} · solo lectura`
     : (other && other.user) ? 'Con ' + escapeHtml(other.user.name) : 'Esperando a la otra parte';
   slot.innerHTML = `
-    <span>${withWhom} · ${escapeHtml(channelInfo.code)}</span>
+    <button class="case-switch-btn" onclick="toggleCaseSwitcher()" title="Cambiar de caso">${withWhom} · ${escapeHtml(channelInfo.code)} <span class="caret">▾</span></button>
     <button class="gear-btn" onclick="goTo('config')" title="Configurar este caso">⚙</button>
   `;
 }
@@ -718,6 +794,16 @@ function renderConfig(){
 // existente como mediador/a o estudio jurídico (antes vivía en "Mis
 // casos" — se movió acá porque las tres son formas de "entrar a un caso",
 // no algo que dependa de haber uno activo).
+// "Nuevo caso" es un modal, no una pantalla del nav — cancelarlo devuelve
+// exactamente a donde se estaba, no fuerza una navegación a Inicio.
+function openNuevoModal(){
+  document.getElementById('nuevo-modal').classList.add('show');
+  renderNuevo();
+}
+function closeNuevoModal(){
+  document.getElementById('nuevo-modal').classList.remove('show');
+}
+
 function renderNuevo(){
   const el = document.getElementById('nuevo-content');
   el.innerHTML = `
@@ -788,6 +874,7 @@ async function createChannel(){
     await Promise.all([loadMessages(), loadEvents(), loadExpenses()]);
     seen.msgCount = messages.length;
     seen.evCount = events.length;
+    closeNuevoModal();
     goTo('config'); // recién creado, lo primero que hace falta es el link para compartir
   }catch(e){ alert('No se pudo crear el canal. Probá de nuevo.'); }
 }
@@ -807,6 +894,7 @@ async function joinChannelUI(){
     await Promise.all([loadMessages(), loadEvents(), loadExpenses()]);
     seen.msgCount = messages.length;
     seen.evCount = events.length;
+    closeNuevoModal();
     goTo('chat'); // ya se unió a un canal existente, va directo a la conversación
   }catch(e){
     errEl.textContent = e.error || 'No se pudo unir al canal.';
@@ -1600,6 +1688,7 @@ async function renderInicio(){
   let list;
   try{ list = await api('/api/channels/mine'); }
   catch(e){ el.innerHTML = `<p class="empty-hint">No se pudieron cargar tus casos.</p>`; return; }
+  updateInicioDot(list); // reusa este mismo fetch en vez de pedirlo de nuevo
 
   if(!list.length){
     el.innerHTML = `
@@ -1609,7 +1698,7 @@ async function renderInicio(){
         <div class="bubble suggested"><div class="bubble-label">Alternativa sugerida por la IA</div>Hoy la entrega se realizó 25 minutos después del horario acordado. ¿Podemos confirmar el horario para la próxima entrega?</div>
       </div>
       <p class="empty-hint">Todavía no sos parte de ningún caso.</p>
-      <button class="primary" style="width:100%" onclick="goTo('nuevo')">Crear o unirme a un caso</button>
+      <button class="primary" style="width:100%" onclick="openNuevoModal()">Crear o unirme a un caso</button>
       <p class="disclaimer">Esta app no reemplaza a un abogado, mediador, terapeuta o a la Justicia. En situaciones de violencia o riesgo, contactá a las autoridades correspondientes o a la línea 144 / 137.</p>
     `;
     return;
@@ -1674,7 +1763,7 @@ async function linkProfessionalToken(){
     }
     const accepted = await api(`/api/channels/professional/${encodeURIComponent(token)}/accept`, { method:'POST' });
     input.value = '';
-    resultEl.innerHTML = `<p class="empty-hint" style="color:var(--calm)">Listo, te sumaste al caso.</p>`;
+    closeNuevoModal();
     await openCase(accepted.code);
   }catch(e){
     resultEl.innerHTML = `<p class="empty-hint" style="color:var(--danger)">${escapeHtml(e.error || 'No se pudo procesar la invitación.')}</p>`;
