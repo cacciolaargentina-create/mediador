@@ -1830,13 +1830,18 @@ function renderProStatusCard(proStatus){
       </div>
     `;
   }
-  // sin ninguna solicitud (la mayoría: alguien que recién llega) — el pitch de siempre
+  // sin ninguna solicitud (la mayoría: alguien que recién llega) — el pitch
+  // de siempre, más un link chico y secundario para quien en realidad es
+  // mediador/a o estudio pero entró por el login general en vez del CTA
+  // aparte del landing — puerta de salida discreta, no un paso obligatorio
+  // para todo el mundo (el caso común sigue sin fricción agregada).
   return `
     <div class="hero-demo">
       <div class="eyebrow">Así funciona</div>
       <div class="bubble original"><div class="bubble-label">Mensaje original</div>Otra vez llegás tarde. Sos un desastre y nunca te importa nuestro hijo.</div>
       <div class="bubble suggested"><div class="bubble-label">Alternativa sugerida por la IA</div>Hoy la entrega se realizó 25 minutos después del horario acordado. ¿Podemos confirmar el horario para la próxima entrega?</div>
     </div>
+    <p class="empty-hint" style="margin-top:-6px;">¿Sos mediador/a o estudio jurídico? <a href="#" onclick="event.preventDefault(); location.href='/?proSignup=1';" style="color:var(--calm);">Registrate acá</a>.</p>
   `;
 }
 
