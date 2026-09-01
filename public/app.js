@@ -1241,7 +1241,15 @@ async function commitMessage(text, flagged, reason){
     paintMessages();
     seen.msgCount = messages.length;
   }catch(e){
-    alert('No se pudo enviar el mensaje. Revisá tu conexión e intentá de nuevo.');
+    // el input ya se había vaciado en handleSend() antes de intentar el
+    // envío (para que la UI se sienta ágil) — si esto falla, el texto no
+    // puede quedar perdido, así que vuelve a la caja en vez de desaparecer.
+    const input = document.getElementById('chat-input');
+    if(input){
+      input.value = text;
+      input.focus();
+    }
+    alert('No se pudo enviar el mensaje — lo dejamos de nuevo en el cuadro de texto. Revisá tu conexión e intentá de nuevo.');
   }
 }
 
