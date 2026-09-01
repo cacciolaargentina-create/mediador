@@ -620,11 +620,18 @@ module.exports = function (io) {
         verifyUrl,
       });
 
-      db.certifiedExports.push({
-        id: nanoid(), hash, channelCode: req.channel.code,
-        generatedByName: generatedBy.name, generatedByRole: generatedBy.role,
-        createdAt: Date.now(),
-      });
+      // el hash es determinístico a partir del contenido: exportar el MISMO
+      // canal dos veces sin actividad nueva en el medio da el mismo hash. La
+      // columna es UNIQUE, así que insertar de nuevo rompía el commit entero
+      // (y con él, cualquier otra escritura hasta reiniciar el proceso) —
+      // si ya existe un registro con este hash, no hace falta uno nuevo.
+      if (!db.certifiedExports.some((e) => e.hash === hash)) {
+        db.certifiedExports.push({
+          id: nanoid(), hash, channelCode: req.channel.code,
+          generatedByName: generatedBy.name, generatedByRole: generatedBy.role,
+          createdAt: Date.now(),
+        });
+      }
       logAudit(db, { actorId: req.user.id, action: 'export_certified', channelCode: req.channel.code, meta: { hash } });
       await commit();
       res.setHeader('Content-Type', 'application/pdf');
