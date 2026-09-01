@@ -284,6 +284,15 @@
     nav.tabs{ padding-left:max(24px, calc((100% - 680px)/2)); padding-right:max(24px, calc((100% - 680px)/2)); }
     .pad{ max-width:680px; margin:0 auto; padding:26px 24px; }
     .chat-wrap{ height:calc(100vh - 260px); }
+
+    /* la barra contextual (Chat/Calendario/...) se armó pensando en mobile
+       (scroll horizontal como red de seguridad para que nunca envuelva a una
+       segunda línea) — en pantallas anchas los 5 ítems entran sobrados, así
+       que en vez de quedar pegada a la izquierda con lugar de sobra (y a
+       veces mostrando la barra de scroll del navegador), se alinea con el
+       resto del layout y las pestañas se centran sin scroll. */
+    .case-tabs-info{ padding-left:max(24px, calc((100% - 680px)/2)); padding-right:max(24px, calc((100% - 680px)/2)); }
+    .case-tabs-scroller{ justify-content:center; overflow-x:visible; padding-left:max(24px, calc((100% - 680px)/2)); padding-right:max(24px, calc((100% - 680px)/2)); }
   }
 
   /* ---- Desktop: landing gets a wider canvas and a two-column hero ---- */
