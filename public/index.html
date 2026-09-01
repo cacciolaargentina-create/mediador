@@ -41,6 +41,20 @@
   nav.tabs button .dot-alert{ display:none; position:absolute; top:6px; right:calc(50% - 17px); width:6px; height:6px; border-radius:50%; background:var(--warn); }
   nav.tabs button .dot-alert.show{ display:block; }
 
+  /* ---- nav contextual: solo visible DENTRO de un caso (Chat/Calendario/Gastos/Historial/Asistente/Config) ----
+     va arriba, entre el topbar y el contenido — dos barras separadas, cada
+     una con su función (ver NAV-RESTRUCTURE): la de abajo nunca cambia, la
+     de arriba aparece/desaparece según haya o no un caso activo. */
+  nav.case-tabs{ display:none; flex-direction:column; background:var(--surface); border-bottom:1px solid var(--line); flex-shrink:0; }
+  .case-tabs-info{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 14px 2px; font-size:12px; color:var(--text-dim); }
+  .case-tabs-info .gear-btn{ background:none; border:1px solid var(--line); color:var(--text-dim); width:26px; height:26px; border-radius:7px; font-size:13px; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+  .case-tabs-scroller{ display:flex; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+  .case-tabs-scroller::-webkit-scrollbar{ display:none; }
+  .case-tabs-scroller button{ flex:0 0 auto; background:none; border:none; color:var(--text-faint); font-size:12px; padding:8px 13px 10px; display:flex; align-items:center; gap:5px; cursor:pointer; white-space:nowrap; position:relative; border-bottom:2px solid transparent; }
+  .case-tabs-scroller button.active{ color:var(--calm); border-bottom-color:var(--calm); }
+  .case-tabs-scroller .dot-alert{ display:none; position:absolute; top:5px; right:3px; width:6px; height:6px; border-radius:50%; background:var(--warn); }
+  .case-tabs-scroller .dot-alert.show{ display:block; }
+
   .pad{ padding:18px 20px; }
   .center-pad{ padding:40px 20px; display:flex; flex-direction:column; align-items:center; text-align:center; gap:16px; }
   h1.screen-title{ font-family:var(--serif); font-size:23px; font-weight:600; margin-bottom:4px; }
@@ -293,21 +307,24 @@
   <div class="user-chip" id="user-chip"></div>
 </header>
 
+<nav class="case-tabs" id="case-tabs">
+  <div class="case-tabs-info" id="case-tabs-info"></div>
+  <div class="case-tabs-scroller">
+    <button data-screen="chat" onclick="goTo('chat')"><span class="ic">💬</span>Chat<span class="dot-alert" id="dot-chat"></span></button>
+    <button data-screen="calendario" onclick="goTo('calendario')"><span class="ic">📅</span>Calendario<span class="dot-alert" id="dot-calendario"></span></button>
+    <button data-screen="gastos" onclick="goTo('gastos')"><span class="ic">💰</span>Gastos</button>
+    <button data-screen="historial" onclick="goTo('historial')"><span class="ic">🗂</span>Historial</button>
+    <button data-screen="asistente" onclick="goTo('asistente')"><span class="ic">🤖</span>Asistente</button>
+  </div>
+</nav>
+
 <main id="main" style="display:none">
 
   <section class="screen active" id="screen-inicio">
     <div class="pad">
-      <div id="status-banner-slot"></div>
-      <div id="inicio-summary-slot"></div>
-      <h1 class="screen-title">Un tercer canal, no un árbitro.</h1>
-      <p class="screen-sub">Para cuando hay que seguir coordinando — horarios, entregas, acuerdos — pero cada mensaje corre el riesgo de escalar. La IA no decide quién tiene razón: ayuda a que lo que se dice quede centrado en hechos.</p>
-      <div class="hero-demo">
-        <div class="eyebrow">Así funciona</div>
-        <div class="bubble original"><div class="bubble-label">Mensaje original</div>Otra vez llegás tarde. Sos un desastre y nunca te importa nuestro hijo.</div>
-        <div class="bubble suggested"><div class="bubble-label">Alternativa sugerida por la IA</div>Hoy la entrega se realizó 25 minutos después del horario acordado. ¿Podemos confirmar el horario para la próxima entrega?</div>
-      </div>
-      <button class="primary" style="width:100%" onclick="goTo('invitar')" id="btn-configurar-canal">Configurar mi canal</button>
-      <p class="disclaimer">Esta app no reemplaza a un abogado, mediador, terapeuta o a la Justicia. En situaciones de violencia o riesgo, contactá a las autoridades correspondientes o a la línea 144 / 137.</p>
+      <h1 class="screen-title">Mis casos</h1>
+      <p class="screen-sub" id="inicio-sub">Todos los canales de los que sos parte.</p>
+      <div id="inicio-content"></div>
     </div>
   </section>
 
@@ -319,11 +336,19 @@
     </div>
   </section>
 
-  <section class="screen" id="screen-invitar">
+  <section class="screen" id="screen-nuevo">
     <div class="pad">
-      <h1 class="screen-title">Tu canal</h1>
-      <p class="screen-sub">Un canal conecta a dos cuentas de Google. Creá uno nuevo o unite con el código que te compartieron.</p>
-      <div id="invitar-content"></div>
+      <h1 class="screen-title">Nuevo caso</h1>
+      <p class="screen-sub">Creá un canal nuevo, unite con un código, o vinculate a un caso existente como mediador/a o estudio jurídico.</p>
+      <div id="nuevo-content"></div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-config">
+    <div class="pad">
+      <h1 class="screen-title">Configurar caso</h1>
+      <p class="screen-sub">Integrantes, invitaciones y accesos de este canal.</p>
+      <div id="config-content"></div>
     </div>
   </section>
 
@@ -331,6 +356,7 @@
     <div class="pad" style="padding-bottom:6px">
       <h1 class="screen-title" style="font-size:20px; margin-bottom:2px" id="chat-title">Chat mediado</h1>
       <p class="screen-sub" style="margin-bottom:10px" id="chat-sub"></p>
+      <div id="case-summary-slot"></div>
     </div>
     <div class="pad" style="padding-top:0" id="chat-body"></div>
   </section>
@@ -356,14 +382,6 @@
       <h1 class="screen-title">Historial</h1>
       <p class="screen-sub">Registro completo. Incluye mensajes, intervenciones de la IA y alertas de patrón.</p>
       <div id="historial-content"></div>
-    </div>
-  </section>
-
-  <section class="screen" id="screen-misCasos">
-    <div class="pad">
-      <h1 class="screen-title">Mis casos</h1>
-      <p class="screen-sub">Todos los canales de los que sos parte.</p>
-      <div id="misCasos-content"></div>
     </div>
   </section>
 
@@ -571,13 +589,7 @@
 <nav class="tabs" id="tabs" style="display:none">
   <button class="active" data-screen="inicio" onclick="goTo('inicio')"><span class="ic">🏠</span>Inicio</button>
   <button data-screen="borrador" onclick="goTo('borrador')"><span class="ic">📝</span>Borrador</button>
-  <button data-screen="invitar" onclick="goTo('invitar')"><span class="ic">🔗</span>Canal</button>
-  <button data-screen="chat" onclick="goTo('chat')"><span class="ic">💬</span>Chat<span class="dot-alert" id="dot-chat"></span></button>
-  <button data-screen="calendario" onclick="goTo('calendario')"><span class="ic">📅</span>Calendario<span class="dot-alert" id="dot-calendario"></span></button>
-  <button data-screen="gastos" onclick="goTo('gastos')"><span class="ic">💰</span>Gastos</button>
-  <button data-screen="historial" onclick="goTo('historial')"><span class="ic">🗂</span>Historial</button>
-  <button data-screen="asistente" onclick="goTo('asistente')"><span class="ic">🤖</span>Asistente</button>
-  <button data-screen="misCasos" onclick="goTo('misCasos')"><span class="ic">📋</span>Mis casos</button>
+  <button data-screen="nuevo" onclick="goTo('nuevo')"><span class="ic">➕</span>Nuevo/Unirme</button>
 </nav>
 
 <script src="/app.js"></script>

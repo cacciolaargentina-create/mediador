@@ -200,12 +200,12 @@ async function bootGuest(){
   renderUserChip();
   initNotifications();
 
-  const canalTab = document.querySelector('nav.tabs button[data-screen="invitar"]');
-  if(canalTab) canalTab.style.display = 'none';
-  const misCasosTab = document.querySelector('nav.tabs button[data-screen="misCasos"]');
-  if(misCasosTab) misCasosTab.style.display = 'none';
-  const btnConfigurar = document.getElementById('btn-configurar-canal');
-  if(btnConfigurar) btnConfigurar.style.display = 'none';
+  // el/la invitada de solo lectura tiene un único canal fijo — "Inicio"
+  // (lista de casos) y "Nuevo/Unirme" no aplican, así que se ocultan.
+  const inicioTab = document.querySelector('nav.tabs button[data-screen="inicio"]');
+  if(inicioTab) inicioTab.style.display = 'none';
+  const nuevoTab = document.querySelector('nav.tabs button[data-screen="nuevo"]');
+  if(nuevoTab) nuevoTab.style.display = 'none';
 
   channelInfo = await api('/api/channels/' + channelCode);
   const mine = channelInfo.members.find(m => m.user && m.user.id === me.id);
@@ -272,9 +272,6 @@ async function acceptProfessionalInvite(token){
   renderUserChip();
   checkAdminLink();
   initNotifications();
-
-  const btnConfigurar = document.getElementById('btn-configurar-canal');
-  if(btnConfigurar) btnConfigurar.style.display = 'none';
 
   updateUrl(channelCode); // limpia el ?pro= de la URL una vez que ya entramos
   connectSocket();
@@ -468,23 +465,34 @@ async function tryLoadChannel(code){
     myRole = mine ? mine.role : null;
     calendarLinkCache = null;
     renderUserChip();
-    if(isProfessional()){
-      const btnConfigurar = document.getElementById('btn-configurar-canal');
-      if(btnConfigurar) btnConfigurar.style.display = 'none';
-    }
     connectSocket();
     await Promise.all([loadMessages(), loadEvents(), loadExpenses()]);
     seen.msgCount = messages.length;
     seen.evCount = events.length;
+    return true;
   }catch(e){
     channelInfo = null; channelCode = null; myRole = null;
     if(e.status === 403){
       // no soy miembro — quizás me llegó el link para unirme
       pendingJoinCode = code;
     }
+    return false;
   }
 }
 let pendingJoinCode = null;
+
+// cambia de caso sin recargar la página — reusa tryLoadChannel(), que ya
+// hace todo lo necesario (cargar mensajes/eventos/gastos, reconectar el
+// socket al room correcto). Se usa al tocar un caso desde "Mis casos".
+async function openCase(code){
+  const ok = await tryLoadChannel(code);
+  if(ok){
+    updateUrl(code);
+    goTo('chat');
+  } else {
+    alert('No se pudo abrir ese caso. Probá recargar la página.');
+  }
+}
 
 function connectSocket(){
   if(socket) socket.disconnect();
@@ -501,7 +509,7 @@ function connectSocket(){
   });
   socket.on('event:new', (e)=>{ upsertEvent(e); if(currentScreen==='calendario') renderCalendario(); if(currentScreen==='chat') paintMessages(); updateNavBadges(); });
   socket.on('event:update', (e)=>{ upsertEvent(e); if(currentScreen==='calendario') renderCalendario(); if(currentScreen==='chat') paintMessages(); updateNavBadges(); });
-  socket.on('channel:update', (info)=>{ channelInfo = info; if(currentScreen==='invitar') renderInvitar(); renderBanner(); });
+  socket.on('channel:update', (info)=>{ channelInfo = info; if(currentScreen==='config') renderConfig(); if(currentScreen==='chat') renderCaseTabsInfo(); });
   socket.on('expense:new', (e)=>{ upsertExpense(e); if(currentScreen==='gastos') renderGastos(); });
   socket.on('expense:update', (e)=>{ upsertExpense(e); if(currentScreen==='gastos') renderGastos(); });
   socket.on('checkin:new', ()=>{ if(currentScreen==='calendario') loadCheckins(); });
@@ -540,21 +548,35 @@ function updateUrl(code){
 }
 
 // ==================================================================
-// NAV
+// NAV — dos niveles: global (Inicio/Borrador/Nuevo·Unirme, siempre visible)
+// y contextual (Chat/Calendario/Gastos/Historial/Asistente/Config, solo
+// visible dentro de un caso elegido). Ver NAV-RESTRUCTURE-para-claude-code.md.
 // ==================================================================
+const CONTEXTUAL_SCREENS = ['chat', 'calendario', 'gastos', 'historial', 'asistente', 'config'];
+
 function goTo(name){
+  // pantalla contextual sin ningún caso cargado (ej. alguien llega directo
+  // por bookmark a un estado raro) — no tiene sentido, volvemos a Inicio.
+  if(CONTEXTUAL_SCREENS.includes(name) && !channelCode) name = 'inicio';
+
   currentScreen = name;
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+name).classList.add('active');
   document.querySelectorAll('nav.tabs button').forEach(b=> b.classList.toggle('active', b.dataset.screen===name));
-  renderBanner();
-  if(name === 'invitar') renderInvitar();
-  if(name === 'chat'){ renderChatScreen(); seen.msgCount = messages.length; updateNavBadges(); }
+  document.querySelectorAll('.case-tabs-scroller button').forEach(b=> b.classList.toggle('active', b.dataset.screen===name));
+
+  const caseTabs = document.getElementById('case-tabs');
+  if(caseTabs) caseTabs.style.display = CONTEXTUAL_SCREENS.includes(name) ? 'flex' : 'none';
+  if(CONTEXTUAL_SCREENS.includes(name)) renderCaseTabsInfo();
+
+  if(name === 'inicio') renderInicio();
+  if(name === 'nuevo') renderNuevo();
+  if(name === 'config') renderConfig();
+  if(name === 'chat'){ renderChatScreen(); renderCaseSummary(); seen.msgCount = messages.length; updateNavBadges(); }
   if(name === 'calendario'){ renderCalendario(); seen.evCount = events.length; updateNavBadges(); }
   if(name === 'gastos') renderGastos();
   if(name === 'historial') renderHistorial();
   if(name === 'asistente') renderAsistenteScreen();
-  if(name === 'misCasos') renderMisCasos();
   if(name === 'borrador') renderBorrador();
 }
 function updateNavBadges(){
@@ -564,22 +586,24 @@ function updateNavBadges(){
   if(calDot) calDot.classList.toggle('show', currentScreen!=='calendario' && events.length > seen.evCount);
 }
 
-function renderBanner(){
-  const slot = document.getElementById('status-banner-slot');
-  if(!slot) return;
-  if(!channelInfo){
-    slot.innerHTML = `<div class="status-banner warn"><span class="dot"></span>Todavía no configuraste tu canal — andá a la pestaña "Canal"</div>`;
-    return;
-  }
+// franja arriba de las 5 tabs contextuales: con quién es el caso y su
+// código, para no perderse cuando hay varios casos activos — más el
+// acceso a "Configurar caso" (antes mezclado con la pestaña "Canal").
+function renderCaseTabsInfo(){
+  const slot = document.getElementById('case-tabs-info');
+  if(!slot || !channelInfo) return;
   const other = otherPartyOf(channelInfo);
-  slot.innerHTML = (other && other.user)
-    ? `<div class="status-banner ok"><span class="dot"></span>Canal activo con ${escapeHtml(other.user.name)} · código ${channelInfo.code}</div>`
-    : `<div class="status-banner warn"><span class="dot"></span>Canal creado (${channelInfo.code}) — esperando a que la otra persona se una</div>`;
-  renderInicioSummary();
+  const withWhom = isProfessional()
+    ? `${professionalRoleLabel(myRole)} · solo lectura`
+    : (other && other.user) ? 'Con ' + escapeHtml(other.user.name) : 'Esperando a la otra parte';
+  slot.innerHTML = `
+    <span>${withWhom} · ${escapeHtml(channelInfo.code)}</span>
+    <button class="gear-btn" onclick="goTo('config')" title="Configurar este caso">⚙</button>
+  `;
 }
 
-function renderInicioSummary(){
-  const slot = document.getElementById('inicio-summary-slot');
+function renderCaseSummary(){
+  const slot = document.getElementById('case-summary-slot');
   if(!slot) return;
   if(!channelInfo){ slot.innerHTML = ''; return; }
 
@@ -618,74 +642,84 @@ function roleLabelOf(m){
   return professionalRoleLabel(m.role) || m.role;
 }
 
-function renderInvitar(){
-  const el = document.getElementById('invitar-content');
-  if(channelInfo){
-    const other = otherPartyOf(channelInfo);
-    const shareUrl = location.origin + location.pathname + '?channel=' + channelInfo.code;
-    const guestShareUrl = location.origin + location.pathname + '?guest=' + channelInfo.guestToken;
+// contextual — gestión del caso ACTIVO: link para compartir, integrantes,
+// invitar mediador/a o estudio. Se llega por el ⚙ de la barra de tabs
+// contextual (antes era la pestaña global "Canal").
+function renderConfig(){
+  const el = document.getElementById('config-content');
+  if(!channelInfo){ el.innerHTML = `<p class="empty-hint">Elegí un caso primero.</p>`; return; }
 
-    const membersListHtml = channelInfo.members.map(m => `
-      <div class="member-row">
-        <span>${escapeHtml(m.user ? m.user.name : '—')}${m.label ? ' <span style="color:var(--text-faint)">· ' + escapeHtml(m.label) + '</span>' : ''}</span>
-        <span class="ev-pill ${m.role === 'A' || m.role === 'B' ? 'confirmado' : 'pendiente'}">${roleLabelOf(m)}</span>
-      </div>`).join('');
-    const membersCard = `<div class="card"><div class="eyebrow">Integrantes del canal</div>${membersListHtml}</div>`;
+  const other = otherPartyOf(channelInfo);
+  const shareUrl = location.origin + location.pathname + '?channel=' + channelInfo.code;
+  const guestShareUrl = location.origin + location.pathname + '?guest=' + channelInfo.guestToken;
 
-    if(isProfessional()){
-      const mine = channelInfo.members.find(m => m.user && m.user.id === me.id);
-      el.innerHTML = `
-        <div class="card">
-          <div class="eyebrow">Tu acceso</div>
-          <p style="font-size:13px; line-height:1.5;">Estás viendo el canal <strong>${channelInfo.code}</strong> como <strong>${professionalRoleLabel(myRole)}</strong>${mine && mine.label ? ' (' + escapeHtml(mine.label) + ')' : ''}. Es acceso de solo lectura: podés ver mensajes, calendario e historial, pero no escribir en nombre de las partes ni invitar a otras personas.</p>
-        </div>
-        ${membersCard}
-      `;
-      return;
-    }
+  const membersListHtml = channelInfo.members.map(m => `
+    <div class="member-row">
+      <span>${escapeHtml(m.user ? m.user.name : '—')}${m.label ? ' <span style="color:var(--text-faint)">· ' + escapeHtml(m.label) + '</span>' : ''}</span>
+      <span class="ev-pill ${m.role === 'A' || m.role === 'B' ? 'confirmado' : 'pendiente'}">${roleLabelOf(m)}</span>
+    </div>`).join('');
+  const membersCard = `<div class="card"><div class="eyebrow">Integrantes del canal</div>${membersListHtml}</div>`;
 
-    const guestCard = (myRole === 'A' && channelInfo.guestToken) ? `
-      <div class="card">
-        <div class="eyebrow">Invitar por WhatsApp/SMS</div>
-        <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:10px;">Este enlace no requiere cuenta de Google ni instalar nada — quien lo abre puede leer y responder directo desde el navegador:</p>
-        <div class="row-copy">
-          <input type="text" readonly value="${guestShareUrl}" id="guest-share-url">
-          <button class="ghost small" onclick="copyGuestShareUrl()">Copiar</button>
-        </div>
-      </div>
-    ` : '';
+  if(isProfessional()){
+    const mine = channelInfo.members.find(m => m.user && m.user.id === me.id);
     el.innerHTML = `
       <div class="card">
-        <div class="eyebrow">Tu canal</div>
-        <div class="code-display">${channelInfo.code}</div>
-        <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:10px;">Compartí este enlace, quien lo abra se une con su propia cuenta de Google:</p>
-        <div class="row-copy" style="margin-bottom:12px;">
-          <input type="text" readonly value="${shareUrl}" id="share-url">
-          <button class="ghost small" onclick="copyShareUrl()">Copiar</button>
-        </div>
-        <div class="status-banner ${other && other.user ? 'ok' : 'warn'}"><span class="dot"></span>${other && other.user ? escapeHtml(other.user.name) + ' está en el canal' : 'Esperando a que se una'}</div>
-        ${(!other?.user && (Date.now() - channelInfo.createdAt > 3*24*60*60*1000)) ? `
-          <div class="status-banner warn" style="margin-top:8px;"><span class="dot"></span>Todavía nadie se unió — ¿le reenviás el link de arriba a la otra persona?</div>
-        ` : ''}
+        <div class="eyebrow">Tu acceso</div>
+        <p style="font-size:13px; line-height:1.5;">Estás viendo el canal <strong>${channelInfo.code}</strong> como <strong>${professionalRoleLabel(myRole)}</strong>${mine && mine.label ? ' (' + escapeHtml(mine.label) + ')' : ''}. Es acceso de solo lectura: podés ver mensajes, calendario e historial, pero no escribir en nombre de las partes ni invitar a otras personas.</p>
       </div>
-      ${guestCard}
       ${membersCard}
-      <div class="card">
-        <div class="eyebrow">Invitar a un mediador/a o estudio jurídico</div>
-        <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:12px;">Va a poder ver mensajes, calendario e historial, pero no escribir en tu nombre ni de la otra parte. Su ingreso queda anunciado en el chat y visible acá arriba, para las dos partes.</p>
-        <label class="field-label">Rol</label>
-        <select id="pro-invite-role" style="margin-bottom:10px;">
-          <option value="mediador">Mediador/a</option>
-          <option value="estudio">Estudio jurídico</option>
-        </select>
-        <label class="field-label">Nombre o estudio</label>
-        <input type="text" id="pro-invite-label" placeholder="Ej: Estudio Pérez &amp; Asoc." style="margin-bottom:12px;">
-        <button class="ghost" style="width:100%" onclick="inviteProfessional()">Generar invitación</button>
-        <div id="pro-invite-result"></div>
-      </div>
     `;
     return;
   }
+
+  const guestCard = (myRole === 'A' && channelInfo.guestToken) ? `
+    <div class="card">
+      <div class="eyebrow">Invitar por WhatsApp/SMS</div>
+      <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:10px;">Este enlace no requiere cuenta de Google ni instalar nada — quien lo abre puede leer y responder directo desde el navegador:</p>
+      <div class="row-copy">
+        <input type="text" readonly value="${guestShareUrl}" id="guest-share-url">
+        <button class="ghost small" onclick="copyGuestShareUrl()">Copiar</button>
+      </div>
+    </div>
+  ` : '';
+  el.innerHTML = `
+    <div class="card">
+      <div class="eyebrow">Tu canal</div>
+      <div class="code-display">${channelInfo.code}</div>
+      <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:10px;">Compartí este enlace, quien lo abra se une con su propia cuenta de Google:</p>
+      <div class="row-copy" style="margin-bottom:12px;">
+        <input type="text" readonly value="${shareUrl}" id="share-url">
+        <button class="ghost small" onclick="copyShareUrl()">Copiar</button>
+      </div>
+      <div class="status-banner ${other && other.user ? 'ok' : 'warn'}"><span class="dot"></span>${other && other.user ? escapeHtml(other.user.name) + ' está en el canal' : 'Esperando a que se una'}</div>
+      ${(!other?.user && (Date.now() - channelInfo.createdAt > 3*24*60*60*1000)) ? `
+        <div class="status-banner warn" style="margin-top:8px;"><span class="dot"></span>Todavía nadie se unió — ¿le reenviás el link de arriba a la otra persona?</div>
+      ` : ''}
+    </div>
+    ${guestCard}
+    ${membersCard}
+    <div class="card">
+      <div class="eyebrow">Invitar a un mediador/a o estudio jurídico</div>
+      <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:12px;">Va a poder ver mensajes, calendario e historial, pero no escribir en tu nombre ni de la otra parte. Su ingreso queda anunciado en el chat y visible acá arriba, para las dos partes.</p>
+      <label class="field-label">Rol</label>
+      <select id="pro-invite-role" style="margin-bottom:10px;">
+        <option value="mediador">Mediador/a</option>
+        <option value="estudio">Estudio jurídico</option>
+      </select>
+      <label class="field-label">Nombre o estudio</label>
+      <input type="text" id="pro-invite-label" placeholder="Ej: Estudio Pérez &amp; Asoc." style="margin-bottom:12px;">
+      <button class="ghost" style="width:100%" onclick="inviteProfessional()">Generar invitación</button>
+      <div id="pro-invite-result"></div>
+    </div>
+  `;
+}
+
+// global — crear un canal, unirse con un código, o vincularse a un caso
+// existente como mediador/a o estudio jurídico (antes vivía en "Mis
+// casos" — se movió acá porque las tres son formas de "entrar a un caso",
+// no algo que dependa de haber uno activo).
+function renderNuevo(){
+  const el = document.getElementById('nuevo-content');
   el.innerHTML = `
     <div class="card">
       <div class="eyebrow">Crear un canal nuevo</div>
@@ -698,6 +732,15 @@ function renderInvitar(){
       <input type="text" id="join-code" placeholder="Ej: A3K9QZ" value="${pendingJoinCode || ''}" style="margin-bottom:14px; text-transform:uppercase;">
       <button class="ghost" style="width:100%" onclick="joinChannelUI()">Unirme</button>
       <p id="join-error" style="color:var(--danger); font-size:12px; margin-top:8px;"></p>
+    </div>
+    <div class="card">
+      <div class="eyebrow">¿Sos mediador/a o estudio jurídico?</div>
+      <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:10px;">Si tenés un código o link de invitación a un caso, pegalo acá:</p>
+      <div style="display:flex; gap:8px;">
+        <input id="pro-link-input" type="text" placeholder="Código o link de invitación" style="flex:1;">
+        <button class="ghost" onclick="linkProfessionalToken()" id="pro-link-btn">Vincular</button>
+      </div>
+      <div id="pro-link-result" style="margin-top:8px;"></div>
     </div>
   `;
 }
@@ -743,8 +786,9 @@ async function createChannel(){
     updateUrl(channelCode);
     connectSocket();
     await Promise.all([loadMessages(), loadEvents(), loadExpenses()]);
-    renderInvitar();
-    renderBanner();
+    seen.msgCount = messages.length;
+    seen.evCount = events.length;
+    goTo('config'); // recién creado, lo primero que hace falta es el link para compartir
   }catch(e){ alert('No se pudo crear el canal. Probá de nuevo.'); }
 }
 async function joinChannelUI(){
@@ -761,8 +805,9 @@ async function joinChannelUI(){
     updateUrl(channelCode);
     connectSocket();
     await Promise.all([loadMessages(), loadEvents(), loadExpenses()]);
-    renderInvitar();
-    renderBanner();
+    seen.msgCount = messages.length;
+    seen.evCount = events.length;
+    goTo('chat'); // ya se unió a un canal existente, va directo a la conversación
   }catch(e){
     errEl.textContent = e.error || 'No se pudo unir al canal.';
   }
@@ -1545,28 +1590,44 @@ async function handleAskAssistant(){
 }
 
 // ==================================================================
-// SCREEN: MIS CASOS
+// SCREEN: INICIO (= lista de casos, antes "Mis casos" era una pestaña
+// aparte — ver NAV-RESTRUCTURE-para-claude-code.md). Tocar un caso lleva
+// al nivel 2 (Chat/Calendario/Gastos/Historial/Asistente de ESE caso).
 // ==================================================================
-async function renderMisCasos(){
-  const el = document.getElementById('misCasos-content');
+async function renderInicio(){
+  const el = document.getElementById('inicio-content');
   el.innerHTML = `<p class="empty-hint">Cargando…</p>`;
   let list;
   try{ list = await api('/api/channels/mine'); }
   catch(e){ el.innerHTML = `<p class="empty-hint">No se pudieron cargar tus casos.</p>`; return; }
 
+  if(!list.length){
+    el.innerHTML = `
+      <div class="hero-demo">
+        <div class="eyebrow">Así funciona</div>
+        <div class="bubble original"><div class="bubble-label">Mensaje original</div>Otra vez llegás tarde. Sos un desastre y nunca te importa nuestro hijo.</div>
+        <div class="bubble suggested"><div class="bubble-label">Alternativa sugerida por la IA</div>Hoy la entrega se realizó 25 minutos después del horario acordado. ¿Podemos confirmar el horario para la próxima entrega?</div>
+      </div>
+      <p class="empty-hint">Todavía no sos parte de ningún caso.</p>
+      <button class="primary" style="width:100%" onclick="goTo('nuevo')">Crear o unirme a un caso</button>
+      <p class="disclaimer">Esta app no reemplaza a un abogado, mediador, terapeuta o a la Justicia. En situaciones de violencia o riesgo, contactá a las autoridades correspondientes o a la línea 144 / 137.</p>
+    `;
+    return;
+  }
+
   const inactive = list.filter(c => c.inactiveDays > 3).length;
   const flaggedTotal = list.reduce((sum, c) => sum + (c.flaggedThisMonth || 0), 0);
 
-  const statsHtml = list.length ? `
+  const statsHtml = `
     <div class="card" style="margin-bottom:14px; display:flex; gap:18px; flex-wrap:wrap; font-size:12.5px; color:var(--text-dim);">
       <div><span style="font-size:18px; font-weight:700; color:var(--text);">${list.length}</span><br>caso${list.length === 1 ? '' : 's'}</div>
       <div><span style="font-size:18px; font-weight:700; color:${inactive ? 'var(--warn)' : 'var(--text)'};">${inactive}</span><br>sin actividad hace +3 días</div>
       <div><span style="font-size:18px; font-weight:700; color:var(--text);">${flaggedTotal}</span><br>mensajes moderados este mes</div>
     </div>
-  ` : '';
+  `;
 
-  const listHtml = list.length ? list.map(c => `
-    <div class="card" style="margin-bottom:10px; cursor:pointer;" onclick="location.href='/?channel=${c.code}'">
+  const listHtml = list.map(c => `
+    <div class="card" style="margin-bottom:10px; cursor:pointer;" onclick="openCase('${c.code}')">
       <div class="row1">
         <div class="what" style="font-weight:600;">${escapeHtml(c.code)}</div>
         <div style="display:flex; gap:6px;">
@@ -1577,20 +1638,9 @@ async function renderMisCasos(){
       <div class="who">${c.otherNames.length ? 'Con ' + c.otherNames.map(escapeHtml).join(', ') : 'Esperando a la otra parte'}</div>
       <div class="ts" style="margin-top:6px;">${c.messageCount} mensajes · última actividad ${fmtTs(c.lastActivity)}</div>
     </div>
-  `).join('') : `<p class="empty-hint">Todavía no sos parte de ningún canal.</p>`;
+  `).join('');
 
-  const linkBoxHtml = `
-    <div class="card" style="margin-top:16px;">
-      <div style="font-size:12.5px; color:var(--text-dim); margin-bottom:8px;">¿Sos mediador/a o estudio jurídico y tenés un código de invitación a un caso? Pegalo acá:</div>
-      <div style="display:flex; gap:8px;">
-        <input id="pro-link-input" type="text" placeholder="Código o link de invitación" style="flex:1;">
-        <button class="primary" onclick="linkProfessionalToken()" id="pro-link-btn">Vincular</button>
-      </div>
-      <div id="pro-link-result" style="margin-top:8px;"></div>
-    </div>
-  `;
-
-  el.innerHTML = statsHtml + listHtml + linkBoxHtml;
+  el.innerHTML = statsHtml + listHtml;
 }
 
 // extrae el token de invitación tanto si pegaron la URL completa
@@ -1622,10 +1672,10 @@ async function linkProfessionalToken(){
       btn.disabled = false;
       return;
     }
-    await api(`/api/channels/professional/${encodeURIComponent(token)}/accept`, { method:'POST' });
+    const accepted = await api(`/api/channels/professional/${encodeURIComponent(token)}/accept`, { method:'POST' });
     input.value = '';
     resultEl.innerHTML = `<p class="empty-hint" style="color:var(--calm)">Listo, te sumaste al caso.</p>`;
-    await renderMisCasos();
+    await openCase(accepted.code);
   }catch(e){
     resultEl.innerHTML = `<p class="empty-hint" style="color:var(--danger)">${escapeHtml(e.error || 'No se pudo procesar la invitación.')}</p>`;
   }
