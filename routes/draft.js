@@ -7,6 +7,8 @@ const express = require('express');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { analyzeMessage } = require('../moderation');
 const { requireQuotaOrSubscription } = require('../quota');
+const { recordModerationCall } = require('../moderationStats');
+const { getDB } = require('../db');
 
 // mismo motivo que el rate limit de /:code/analyze: pega contra la API de
 // Anthropic y cuesta plata por llamada. Acá SÍ corresponde limitar por IP en
@@ -38,9 +40,11 @@ module.exports = function () {
     if (!text || !text.trim()) return res.status(400).json({ error: 'Mensaje vacío' });
     try {
       const result = await analyzeMessage(text);
+      if (process.env.ANTHROPIC_API_KEY) recordModerationCall(getDB(), { channelCode: null, success: true, flagged: result.flagged });
       res.json(result);
     } catch (err) {
       console.error(err);
+      if (process.env.ANTHROPIC_API_KEY) recordModerationCall(getDB(), { channelCode: null, success: false, flagged: false });
       res.status(502).json({ error: 'No se pudo analizar el mensaje', flagged: false });
     }
   });
@@ -52,9 +56,11 @@ module.exports = function () {
     if (!text || !text.trim()) return res.status(400).json({ error: 'Mensaje vacío' });
     try {
       const result = await analyzeMessage(text);
+      if (process.env.ANTHROPIC_API_KEY) recordModerationCall(getDB(), { channelCode: null, success: true, flagged: result.flagged });
       res.json(result);
     } catch (err) {
       console.error(err);
+      if (process.env.ANTHROPIC_API_KEY) recordModerationCall(getDB(), { channelCode: null, success: false, flagged: false });
       res.status(502).json({ error: 'No se pudo analizar el mensaje', flagged: false });
     }
   });

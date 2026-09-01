@@ -12,6 +12,7 @@ const { buildCertifiedReport, integrityHash, buildPlainContent } = require('../c
 const { isAdminUser, PROFESSIONAL_ROLE_LABELS } = require('../roles');
 const { logAudit } = require('../audit');
 const { requireQuotaOrSubscription } = require('../quota');
+const { recordModerationCall } = require('../moderationStats');
 
 const genCode = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 6);
 const PATTERN_THRESHOLD = 3;
@@ -270,9 +271,13 @@ module.exports = function (io) {
     if (!text || !text.trim()) return res.status(400).json({ error: 'Mensaje vacío' });
     try {
       const result = await analyzeMessage(text);
+      // solo cuenta si había key configurada: si no, analyzeMessage nunca
+      // pegó contra la API real, no hay costo que contar (ver moderationStats.js).
+      if (process.env.ANTHROPIC_API_KEY) recordModerationCall(getDB(), { channelCode: req.channel.code, success: true, flagged: result.flagged });
       res.json(result);
     } catch (err) {
       console.error(err);
+      if (process.env.ANTHROPIC_API_KEY) recordModerationCall(getDB(), { channelCode: req.channel.code, success: false, flagged: false });
       res.status(502).json({ error: 'No se pudo analizar el mensaje', flagged: false });
     }
   });

@@ -19,6 +19,13 @@ const { logAudit } = require('../audit');
 const wa = require('../whatsapp');
 const { getPendingNotificationsCount } = require('../messaging');
 const waRoutes = require('./whatsapp');
+const { FREE_TIER_MONTHLY_LIMIT, currentMonth } = require('../quota');
+
+// costo aproximado por llamada a la API de Anthropic para el modelo de
+// moderación — mismo número ya usado antes en esta conversación. Es una
+// estimación (el pricing real depende de tokens de entrada/salida), no una
+// cifra facturada; ajustar acá si cambia el pricing del modelo.
+const ANTHROPIC_COST_PER_CALL = 0.0016;
 
 const WHATSAPP_EVENT_LABELS = {
   notification_sent: 'Notificación enviada',
@@ -408,6 +415,186 @@ module.exports = function (io) {
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, limit);
     res.json(list);
+  });
+
+  // ---------- Costos y Salud ----------
+  // Todo acá sale de contadores/logs que YA existen (moderationStats,
+  // whatsappLog) — nada de esto asume un sistema de pagos conectado.
+  function dateCutoff(daysAgo) {
+    return new Date(Date.now() - daysAgo * 86400000).toISOString().slice(0, 10);
+  }
+  function sumModeration(db, sinceDate, onlyChannelCode) {
+    return db.moderationStats
+      .filter((r) => r.date >= sinceDate && (onlyChannelCode === undefined || r.channelCode === onlyChannelCode))
+      .reduce((acc, r) => {
+        acc.success += r.successCount; acc.fail += r.failCount; acc.flagged += r.flaggedCount;
+        return acc;
+      }, { success: 0, fail: 0, flagged: 0 });
+  }
+  function moderationCostPeriod(db, sinceDate) {
+    const m = sumModeration(db, sinceDate);
+    const calls = m.success + m.fail;
+    return { calls, estimatedCost: Math.round(calls * ANTHROPIC_COST_PER_CALL * 100) / 100 };
+  }
+  function whatsappSentPeriod(db, sinceMs) {
+    return db.whatsappLog.filter((e) => e.kind === 'notification_sent' && e.createdAt >= sinceMs).length;
+  }
+  // canales cuyo volumen de /analyze en los últimos 7 días se dispara muy
+  // por encima del resto — protección extra, más allá del rate limiting,
+  // contra un uso anormal que ya haya pasado los límites por request.
+  function abnormalChannels(db) {
+    const cutoff = dateCutoff(7);
+    const byChannel = {};
+    db.moderationStats
+      .filter((r) => r.date >= cutoff && r.channelCode)
+      .forEach((r) => { byChannel[r.channelCode] = (byChannel[r.channelCode] || 0) + r.successCount + r.failCount; });
+    const entries = Object.entries(byChannel);
+    if (!entries.length) return [];
+    const avg = entries.reduce((s, [, c]) => s + c, 0) / entries.length;
+    const threshold = Math.max(10, avg * 3);
+    return entries
+      .filter(([, c]) => c > threshold)
+      .map(([code, c]) => ({ code, count: c, avgOtherChannels: Math.round(avg * 10) / 10 }))
+      .sort((a, b) => b.count - a.count);
+  }
+
+  router.get('/costs', requireAdmin, (req, res) => {
+    const db = getDB();
+    const now = Date.now();
+    const day = 86400000;
+
+    const m30 = sumModeration(db, dateCutoff(30));
+    const m30Total = m30.success + m30.fail;
+
+    const lastWaActivity = db.whatsappLog.length
+      ? Math.max(...db.whatsappLog.map((e) => e.createdAt))
+      : null;
+    const lastWebhookRaw = db.whatsappWebhookRaw.length
+      ? Math.max(...db.whatsappWebhookRaw.map((e) => e.createdAt))
+      : null;
+
+    res.json({
+      anthropic: {
+        configured: !!process.env.ANTHROPIC_API_KEY,
+        today: moderationCostPeriod(db, dateCutoff(0)),
+        last7d: moderationCostPeriod(db, dateCutoff(7)),
+        last30d: moderationCostPeriod(db, dateCutoff(30)),
+        costPerCall: ANTHROPIC_COST_PER_CALL,
+        errorRate: {
+          successCount: m30.success, failCount: m30.fail,
+          failPct: m30Total ? Math.round((m30.fail / m30Total) * 1000) / 10 : 0,
+        },
+      },
+      whatsapp: {
+        configured: wa.configured(),
+        // conteo real; sin monto en $ porque no hay un precio por mensaje
+        // confirmado todavía (Meta cambia el pricing en octubre) — mejor
+        // no estimar un costo que podría estar mal.
+        today: whatsappSentPeriod(db, now - (now % day)), // arranque del día UTC actual
+        last7d: whatsappSentPeriod(db, now - 7 * day),
+        last30d: whatsappSentPeriod(db, now - 30 * day),
+        lastActivityAt: lastWaActivity,
+      },
+      mercadoPago: { configured: false }, // sin integración de pagos todavía
+      webhookHealth: {
+        whatsappLastActivityAt: lastWaActivity,
+        whatsappLastRawPayloadAt: lastWebhookRaw,
+        mercadoPagoLastActivityAt: null, // N/A — no hay webhook de MP configurado
+      },
+      abnormalChannels: abnormalChannels(db),
+    });
+  });
+
+  // ---------- Suscripciones ----------
+  // Sección honesta: no hay sistema de cobro real conectado (sin Mercado
+  // Pago ni otro proveedor) — se completa el día que eso exista. Lo único
+  // real que se puede mostrar hoy es quién llegó al límite del free tier,
+  // como señal de a quién le convendría un plan pago si existiera.
+  router.get('/subscriptions', requireAdmin, (req, res) => {
+    const db = getDB();
+    const month = currentMonth();
+    const usersWithUsage = db.users.filter((u) => u.aiUsage && u.aiUsage.month === month);
+    const usersAtLimit = usersWithUsage
+      .filter((u) => u.aiUsage.count >= FREE_TIER_MONTHLY_LIMIT)
+      .map((u) => ({ id: u.id, name: u.name, email: u.email || null, count: u.aiUsage.count }))
+      .sort((a, b) => b.count - a.count);
+    res.json({
+      configured: false,
+      freeTierLimit: FREE_TIER_MONTHLY_LIMIT,
+      usersWithUsageThisMonth: usersWithUsage.length,
+      usersAtLimit,
+    });
+  });
+
+  // ---------- Soporte ----------
+  // Vista consolidada por email o teléfono + un puñado de acciones sobre un
+  // usuario/canal puntual. Cada acción con efecto queda en el log de
+  // auditoría, mismo criterio que exportar informes o asignar profesionales.
+  router.get('/support/search', requireAdmin, (req, res) => {
+    const db = getDB();
+    const q = (req.query.q || '').trim().toLowerCase();
+    if (!q) return res.json([]);
+    const month = currentMonth();
+    const matches = db.users
+      .filter((u) => (u.email && u.email.toLowerCase().includes(q)) || (u.phone && u.phone.toLowerCase().includes(q)))
+      .slice(0, 20);
+    const results = matches.map((u) => {
+      const channels = db.members
+        .filter((m) => m.userId === u.id)
+        .map((m) => {
+          const channel = db.channels.find((c) => c.id === m.channelId);
+          if (!channel) return null;
+          const otherNames = db.members
+            .filter((x) => x.channelId === channel.id && x.userId !== u.id)
+            .map((x) => (db.users.find((uu) => uu.id === x.userId) || {}).name)
+            .filter(Boolean);
+          return {
+            code: channel.code,
+            role: m.role,
+            roleLabel: m.role === 'A' ? 'Parte A' : m.role === 'B' ? 'Parte B' : (PROFESSIONAL_ROLE_LABELS[m.role] || m.role),
+            otherNames,
+          };
+        })
+        .filter(Boolean);
+      const usage = (u.aiUsage && u.aiUsage.month === month) ? u.aiUsage.count : 0;
+      return {
+        id: u.id, name: u.name, email: u.email || null, phone: u.phone || null, guest: !!u.guest,
+        verifiedProfessional: !!u.verifiedProfessional,
+        channels,
+        usageThisMonth: usage,
+        freeTierLimit: FREE_TIER_MONTHLY_LIMIT,
+        subscriptionAvailable: false, // sin sistema de pagos conectado — no hay estado real que mostrar
+      };
+    });
+    res.json(results);
+  });
+
+  router.post('/support/users/:id/adjust-usage', requireAdmin, async (req, res) => {
+    const db = getDB();
+    const user = db.users.find((u) => u.id === req.params.id);
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    const count = Number(req.body.count);
+    if (!Number.isFinite(count) || count < 0) return res.status(400).json({ error: 'Cantidad inválida' });
+
+    const month = currentMonth();
+    const previous = (user.aiUsage && user.aiUsage.month === month) ? user.aiUsage.count : 0;
+    user.aiUsage = { month, count };
+    logAudit(db, { actorId: req.user.id, action: 'adjust_usage', meta: { targetEmail: user.email || null, from: previous, to: count } });
+    await commit();
+    res.json({ ok: true, count });
+  });
+
+  // solo muestra/registra el link ya existente para copiarlo — no manda
+  // ningún mensaje desde acá.
+  router.get('/support/channels/:code/invite-link', requireAdmin, async (req, res) => {
+    const db = getDB();
+    const channel = db.channels.find((c) => c.code === req.params.code.toUpperCase());
+    if (!channel) return res.status(404).json({ error: 'Canal no encontrado' });
+    const url = `${req.protocol}://${req.get('host')}/?channel=${channel.code}`;
+    const guestUrl = channel.guestToken ? `${req.protocol}://${req.get('host')}/?guest=${channel.guestToken}` : null;
+    logAudit(db, { actorId: req.user.id, action: 'view_invite_link', channelCode: channel.code });
+    await commit();
+    res.json({ url, guestUrl });
   });
 
   return router;
