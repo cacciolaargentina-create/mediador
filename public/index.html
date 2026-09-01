@@ -19,6 +19,13 @@
   html,body{height:100%;}
   body{ background:var(--bg); color:var(--text); font-family:var(--sans); -webkit-font-smoothing:antialiased; display:flex; flex-direction:column; min-height:100vh; }
 
+  /* ---- logo animado: un puentecito se dibuja bajo el nombre, con un punto
+     que lo cruza, en loop suave. width:100%/em en la SVG para que escale
+     solo con el tamaño de letra de cada lugar donde se usa (header chico,
+     login grande) sin necesitar medirlo por JS. ---- */
+  .bridge-logo{ position:relative; display:inline-block; }
+  .bridge-logo .bridge-arc{ position:absolute; left:0; top:100%; width:100%; height:0.5em; pointer-events:none; overflow:visible; }
+
   header.topbar{ padding:16px 20px 12px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; gap:10px; }
   header.topbar .brand{ font-family:var(--serif); font-weight:600; font-size:18px; }
   header.topbar .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
@@ -324,7 +331,7 @@
 
 <header class="topbar" id="topbar" style="display:none">
   <div>
-    <div class="brand">Puente<em>digital</em></div>
+    <div class="brand bridge-logo">Puente<em>digital</em></div>
     <div class="tagline">Comunicación mediada</div>
   </div>
   <div class="user-chip" id="user-chip"></div>
@@ -428,7 +435,7 @@
 </header>
 <div class="landing-wrap">
 
-  <div class="brand-row"><div class="brand">Puente<em>digital</em></div></div>
+  <div class="brand-row"><div class="brand bridge-logo">Puente<em>digital</em></div></div>
   <div class="tagline-center">Comunicación mediada por IA</div>
 
   <div class="hero-row">

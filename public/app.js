@@ -53,6 +53,61 @@ async function api(path, opts={}){
 }
 
 // ==================================================================
+// LOGO ANIMADO — un puentecito se dibuja bajo "Puentedigital" (login y
+// header de la app), con un punto que lo cruza, en loop. La SVG usa
+// viewBox fijo + width:100%/height:0.5em, así escala sola con cada lugar
+// donde se usa (18px en el header, 25-32px en el login) sin medir nada
+// por JS ni necesitar que el elemento esté visible en ese momento.
+// ==================================================================
+function initBridgeLogos(){
+  const ns = 'http://www.w3.org/2000/svg';
+  const cs = getComputedStyle(document.documentElement);
+  const calm = cs.getPropertyValue('--calm').trim() || '#5FA8A0';
+  const dotColor = cs.getPropertyValue('--text').trim() || '#E7EDEC';
+
+  document.querySelectorAll('.bridge-logo').forEach(wrap => {
+    if(wrap.dataset.bridgeInit) return; // no duplicar si se llama más de una vez
+    wrap.dataset.bridgeInit = '1';
+
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('class', 'bridge-arc');
+    svg.setAttribute('viewBox', '0 0 200 32');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.setAttribute('aria-hidden', 'true');
+
+    const path = document.createElementNS(ns, 'path');
+    path.setAttribute('d', 'M4 4 Q100 30 196 4');
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', calm);
+    path.setAttribute('stroke-width', '3');
+    path.setAttribute('stroke-linecap', 'round');
+    svg.appendChild(path);
+
+    const dot = document.createElementNS(ns, 'circle');
+    dot.setAttribute('r', '4');
+    dot.setAttribute('fill', dotColor);
+    svg.appendChild(dot);
+
+    wrap.appendChild(svg);
+
+    const totalLen = path.getTotalLength();
+    path.setAttribute('stroke-dasharray', totalLen);
+
+    let t = Math.random() * Math.PI * 2; // fase inicial al azar — si hay dos en pantalla, no laten sincronizados
+    (function frame(){
+      t += 0.008;
+      const p = Math.min(1, ((Math.sin(t) + 1) / 2) * 1.35);
+      path.setAttribute('stroke-dashoffset', totalLen - totalLen * p);
+      const pt = path.getPointAtLength(p * totalLen);
+      dot.setAttribute('cx', pt.x);
+      dot.setAttribute('cy', pt.y);
+      requestAnimationFrame(frame);
+    })();
+  });
+}
+initBridgeLogos();
+
+// ==================================================================
 // BOOT
 // ==================================================================
 (async function boot(){
