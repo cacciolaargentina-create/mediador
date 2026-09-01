@@ -1802,6 +1802,44 @@ async function handleAskAssistant(){
   sendBtn.disabled = false;
 }
 
+// tarjeta de Inicio (sin casos todavía) según el estado real de
+// autoregistro como profesional — mismos tres estados que renderProSignup(),
+// pero acá se ve en CUALQUIER login posterior, no solo el primero.
+function renderProStatusCard(proStatus){
+  if(proStatus && proStatus.verifiedProfessional){
+    return `
+      <div class="card">
+        <div class="eyebrow">Profesional verificado</div>
+        <p style="font-size:13px; line-height:1.5;">Ya sos profesional verificado en Puente Digital (${escapeHtml(proStatus.verifiedProfessionalRole === 'estudio' ? 'estudio jurídico' : 'mediador/a')} — ${escapeHtml(proStatus.verifiedProfessionalOrg || '')}). Todavía no tenés ningún caso asignado — te suman a uno cuando una parte te invita, o podés vincularte con un código de invitación.</p>
+      </div>
+    `;
+  }
+  if(proStatus && proStatus.application && proStatus.application.status === 'pending'){
+    return `
+      <div class="card" style="border-color:var(--warn);">
+        <div class="eyebrow" style="color:var(--warn);">Solicitud en revisión</div>
+        <p style="font-size:13px; line-height:1.5;">Tu solicitud como ${escapeHtml(proStatus.application.roleLabel)} (${escapeHtml(proStatus.application.orgName)}) está en revisión. Te avisamos apenas la veamos — mientras tanto, si ya tenés un código de invitación a un caso, lo podés cargar más abajo.</p>
+      </div>
+    `;
+  }
+  if(proStatus && proStatus.application && proStatus.application.status === 'rejected'){
+    return `
+      <div class="card" style="border-color:var(--danger);">
+        <div class="eyebrow" style="color:var(--danger);">Solicitud no aprobada</div>
+        <p style="font-size:13px; line-height:1.5;">Tu solicitud anterior como ${escapeHtml(proStatus.application.roleLabel)} (${escapeHtml(proStatus.application.orgName)}) no fue aprobada. Escribinos por WhatsApp si querés más información o volver a intentarlo.</p>
+      </div>
+    `;
+  }
+  // sin ninguna solicitud (la mayoría: alguien que recién llega) — el pitch de siempre
+  return `
+    <div class="hero-demo">
+      <div class="eyebrow">Así funciona</div>
+      <div class="bubble original"><div class="bubble-label">Mensaje original</div>Otra vez llegás tarde. Sos un desastre y nunca te importa nuestro hijo.</div>
+      <div class="bubble suggested"><div class="bubble-label">Alternativa sugerida por la IA</div>Hoy la entrega se realizó 25 minutos después del horario acordado. ¿Podemos confirmar el horario para la próxima entrega?</div>
+    </div>
+  `;
+}
+
 // ==================================================================
 // SCREEN: INICIO (= lista de casos, antes "Mis casos" era una pestaña
 // aparte — ver NAV-RESTRUCTURE-para-claude-code.md). Tocar un caso lleva
@@ -1816,12 +1854,19 @@ async function renderInicio(){
   updateInicioDot(list); // reusa este mismo fetch en vez de pedirlo de nuevo
 
   if(!list.length){
+    // sin casos, puede ser por dos motivos bien distintos: alguien que
+    // recién llega (le sirve el pitch de siempre) o un/a profesional que ya
+    // se autoregistró y está esperando aprobación — para ese segundo caso,
+    // el pitch genérico ("Crear o unirme a un caso") es activamente
+    // confuso: ya hizo algo, y esto le dice "empezá de cero". Antes solo se
+    // avisaba el estado de la solicitud una única vez, justo al volver del
+    // login de Google con ?proSignup=1 — cualquier entrada posterior caía
+    // acá sin ningún rastro de que había una solicitud en curso.
+    let proStatus = null;
+    try{ proStatus = await api('/api/professionals/me'); }catch(e){ /* si falla, se muestra el pitch genérico igual */ }
+
     el.innerHTML = `
-      <div class="hero-demo">
-        <div class="eyebrow">Así funciona</div>
-        <div class="bubble original"><div class="bubble-label">Mensaje original</div>Otra vez llegás tarde. Sos un desastre y nunca te importa nuestro hijo.</div>
-        <div class="bubble suggested"><div class="bubble-label">Alternativa sugerida por la IA</div>Hoy la entrega se realizó 25 minutos después del horario acordado. ¿Podemos confirmar el horario para la próxima entrega?</div>
-      </div>
+      ${renderProStatusCard(proStatus)}
       <p class="empty-hint">Todavía no sos parte de ningún caso.</p>
       <button class="primary" style="width:100%" onclick="openNuevoModal()">Crear o unirme a un caso</button>
       <p class="disclaimer">Esta app no reemplaza a un abogado, mediador, terapeuta o a la Justicia. En situaciones de violencia o riesgo, contactá a las autoridades correspondientes o a la línea 144 / 137.</p>
