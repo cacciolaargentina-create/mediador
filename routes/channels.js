@@ -256,13 +256,36 @@ module.exports = function (io) {
   });
 
   // ---------- mensajes ----------
+  // Paginado: sin ?before= devuelve los últimos `limit` mensajes (la
+  // ventana "en vivo" con la que arranca el chat); con ?before=<createdAt>
+  // devuelve los `limit` mensajes anteriores a esa fecha, para "cargar
+  // mensajes anteriores" al scrollear hacia arriba. Antes traía TODO el
+  // historial siempre — en un canal usado durante meses eso significa
+  // repintar cientos de mensajes cada vez que llega uno nuevo.
+  //
+  // ?all=1 se salta la paginación — lo usa la pantalla Historial, que
+  // necesita poder buscar sobre el registro completo, no solo la ventana
+  // en vivo del chat (son usos distintos: Chat quiere ser liviano, Historial
+  // promete ser el registro completo).
   router.get('/:code/messages', requireAuth, requireMembership, (req, res) => {
     const db = getDB();
-    const msgs = db.messages
+    const all = db.messages
       .filter((m) => m.channelId === req.channel.id)
-      .sort((a, b) => a.createdAt - b.createdAt)
-      .map(serializeMessage);
-    res.json(msgs);
+      .sort((a, b) => a.createdAt - b.createdAt);
+
+    if (req.query.all) {
+      return res.json({ messages: all.map(serializeMessage), hasMore: false });
+    }
+
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const before = req.query.before ? Number(req.query.before) : null;
+    const filtered = before ? all.filter((m) => m.createdAt < before) : all;
+
+    const page = filtered.slice(-limit);
+    res.json({
+      messages: page.map(serializeMessage),
+      hasMore: filtered.length > page.length,
+    });
   });
 
   // analiza sin guardar — el frontend decide si usa la reformulación

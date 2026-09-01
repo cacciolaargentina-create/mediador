@@ -15,6 +15,10 @@ let proposeFormOpen = false;   // formulario de "Proponer horario" abierto en el
 let proposeCounterFor = null;  // id del evento para el que se está armando una contrapropuesta
 let notifyEnabled = false;     // sonido + notificaciones del navegador para mensajes nuevos
 let audioCtx = null;
+let hasMoreHistory = false;    // true si /messages todavía tiene mensajes más viejos que los cargados
+let loadingMoreHistory = false;
+let historialMessages = null;  // registro completo para la pantalla Historial — se carga aparte de `messages` (que ahora es solo la ventana en vivo del chat), null = todavía no se pidió
+let socketEverConnected = false; // distingue la primera conexión (ya cargamos todo a mano) de una reconexión (hay que resincronizar)
 
 // Ejemplos de mensajes centrados en hechos para situaciones típicas de
 // coparentalidad — un empujón hacia comunicación estructurada en vez de
@@ -478,6 +482,7 @@ async function tryLoadChannel(code){
     const mine = channelInfo.members.find(m => m.user && m.user.id === me.id);
     myRole = mine ? mine.role : null;
     calendarLinkCache = null;
+    historialMessages = null; // canal nuevo/distinto — el Historial completo se vuelve a pedir la próxima vez que se abra
     renderUserChip();
     connectSocket();
     await Promise.all([loadMessages(), loadEvents(), loadExpenses()]);
@@ -509,14 +514,43 @@ async function openCase(code){
   }
 }
 
+function showConnectionBanner(){
+  const el = document.getElementById('connection-banner');
+  if(el) el.style.display = 'flex';
+}
+function hideConnectionBanner(){
+  const el = document.getElementById('connection-banner');
+  if(el) el.style.display = 'none';
+}
+
 function connectSocket(){
   if(socket) socket.disconnect();
+  socketEverConnected = false;
+  hideConnectionBanner();
   const opts = { withCredentials:true };
   if(isGuest) opts.auth = { guestToken };
   socket = io(opts);
-  socket.on('connect', ()=> socket.emit('join-channel', channelCode));
+  socket.on('connect', ()=>{
+    socket.emit('join-channel', channelCode);
+    if(socketEverConnected){
+      // no es la primera conexión — es una reconexión después de un corte.
+      // El socket ya se reconectó solo (comportamiento por defecto de
+      // socket.io-client), pero eso no trae de vuelta lo que se perdió
+      // mientras estuvo cortado — hay que volver a pedirlo.
+      resyncMessages();
+      if(currentScreen === 'calendario') loadEvents().then(renderCalendario);
+      if(currentScreen === 'gastos') loadExpenses().then(renderGastos);
+    }
+    socketEverConnected = true;
+    hideConnectionBanner();
+  });
+  socket.on('disconnect', ()=> showConnectionBanner());
   socket.on('message:new', (m)=>{
     if(!messages.find(x=>x.id===m.id)) messages.push(m);
+    // si Historial ya cargó su registro completo, se mantiene al día en
+    // vivo también — si todavía no se cargó ni hace falta tocarlo acá,
+    // se carga fresco (con este mensaje ya incluido) la próxima vez que se abra.
+    if(historialMessages && !historialMessages.find(x=>x.id===m.id)) historialMessages.push(m);
     if(currentScreen === 'chat') paintMessages();
     if(currentScreen === 'historial') renderHistorial();
     updateNavBadges();
@@ -542,7 +576,59 @@ function upsertEvent(e){
   const idx = events.findIndex(x=>x.id===e.id);
   if(idx>=0) events[idx] = e; else events.push(e);
 }
-async function loadMessages(){ messages = await api(`/api/channels/${channelCode}/messages`); }
+// carga la ventana "en vivo" (los últimos ~50) al entrar al canal —
+// reemplaza lo que hubiera antes, es siempre el punto de partida.
+async function loadMessages(){
+  const res = await api(`/api/channels/${channelCode}/messages`);
+  messages = res.messages;
+  hasMoreHistory = res.hasMore;
+}
+
+// trae la página anterior a la más vieja que ya está cargada y la agrega
+// adelante — se llama al tocar "Cargar mensajes anteriores" arriba del chat.
+// Mantiene la posición de scroll: sin esto, agregar contenido arriba hace
+// que la pantalla "salte" porque el navegador no sabe que hay que compensar.
+async function loadMoreMessages(){
+  if(loadingMoreHistory || !hasMoreHistory || !messages.length) return;
+  loadingMoreHistory = true;
+  // se actualiza el botón directo (sin un paintMessages() completo acá):
+  // un repaint entero fuerza el scroll al final del chat, justo lo
+  // contrario de lo que se quiere mientras se está mirando historial viejo.
+  const loadMoreBtn = document.getElementById('load-more-btn');
+  if(loadMoreBtn){ loadMoreBtn.textContent = 'Cargando…'; loadMoreBtn.disabled = true; }
+  const log = document.getElementById('chat-log');
+  const oldest = messages[0].createdAt;
+  const prevScrollHeight = log ? log.scrollHeight : 0;
+  try{
+    const res = await api(`/api/channels/${channelCode}/messages?before=${oldest}`);
+    const newOnes = res.messages.filter(m => !messages.find(x => x.id === m.id));
+    messages = [...newOnes, ...messages];
+    hasMoreHistory = res.hasMore;
+  }catch(e){ /* si falla, el botón sigue disponible para reintentar */ }
+  loadingMoreHistory = false;
+  paintMessages();
+  if(log) log.scrollTop = log.scrollHeight - prevScrollHeight;
+}
+
+// se llama al reconectar el socket después de un corte — trae de nuevo la
+// ventana "en vivo" desde el servidor (fuente de verdad) y suma lo que
+// falte, así ningún mensaje que haya llegado durante el corte queda
+// invisible hasta que alguien recargue la página a mano.
+async function resyncMessages(){
+  if(!channelCode) return;
+  try{
+    const res = await api(`/api/channels/${channelCode}/messages`);
+    let added = false;
+    res.messages.forEach(m => {
+      if(!messages.find(x => x.id === m.id)){ messages.push(m); added = true; }
+    });
+    if(added) messages.sort((a, b) => a.createdAt - b.createdAt);
+    // ojo: no se toca hasMoreHistory acá — resincroniza solo la punta
+    // "en vivo", no reemplaza el estado de la paginación hacia atrás.
+    if(currentScreen === 'chat') paintMessages();
+    updateNavBadges();
+  }catch(e){ /* se reintenta solo en el próximo reconnect */ }
+}
 async function loadEvents(){ events = await api(`/api/channels/${channelCode}/events`); }
 async function loadExpenses(){ try{ expenses = await api(`/api/channels/${channelCode}/expenses`); }catch(e){ expenses = []; } }
 async function loadCheckins(){
@@ -869,6 +955,7 @@ async function createChannel(){
     channelCode = channelInfo.code;
     myRole = 'A';
     calendarLinkCache = null;
+    historialMessages = null; // canal nuevo/distinto — el Historial completo se vuelve a pedir la próxima vez que se abra
     updateUrl(channelCode);
     connectSocket();
     await Promise.all([loadMessages(), loadEvents(), loadExpenses()]);
@@ -889,6 +976,7 @@ async function joinChannelUI(){
     const mine = channelInfo.members.find(m => m.user && m.user.id === me.id);
     myRole = mine ? mine.role : null;
     calendarLinkCache = null;
+    historialMessages = null; // canal nuevo/distinto — el Historial completo se vuelve a pedir la próxima vez que se abra
     updateUrl(channelCode);
     connectSocket();
     await Promise.all([loadMessages(), loadEvents(), loadExpenses()]);
@@ -1116,6 +1204,17 @@ function paintMessages(){
   const log = document.getElementById('chat-log');
   if(!log) return;
   log.innerHTML = '';
+
+  if(hasMoreHistory){
+    const loadMoreBtn = document.createElement('button');
+    loadMoreBtn.id = 'load-more-btn';
+    loadMoreBtn.className = 'text-link';
+    loadMoreBtn.style.cssText = 'align-self:center; margin-bottom:10px;';
+    loadMoreBtn.textContent = 'Cargar mensajes anteriores';
+    loadMoreBtn.onclick = loadMoreMessages;
+    log.appendChild(loadMoreBtn);
+  }
+
   messages.forEach((m, idx)=>{
     if(!m.sender){
       if(m.eventId){
@@ -1518,11 +1617,29 @@ function filterHistorial(value){
   historialQuery = value;
   renderHistorial(true);
 }
-function renderHistorial(keepFocus){
+// Historial usa SU PROPIO registro completo (historialMessages), separado
+// de `messages` (que ahora es solo la ventana en vivo paginada del chat) —
+// esta pantalla promete ser el registro completo y buscable, así que no
+// puede depender de cuánto historial haya cargado el chat en ese momento.
+async function renderHistorial(keepFocus){
   const el = document.getElementById('historial-content');
   if(!channelInfo){ el.innerHTML = `<div class="empty-hint">Primero configurá tu canal en la pestaña "Canal".</div>`; return; }
+
+  if(historialMessages === null){
+    el.innerHTML = `<p class="empty-hint">Cargando historial…</p>`;
+    const requestedChannel = channelCode;
+    try{
+      const res = await api(`/api/channels/${channelCode}/messages?all=1`);
+      if(requestedChannel !== channelCode) return; // cambió de canal mientras cargaba — no pisar el estado del canal nuevo
+      historialMessages = res.messages;
+    }catch(e){
+      el.innerHTML = `<p class="empty-hint">No se pudo cargar el historial.</p>`;
+      return;
+    }
+  }
+
   const q = historialQuery.trim().toLowerCase();
-  const items = messages.filter(m => (m.sender || m.pattern) && (!q || m.text.toLowerCase().includes(q)));
+  const items = historialMessages.filter(m => (m.sender || m.pattern) && (!q || m.text.toLowerCase().includes(q)));
   const listHtml = items.length
     ? items.map(m=>{
         if(!m.sender && m.pattern){
