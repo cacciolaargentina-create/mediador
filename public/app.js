@@ -61,9 +61,6 @@ async function api(path, opts={}){
 // ==================================================================
 function initBridgeLogos(){
   const ns = 'http://www.w3.org/2000/svg';
-  const cs = getComputedStyle(document.documentElement);
-  const calm = cs.getPropertyValue('--calm').trim() || '#5FA8A0';
-  const dotColor = cs.getPropertyValue('--text').trim() || '#E7EDEC';
 
   document.querySelectorAll('.bridge-logo').forEach(wrap => {
     if(wrap.dataset.bridgeInit) return; // no duplicar si se llama más de una vez
@@ -78,14 +75,16 @@ function initBridgeLogos(){
     const path = document.createElementNS(ns, 'path');
     path.setAttribute('d', 'M4 4 Q100 30 196 4');
     path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', calm);
+    // color por CSS var (no atributo fijo) para que el logo cambie solo de
+    // color al alternar modo claro/oscuro, sin tener que reconstruirlo.
+    path.style.stroke = 'var(--calm)';
     path.setAttribute('stroke-width', '3');
     path.setAttribute('stroke-linecap', 'round');
     svg.appendChild(path);
 
     const dot = document.createElementNS(ns, 'circle');
     dot.setAttribute('r', '4');
-    dot.setAttribute('fill', dotColor);
+    dot.style.fill = 'var(--text)';
     svg.appendChild(dot);
 
     wrap.appendChild(svg);
@@ -106,6 +105,111 @@ function initBridgeLogos(){
   });
 }
 initBridgeLogos();
+
+// ==================================================================
+// MODO CLARO/OSCURO — toggle manual, persistido en localStorage. El valor
+// inicial ya se aplicó en un <script> inline en el <head> (antes de pintar,
+// para no flashear oscuro un instante si alguien eligió claro) — acá solo
+// se sincroniza el ícono de los botones con ese estado inicial y se maneja
+// el toggle en caliente.
+// ==================================================================
+function currentTheme(){ return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark'; }
+
+function applyTheme(theme, persist){
+  if(theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  else document.documentElement.removeAttribute('data-theme');
+  if(persist){ try{ localStorage.setItem('pd_theme', theme); }catch(e){ /* modo privado sin storage — el toggle sigue andando, solo no se recuerda */ } }
+  const metaTheme = document.querySelector('meta[name=theme-color]');
+  if(metaTheme) metaTheme.content = theme === 'light' ? '#F4F7F6' : '#12181A';
+  document.querySelectorAll('.theme-btn').forEach(b => {
+    b.textContent = theme === 'light' ? '🌙' : '☀️';
+    b.title = theme === 'light' ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro';
+  });
+}
+
+function initTheme(){
+  let saved = null;
+  try{ saved = localStorage.getItem('pd_theme'); }catch(e){ /* sin storage disponible */ }
+  const theme = saved || ((window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark');
+  applyTheme(theme, false); // false: no reescribir localStorage solo por sincronizar el ícono
+}
+
+function toggleTheme(){
+  const next = currentTheme() === 'light' ? 'dark' : 'light';
+  document.documentElement.classList.add('theme-anim');
+  document.querySelectorAll('.theme-btn').forEach(b => b.classList.add('animating'));
+  applyTheme(next, true);
+  setTimeout(() => {
+    document.documentElement.classList.remove('theme-anim');
+    document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('animating'));
+  }, 520);
+}
+initTheme();
+
+// ==================================================================
+// MENÚ HAMBURGUESA (landing, responsive) — solo esconde/muestra los links
+// de .site-nav por debajo de 640px (ver CSS); arriba de eso el CSS ya los
+// muestra en fila y el botón queda oculto, así que este JS no hace nada ahí.
+// ==================================================================
+function toggleMobileNav(){
+  const nav = document.getElementById('site-nav');
+  const btn = document.getElementById('hamburger-btn');
+  if(!nav) return;
+  const open = nav.classList.toggle('open');
+  if(btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+document.addEventListener('click', (e) => {
+  const nav = document.getElementById('site-nav');
+  if(!nav || !nav.classList.contains('open')) return;
+  // clic en un link del propio menú → lo cierra (por si es un ancla tipo
+  // #faq que no recarga la página); clic afuera → también lo cierra.
+  if(e.target.closest('#site-nav a') || (!e.target.closest('#site-nav') && !e.target.closest('#hamburger-btn'))){
+    nav.classList.remove('open');
+    const btn = document.getElementById('hamburger-btn');
+    if(btn) btn.setAttribute('aria-expanded', 'false');
+  }
+});
+
+// ==================================================================
+// INSTALAR APP — Android/desktop Chrome dispara beforeinstallprompt y ahí
+// se puede pedir el diálogo nativo; iOS Safari NUNCA dispara ese evento (la
+// Push API tampoco existe ahí fuera de modo standalone, ver push.js), así
+// que para iOS el botón abre un modal con los pasos manuales en vez de
+// intentar un prompt que no existe.
+// ==================================================================
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  document.querySelectorAll('.install-btn').forEach(b => b.style.display = 'flex');
+});
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  document.querySelectorAll('.install-btn').forEach(b => b.style.display = 'none');
+});
+
+function initInstallButton(){
+  if(isStandalone()) return; // ya la tiene instalada — no hay nada que ofrecer
+  if(isIOS()){
+    document.querySelectorAll('.install-btn').forEach(b => b.style.display = 'flex');
+  }
+  // en Android/desktop Chrome el botón se muestra recién cuando llega
+  // beforeinstallprompt (arriba) — antes de eso no hay nada que ofrecer.
+}
+initInstallButton();
+
+async function promptInstall(){
+  if(isIOS()){
+    document.getElementById('install-modal')?.classList.add('show');
+    return;
+  }
+  if(!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  document.querySelectorAll('.install-btn').forEach(b => b.style.display = 'none');
+}
+function closeInstallModal(){ document.getElementById('install-modal')?.classList.remove('show'); }
 
 // ==================================================================
 // BOOT
@@ -909,7 +1013,15 @@ function renderCaseSummary(){
     </div>
   ` : '';
 
-  slot.innerHTML = summaryHtml + eventsHtml;
+  // colapsado por default: esto es información de contexto, no el chat en
+  // sí — que le coma lugar a la conversación por default es justo lo que
+  // hace sentir apretado el módulo principal de la app.
+  slot.innerHTML = (summaryHtml || eventsHtml) ? `
+    <details class="case-summary-toggle">
+      <summary>Resumen y próximos eventos</summary>
+      ${summaryHtml}${eventsHtml}
+    </details>
+  ` : '';
 }
 
 // ==================================================================

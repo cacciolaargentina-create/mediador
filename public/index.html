@@ -14,6 +14,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Puente">
+<!-- corre ANTES de pintar: si no, quien eligió modo claro ve un flash oscuro
+     (el tema por default) hasta que app.js carga al final del body. -->
+<script>(function(){try{var t=localStorage.getItem('pd_theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
@@ -22,12 +25,31 @@
     --bg:#12181A; --surface:#1B2326; --surface-2:#222C30; --line:#2E393D;
     --text:#E7EDEC; --text-dim:#93A3A2; --text-faint:#5E6E6D;
     --calm:#5FA8A0; --calm-dim:#3E6E69; --warn:#D98C4A; --warn-dim:#5A4327;
-    --danger:#C4614A; --danger-dim:#4A2C23;
+    --danger:#C4614A; --danger-dim:#4A2C23; --header-bg:rgba(18,24,26,0.92);
     --serif:'Fraunces',serif; --sans:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
+  }
+  /* ---- modo claro: mismos tokens, otros valores — todo el resto de la hoja
+     de estilos usa var(--...), así que alcanza con redefinirlos acá para
+     retemar la app entera (landing y dashboard incluidos). ---- */
+  :root[data-theme="light"]{
+    --bg:#F4F7F6; --surface:#FFFFFF; --surface-2:#EBF0EF; --line:#DCE4E2;
+    --text:#16211F; --text-dim:#4C5C59; --text-faint:#7C8C89;
+    --calm:#2E7A72; --calm-dim:#D9EDE9; --warn:#A85A1D; --warn-dim:#FBE8D2;
+    --danger:#B23A24; --danger-dim:#F8DFD8; --header-bg:rgba(244,247,246,0.92);
   }
   *{box-sizing:border-box; margin:0; padding:0;}
   html,body{height:100%;}
   body{ background:var(--bg); color:var(--text); font-family:var(--sans); -webkit-font-smoothing:antialiased; display:flex; flex-direction:column; min-height:100vh; }
+
+  /* ---- animación al cambiar de tema: la clase se agrega un instante desde
+     JS (toggleTheme) y se saca sola — así el resto del tiempo los estados
+     hover/focus no arrastran una transición de color que los haría sentir
+     lentos. ---- */
+  html.theme-anim, html.theme-anim *{ transition:background-color .35s ease, color .35s ease, border-color .35s ease, box-shadow .35s ease !important; }
+  .icon-btn{ background:none; border:1px solid var(--line); color:var(--text-dim); width:32px; height:32px; border-radius:8px; font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .icon-btn:hover{ border-color:var(--calm-dim); color:var(--text); }
+  @keyframes theme-icon-pop{ 0%{ transform:rotate(0) scale(1); } 45%{ transform:rotate(160deg) scale(0.65); } 100%{ transform:rotate(360deg) scale(1); } }
+  .icon-btn.animating{ animation:theme-icon-pop .5s ease; }
 
   /* ---- logo animado: un puentecito se dibuja bajo el nombre, con un punto
      que lo cruza, en loop suave. width:100%/em en la SVG para que escale
@@ -137,12 +159,31 @@
   .cal-day .dot.pendiente{ background:var(--warn); }
   .cal-day .dot.rechazado{ background:var(--danger); }
 
-  .chat-wrap{ display:flex; flex-direction:column; height:calc(100vh - 230px); min-height:320px; }
-  .chat-log{ flex:1; overflow-y:auto; padding:4px 0 14px; display:flex; flex-direction:column; gap:10px; }
-  .msg{ max-width:80%; padding:10px 13px; border-radius:14px; font-size:14px; line-height:1.45; }
+  /* el -300px deja lugar para todo lo que hay arriba (header + barra
+     contextual + el renglón de "Resumen y próximos eventos" colapsado) Y
+     para la barra inferior fija (nav.tabs, ~56px) que si no queda tapando
+     el composer — medido a mano, no es un número al azar. */
+  .chat-wrap{ display:flex; flex-direction:column; height:calc(100vh - 300px); min-height:320px; }
+  .chat-log{ flex:1; overflow-y:auto; padding:4px 0 12px; display:flex; flex-direction:column; gap:8px; }
+  .msg{ max-width:80%; padding:9px 12px; border-radius:14px; font-size:14px; line-height:1.42; }
   .msg.me{ background:var(--calm-dim); border:1px solid var(--calm); align-self:flex-end; border-bottom-right-radius:3px; }
   .msg.them{ background:var(--surface); border:1px solid var(--line); align-self:flex-start; border-bottom-left-radius:3px; }
-  .msg .meta{ font-family:var(--mono); font-size:9.5px; color:var(--text-faint); margin-top:5px; }
+  .msg .meta{ font-family:var(--mono); font-size:9.5px; color:var(--text-faint); margin-top:4px; }
+
+  /* ---- pantalla de chat: el título "Chat con X" repite lo que ya dice la
+     barra contextual de arriba ("Con X · CODIGO"), así que se oculta acá
+     para darle más alto al log de mensajes — sigue en el DOM (por si algo
+     más lo necesita) solo invisible. ---- */
+  #screen-chat #chat-title{ display:none; }
+  #screen-chat #chat-sub{ margin-bottom:4px; font-size:12px; }
+  /* resumen semanal + próximos eventos: colapsados por default para no
+     comerle lugar al chat — quien los quiera los despliega. */
+  .case-summary-toggle{ margin-bottom:6px; }
+  .case-summary-toggle summary{ cursor:pointer; list-style:none; font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-faint); padding:6px 2px; display:flex; align-items:center; gap:6px; }
+  .case-summary-toggle summary::-webkit-details-marker{ display:none; }
+  .case-summary-toggle summary::before{ content:'▸'; transition:transform .15s ease; }
+  .case-summary-toggle[open] summary::before{ transform:rotate(90deg); }
+  .case-summary-toggle .card:last-child{ margin-bottom:0; }
   .msg.system{ align-self:center; background:none; border:1px dashed var(--line); color:var(--text-faint); font-size:11.5px; font-family:var(--mono); text-align:center; max-width:92%; }
   .msg.pattern{ border-color:var(--warn); color:var(--warn); }
   .msg .flag-note{ margin-top:6px; font-size:11.5px; color:var(--warn); border-top:1px solid var(--warn-dim); padding-top:5px; }
@@ -225,14 +266,26 @@
 
   .landing-screen{ overflow-y:auto; display:flex; flex-direction:column; }
 
-  .site-header{ position:sticky; top:0; z-index:20; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 20px; background:rgba(18,24,26,0.92); backdrop-filter:blur(6px); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .site-header{ position:sticky; top:0; z-index:20; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 20px; background:var(--header-bg); backdrop-filter:blur(6px); border-bottom:1px solid var(--line); flex-wrap:wrap; }
   .site-header .brand{ font-family:var(--serif); font-weight:600; font-size:17px; color:var(--text); text-decoration:none; flex-shrink:0; }
   .site-header .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
   .site-footer-inner .brand{ font-family:var(--serif); font-weight:600; font-size:16px; color:var(--text); text-decoration:none; }
   .site-footer-inner .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
-  .site-nav{ display:flex; gap:18px; flex-wrap:wrap; }
+  .site-header-actions{ display:flex; align-items:center; gap:8px; margin-left:auto; }
+  .hamburger-btn{ display:none; }
+  .site-nav{ display:flex; gap:18px; flex-wrap:wrap; align-items:center; width:100%; }
   .site-nav a{ font-size:12.5px; color:var(--text-dim); text-decoration:none; font-family:var(--sans); white-space:nowrap; }
   .site-nav a:hover, .site-nav a.active{ color:var(--calm); }
+
+  /* ---- menú hamburguesa: por debajo de 640px los links se esconden atrás
+     del botón ☰ y bajan como un panel propio; arriba de eso vuelven a la
+     fila normal y el botón desaparece. ---- */
+  @media (max-width:639px){
+    .hamburger-btn{ display:flex; }
+    .site-nav{ display:none; width:100%; flex-direction:column; align-items:flex-start; gap:2px; padding-top:10px; margin-top:10px; border-top:1px solid var(--line); }
+    .site-nav.open{ display:flex; }
+    .site-nav a{ padding:8px 2px; font-size:13.5px; width:100%; }
+  }
 
   .site-footer{ border-top:1px solid var(--line); padding:24px 20px 30px; margin-top:auto; }
   .site-footer-inner{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px; max-width:720px; margin:0 auto 14px; }
@@ -307,7 +360,7 @@
     header.topbar{ padding-left:max(24px, calc((100% - 680px)/2)); padding-right:max(24px, calc((100% - 680px)/2)); }
     nav.tabs{ padding-left:max(24px, calc((100% - 680px)/2)); padding-right:max(24px, calc((100% - 680px)/2)); }
     .pad{ max-width:680px; margin:0 auto; padding:26px 24px; }
-    .chat-wrap{ height:calc(100vh - 260px); }
+    .chat-wrap{ height:calc(100vh - 300px); }
 
     /* la barra contextual (Chat/Calendario/...) se armó pensando en mobile
        (scroll horizontal como red de seguridad para que nunca envuelva a una
@@ -349,7 +402,11 @@
     <div class="brand bridge-logo">Puente<em>digital</em></div>
     <div class="tagline">Comunicación mediada</div>
   </div>
-  <div class="user-chip" id="user-chip"></div>
+  <div style="display:flex; align-items:center; gap:8px;">
+    <button class="icon-btn install-btn" id="install-btn-app" onclick="promptInstall()" style="display:none" title="Instalar app" aria-label="Instalar app">📲</button>
+    <button class="icon-btn theme-btn" onclick="toggleTheme()" title="Cambiar a modo claro" aria-label="Cambiar tema">🌙</button>
+    <div class="user-chip" id="user-chip"></div>
+  </div>
 </header>
 
 <div id="connection-banner" class="status-banner warn" style="display:none; margin:0; border-radius:0; justify-content:center;">
@@ -395,7 +452,7 @@
   </section>
 
   <section class="screen" id="screen-chat">
-    <div class="pad" style="padding-bottom:6px">
+    <div class="pad" style="padding-bottom:0; padding-top:10px">
       <h1 class="screen-title" style="font-size:20px; margin-bottom:2px" id="chat-title">Chat mediado</h1>
       <p class="screen-sub" style="margin-bottom:10px" id="chat-sub"></p>
       <div id="case-summary-slot"></div>
@@ -440,7 +497,12 @@
 <div id="login-screen" class="landing-screen" style="display:none;">
 <header class="site-header">
   <a href="/" class="brand bridge-logo">Puente<em>digital</em></a>
-  <nav class="site-nav">
+  <div class="site-header-actions">
+    <button class="icon-btn install-btn" id="install-btn-landing" onclick="promptInstall()" style="display:none" title="Instalar app" aria-label="Instalar app">📲</button>
+    <button class="icon-btn theme-btn" onclick="toggleTheme()" title="Cambiar a modo claro" aria-label="Cambiar tema">🌙</button>
+    <button class="icon-btn hamburger-btn" id="hamburger-btn" onclick="toggleMobileNav()" aria-label="Menú" aria-expanded="false">☰</button>
+  </div>
+  <nav class="site-nav" id="site-nav">
     <a href="/" class="active">Inicio</a>
     <a href="/#faq">FAQ</a>
     <a href="/legal.html">Marco legal</a>
@@ -478,7 +540,7 @@
     </a>
     <button class="ghost" style="width:fit-content; max-width:260px; margin:0 auto; display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 18px; background:#fff; color:#1F1F1F; border:none;" onclick="location.href='/auth/google'">
       <svg width="16" height="16" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
-      O iniciá sesión con Google
+      Comenzar con Google
     </button>
     <p class="cta-note">Gratis para empezar, sin tarjeta ni plan pago todavía. El canal queda atado a tu cuenta (de Google o tu número de WhatsApp), no a un código que cualquiera pueda adivinar.</p>
   </div>
@@ -612,6 +674,22 @@
     </div>
     <p class="screen-sub" style="margin-top:4px;">Creá un canal nuevo, unite con un código, o vinculate a un caso existente como mediador/a o estudio jurídico.</p>
     <div id="nuevo-content"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="install-modal" onclick="if(event.target===this) closeInstallModal()">
+  <div class="modal-sheet" style="max-width:360px;">
+    <div class="modal-head">
+      <h2 class="screen-title" style="font-size:18px; margin:0;">Instalar en iPhone</h2>
+      <button class="modal-close" onclick="closeInstallModal()" aria-label="Cerrar">✕</button>
+    </div>
+    <ol style="margin:14px 0 0 18px; font-size:13.5px; color:var(--text-dim); line-height:1.85;">
+      <li>Abrí este sitio en <strong>Safari</strong> (no funciona desde dentro de otra app).</li>
+      <li>Tocá el ícono de <strong>Compartir</strong> <span style="font-family:var(--mono)">(⬆️, en la barra de abajo)</span>.</li>
+      <li>Elegí <strong>"Agregar a la pantalla de inicio"</strong>.</li>
+      <li>Confirmá tocando <strong>"Agregar"</strong> arriba a la derecha.</li>
+    </ol>
+    <p class="field-hint" style="margin-top:12px;">Así abre en pantalla completa, sin la barra de Safari, y podés recibir notificaciones.</p>
   </div>
 </div>
 
