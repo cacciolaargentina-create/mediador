@@ -8,6 +8,7 @@ const { getDB, commit } = require('./db');
 const { serializeMessage } = require('./serializers');
 const { sendText } = require('./whatsapp');
 const { logWhatsappEvent } = require('./whatsappLog');
+const { sendPushToUser } = require('./push');
 
 const PATTERN_THRESHOLD = 3;
 const NOTIFY_DEBOUNCE_MS = Number(process.env.WHATSAPP_NOTIFY_DEBOUNCE_MS) || 2 * 60 * 1000;
@@ -96,7 +97,10 @@ const pendingNotifications = new Map();
 function scheduleNotification(io, channel, { toUserId, fromName }) {
   const db = getDB();
   const toUser = db.users.find((u) => u.id === toUserId);
-  if (!toUser || !toUser.phone) return; // sin teléfono cargado, no hay a dónde notificar
+  // antes esto cortaba acá si la persona no tenía teléfono cargado — pero
+  // push por navegador no necesita teléfono, así que alguien sin WhatsApp
+  // vinculado igual puede recibir el aviso si activó notificaciones.
+  if (!toUser) return;
 
   const key = `${channel.id}:${toUserId}`;
   const existing = pendingNotifications.get(key);
@@ -123,24 +127,40 @@ async function fireNotification(key) {
   const db = getDB();
   const channel = db.channels.find((c) => c.id === channelId);
   const toUser = db.users.find((u) => u.id === toUserId);
-  if (!channel || !toUser || !toUser.phone) return;
+  if (!channel || !toUser) return;
 
   const link = accessLinkFor(channel, toUser);
   const plural = entry.count > 1 ? `${entry.count} mensajes nuevos` : 'un mensaje nuevo';
-  const text = `Tenés ${plural} de ${entry.fromName} en Puente Digital. Verlo: ${link}`;
+
+  if (toUser.phone) {
+    const text = `Tenés ${plural} de ${entry.fromName} en Puente Digital. Verlo: ${link}`;
+    try {
+      await sendText(toUser.phone, text);
+      logWhatsappEvent(db, {
+        kind: 'notification_sent', phone: toUser.phone, userName: toUser.name,
+        channelCode: channel.code, detail: `${plural} de ${entry.fromName}`,
+      });
+    } catch (err) {
+      console.error('No se pudo enviar la notificación de WhatsApp:', err);
+      logWhatsappEvent(db, {
+        kind: 'notification_failed', phone: toUser.phone, userName: toUser.name,
+        channelCode: channel.code, detail: err.message || String(err),
+      });
+    }
+  }
+
+  // independiente de si tiene WhatsApp vinculado — si además (o en cambio)
+  // aceptó notificaciones push del navegador, le llega por los dos lados.
   try {
-    await sendText(toUser.phone, text);
-    logWhatsappEvent(db, {
-      kind: 'notification_sent', phone: toUser.phone, userName: toUser.name,
-      channelCode: channel.code, detail: `${plural} de ${entry.fromName}`,
+    await sendPushToUser(db, commit, toUserId, {
+      title: 'Puente Digital',
+      body: `Tenés ${plural} de ${entry.fromName}`,
+      url: link,
     });
   } catch (err) {
-    console.error('No se pudo enviar la notificación de WhatsApp:', err);
-    logWhatsappEvent(db, {
-      kind: 'notification_failed', phone: toUser.phone, userName: toUser.name,
-      channelCode: channel.code, detail: err.message || String(err),
-    });
+    console.error('No se pudo enviar la notificación push:', err);
   }
+
   await commit();
 }
 

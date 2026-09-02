@@ -86,6 +86,7 @@ const whatsappRoutes = require('./routes/whatsapp')(io);
 const draftRoutes = require('./routes/draft')();
 const verifyRoutes = require('./routes/verify');
 const professionalsRoutes = require('./routes/professionals');
+const pushRoutes = require('./routes/push')();
 
 app.use('/auth', authRoutes);
 app.use('/api/channels', channelRoutes);
@@ -95,10 +96,18 @@ app.use('/webhook/whatsapp', whatsappRoutes);
 app.use('/api/draft', draftRoutes);
 app.use('/verificar', verifyRoutes);
 app.use('/api/professionals', professionalsRoutes);
+app.use('/api/push', pushRoutes);
 
 app.get('/api/health', (req, res) => res.json({ ok: true, users: getDB().users.length }));
 
 // el cliente se une a la "room" de su canal después de autenticarse por HTTP
+function isMemberOfChannel(userId, code) {
+  const db = getDB();
+  const channel = db.channels.find((c) => c.code === code);
+  if (!channel) return false;
+  return db.members.some((m) => m.channelId === channel.id && m.userId === userId);
+}
+
 io.on('connection', (socket) => {
   const req = socket.request;
   let identity = req.user || null;
@@ -114,9 +123,11 @@ io.on('connection', (socket) => {
     return;
   }
   socket.on('join-channel', (code) => {
-    // Nota: para producción real, validar acá también que req.user sea miembro
-    // del canal antes de sumarlo a la room (ver requireMembership en channels.js).
-    socket.join(String(code).toUpperCase());
+    const upper = String(code).toUpperCase();
+    // antes esto confiaba ciegamente en lo que mandaba el cliente — ahora
+    // valida membresía real, igual que ya hace requireMembership del lado HTTP.
+    if (!isMemberOfChannel(identity.id, upper)) return;
+    socket.join(upper);
   });
 });
 

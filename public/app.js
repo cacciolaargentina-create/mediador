@@ -424,6 +424,61 @@ async function checkAdminLink(){
 // ==================================================================
 // SONIDO + NOTIFICACIONES DE MENSAJES NUEVOS
 // ==================================================================
+function isIOS(){ return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream; }
+function isStandalone(){ return window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches; }
+
+function urlBase64ToUint8Array(base64String){
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const arr = new Uint8Array(rawData.length);
+  for(let i=0; i<rawData.length; i++) arr[i] = rawData.charCodeAt(i);
+  return arr;
+}
+
+async function registerServiceWorker(){
+  if(!('serviceWorker' in navigator)) return null;
+  try{ return await navigator.serviceWorker.register('/sw.js'); }
+  catch(e){ console.error('No se pudo registrar el service worker', e); return null; }
+}
+
+// En iOS, la Push API directamente no existe fuera del modo standalone —
+// no es que falle, es que ni siquiera está — así que sin esto la persona
+// toca "activar notificaciones" y no pasa nada, sin ninguna pista de por qué.
+async function subscribeToPush(){
+  if(!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
+  if(isIOS() && !isStandalone()){
+    alert('Para recibir notificaciones en iPhone, primero agregá esta app a tu pantalla de inicio (compartir → "Agregar a inicio") y abrila desde ahí.');
+    return false;
+  }
+  try{
+    const reg = await registerServiceWorker();
+    if(!reg) return false;
+    const { publicKey } = await api('/api/push/vapid-public-key');
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    });
+    await api('/api/push/subscribe', { method:'POST', body: JSON.stringify(sub.toJSON()) });
+    return true;
+  }catch(e){
+    console.error('No se pudo suscribir a push', e);
+    return false; // no bloquea el resto — sigue quedando el aviso sonoro mientras la pestaña está abierta
+  }
+}
+
+async function unsubscribeFromPush(){
+  if(!('serviceWorker' in navigator)) return;
+  try{
+    const reg = await navigator.serviceWorker.getRegistration('/sw.js');
+    const sub = reg && await reg.pushManager.getSubscription();
+    if(sub){
+      await api('/api/push/unsubscribe', { method:'POST', body: JSON.stringify({ endpoint: sub.endpoint }) });
+      await sub.unsubscribe();
+    }
+  }catch(e){ console.error('No se pudo dar de baja la suscripción push', e); }
+}
+
 function initNotifications(){
   if(typeof Notification === 'undefined'){ return; } // navegador sin soporte (ej. algunos in-app browsers)
   notifyEnabled = localStorage.getItem('pd_notify_enabled') === '1' && Notification.permission === 'granted';
@@ -455,6 +510,7 @@ async function toggleNotifications(){
     notifyEnabled = false;
     localStorage.removeItem('pd_notify_enabled');
     renderNotifyToggle();
+    unsubscribeFromPush(); // en segundo plano, no hace falta esperarla para actualizar la UI
     return;
   }
   if(Notification.permission === 'denied'){
@@ -467,6 +523,7 @@ async function toggleNotifications(){
     localStorage.setItem('pd_notify_enabled', '1');
     ensureAudioCtx();
     playNotifySound();
+    subscribeToPush(); // no bloquea — si falla (ej. iOS sin standalone), el sonido en pestaña abierta sigue andando igual
   }
   renderNotifyToggle();
 }

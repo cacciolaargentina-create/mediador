@@ -38,6 +38,7 @@ const EMPTY_DB = {
   certifiedExports: [], // { id, hash, channelCode, generatedByName, generatedByRole, createdAt } — un registro por cada export certificado en PDF, para que la página pública de verificación (/verificar/:hash) pueda confirmar que el documento realmente salió de acá
   professionalApplications: [], // { id, userId, role, orgName, status:'pending'|'approved'|'rejected', createdAt, decidedAt, decidedBy } — autoregistro de mediador/a o estudio jurídico, pendiente de aprobación manual de un admin
   moderationStats: [], // { id, date:'YYYY-MM-DD', channelCode|null, successCount, failCount, flaggedCount } — UNA fila por día+canal (no una por llamada), para que el panel de Costos y Salud pueda sumar por período sin que la tabla crezca sin límite
+  pushSubscriptions: [], // { id, userId, endpoint, keys:{p256dh,auth}, createdAt } — un dispositivo suscripto a notificaciones push del navegador; una persona puede tener varios (celu + compu)
 };
 
 const SCHEMA = `
@@ -95,9 +96,13 @@ CREATE TABLE IF NOT EXISTS moderation_stats (
   id TEXT PRIMARY KEY, date TEXT, channelCode TEXT,
   successCount INTEGER DEFAULT 0, failCount INTEGER DEFAULT 0, flaggedCount INTEGER DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id TEXT PRIMARY KEY, userId TEXT, endpoint TEXT UNIQUE, keys TEXT, createdAt INTEGER
+);
 CREATE INDEX IF NOT EXISTS idx_certified_exports_hash ON certified_exports(hash);
 CREATE INDEX IF NOT EXISTS idx_professional_applications_user ON professional_applications(userId);
 CREATE INDEX IF NOT EXISTS idx_moderation_stats_date ON moderation_stats(date);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(userId);
 CREATE INDEX IF NOT EXISTS idx_members_channel ON members(channelId);
 CREATE INDEX IF NOT EXISTS idx_members_user ON members(userId);
 CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channelId);
@@ -120,6 +125,7 @@ const JSON_COLUMNS = {
   channels: ['professionalInvites', 'lastSummary'],
   auditLog: ['meta'],
   users: ['aiUsage'],
+  pushSubscriptions: ['keys'],
 };
 const TABLE_NAMES = {
   users: 'users', channels: 'channels', members: 'members', messages: 'messages',
@@ -127,7 +133,7 @@ const TABLE_NAMES = {
   checkins: 'checkins', auditLog: 'audit_log',
   whatsappLog: 'whatsapp_log', whatsappWebhookRaw: 'whatsapp_webhook_raw',
   certifiedExports: 'certified_exports', professionalApplications: 'professional_applications',
-  moderationStats: 'moderation_stats',
+  moderationStats: 'moderation_stats', pushSubscriptions: 'push_subscriptions',
 };
 
 function rowToRecord(collectionKey, row) {
