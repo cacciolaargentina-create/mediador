@@ -985,33 +985,98 @@ async function refreshInicioBadge(){
 }
 
 // ------------------------------------------------------------------
-// Selector rápido de caso: tocar el nombre del caso actual (Nivel 2)
-// despliega los otros casos sin tener que volver a Inicio.
+// Tarjeta de caso — UNA sola función para las dos listas que existen (la
+// de Inicio y la del selector rápido de abajo): antes cada una tenía su
+// propio HTML a mano, y la del selector era una versión pelada (sin
+// estado, sin "con quién", sin recibo de lectura) — se veía como una cosa
+// distinta en vez de la misma lista en otro lugar. Ahora las dos arman la
+// tarjeta con esto, así que si una cambia, cambian las dos.
 // ------------------------------------------------------------------
-let caseSwitcherOpen = false;
-async function toggleCaseSwitcher(){
-  caseSwitcherOpen = !caseSwitcherOpen;
-  const el = document.getElementById('case-switcher');
-  if(!caseSwitcherOpen){ el.style.display = 'none'; return; }
-  el.style.display = 'block';
-  el.innerHTML = `<p class="empty-hint">Cargando…</p>`;
-  let list;
-  try{ list = await api('/api/channels/mine'); }catch(e){ el.innerHTML = `<p class="empty-hint">No se pudo cargar.</p>`; return; }
-  const others = list.filter(c => c.code !== channelCode);
-  el.innerHTML = others.length ? others.map(c => `
-    <div class="card" style="margin-bottom:8px; cursor:pointer;" onclick="switchToCase('${c.code}')">
+const STATUS_LABELS = { abierto: 'Abierto', en_proceso: 'En proceso', cerrado: 'Cerrado' };
+const STATUS_PILL_CLASS = { abierto: 'confirmado', en_proceso: 'pendiente', cerrado: 'rechazado' };
+const READ_RECEIPT = { enviado: '✓ enviado', leido: '✓✓ leído' };
+
+function othersLineHtml(others){
+  if(!others || !others.length) return 'Esperando a la otra parte';
+  return 'Con ' + others.map(o => escapeHtml(o.name) + (o.roleLabel ? ` (${escapeHtml(o.roleLabel)})` : '')).join(', ');
+}
+
+function caseCardHtml(c, onclickExpr){
+  return `
+    <div class="card case-card" style="margin-bottom:10px; cursor:pointer;" onclick="${onclickExpr}">
       <div class="row1">
         <div class="what" style="font-weight:600;">${escapeHtml(c.code)}</div>
-        ${c.inactiveDays > 3 ? `<span class="ev-pill pendiente">sin actividad ${c.inactiveDays}d</span>` : ''}
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <span class="ev-pill ${STATUS_PILL_CLASS[c.status] || 'confirmado'}">${STATUS_LABELS[c.status] || 'Abierto'}</span>
+          ${c.inactiveDays > 3 ? `<span class="ev-pill pendiente">sin actividad hace ${c.inactiveDays}d</span>` : ''}
+          <span class="ev-pill confirmado">${escapeHtml(c.myRoleLabel)}</span>
+        </div>
       </div>
-      <div class="who">${c.otherNames.length ? 'Con ' + c.otherNames.map(escapeHtml).join(', ') : 'Esperando a la otra parte'}</div>
+      <div class="who">${othersLineHtml(c.others)}${c.otherOnline ? ' <span class="presence-dot online" title="Hay alguien conectado ahora"></span> en línea ahora' : ''}</div>
+      <div class="ts" style="margin-top:6px;">${c.messageCount} mensajes · última actividad ${fmtTs(c.lastActivity)}${c.lastOwnMessageStatus ? ' · ' + READ_RECEIPT[c.lastOwnMessageStatus] : ''}</div>
     </div>
-  `).join('') : `<p class="empty-hint">No tenés otros casos activos.</p>`;
+  `;
+}
+
+// ------------------------------------------------------------------
+// Selector rápido de caso: tocar el nombre del caso actual (Nivel 2)
+// despliega los otros casos sin tener que volver a Inicio. Backdrop +
+// transición + encabezado para que se note que es un panel propio (antes
+// aparecía de golpe, superpuesto arriba del chat, sin ningún indicio de
+// qué era ni cómo cerrarlo salvo tocar el mismo botón de nuevo).
+// ------------------------------------------------------------------
+let caseSwitcherOpen = false;
+function caseSwitcherHeadingHtml(){
+  return `
+    <div class="case-switcher-head">
+      <span class="case-switcher-heading">Cambiar de caso</span>
+      <button class="modal-close" onclick="closeCaseSwitcher()" aria-label="Cerrar" style="font-size:16px;">✕</button>
+    </div>
+  `;
+}
+async function loadCaseSwitcherList(){
+  const el = document.getElementById('case-switcher');
+  if(!el) return;
+  el.innerHTML = caseSwitcherHeadingHtml() + `<p class="empty-hint">Cargando…</p>`;
+  let list;
+  try{ list = await api('/api/channels/mine'); }
+  catch(e){
+    el.innerHTML = caseSwitcherHeadingHtml() + `<p class="empty-hint">No se pudo cargar. <button class="text-link" style="display:inline; margin:0;" onclick="loadCaseSwitcherList()">Reintentar</button></p>`;
+    return;
+  }
+  const others = list.filter(c => c.code !== channelCode);
+  el.innerHTML = caseSwitcherHeadingHtml() + (others.length
+    ? others.map(c => caseCardHtml(c, `switchToCase('${c.code}')`)).join('')
+    : `<p class="empty-hint">No tenés otros casos activos.</p>`);
+}
+function toggleCaseSwitcher(){
+  caseSwitcherOpen ? closeCaseSwitcher() : openCaseSwitcher();
+}
+function openCaseSwitcher(){
+  caseSwitcherOpen = true;
+  const el = document.getElementById('case-switcher');
+  const backdrop = document.getElementById('case-switcher-backdrop');
+  const btn = document.querySelector('.case-switch-btn');
+  if(!el || !backdrop) return;
+  el.style.display = 'block';
+  backdrop.style.display = 'block';
+  if(btn) btn.classList.add('open');
+  void el.offsetHeight; // fuerza el reflow — si no, el navegador puede saltarse la transición de "display:none a visible"
+  requestAnimationFrame(() => { el.classList.add('open'); backdrop.classList.add('open'); });
+  loadCaseSwitcherList();
 }
 function closeCaseSwitcher(){
   caseSwitcherOpen = false;
   const el = document.getElementById('case-switcher');
-  if(el) el.style.display = 'none';
+  const backdrop = document.getElementById('case-switcher-backdrop');
+  const btn = document.querySelector('.case-switch-btn');
+  if(!el || !backdrop) return;
+  el.classList.remove('open');
+  backdrop.classList.remove('open');
+  if(btn) btn.classList.remove('open');
+  setTimeout(() => {
+    if(!caseSwitcherOpen){ el.style.display = 'none'; backdrop.style.display = 'none'; }
+  }, 200);
 }
 async function switchToCase(code){
   closeCaseSwitcher();
@@ -2210,7 +2275,10 @@ async function renderInicio(){
   el.innerHTML = `<p class="empty-hint">Cargando…</p>`;
   let list;
   try{ list = await api('/api/channels/mine'); }
-  catch(e){ el.innerHTML = `<p class="empty-hint">No se pudieron cargar tus casos.</p>`; return; }
+  catch(e){
+    el.innerHTML = `<p class="empty-hint">No se pudieron cargar tus casos. <button class="text-link" style="display:inline; margin:0;" onclick="renderInicio()">Reintentar</button></p>`;
+    return;
+  }
   updateInicioDot(list); // reusa este mismo fetch en vez de pedirlo de nuevo
 
   if(!list.length){
@@ -2245,24 +2313,7 @@ async function renderInicio(){
     </div>
   `;
 
-  const STATUS_LABELS = { abierto: 'Abierto', en_proceso: 'En proceso', cerrado: 'Cerrado' };
-  const STATUS_PILL_CLASS = { abierto: 'confirmado', en_proceso: 'pendiente', cerrado: 'rechazado' };
-  const READ_RECEIPT = { enviado: '✓ enviado', leido: '✓✓ leído' };
-
-  const listHtml = list.map(c => `
-    <div class="card" style="margin-bottom:10px; cursor:pointer;" onclick="openCase('${c.code}')">
-      <div class="row1">
-        <div class="what" style="font-weight:600;">${escapeHtml(c.code)}</div>
-        <div style="display:flex; gap:6px; flex-wrap:wrap;">
-          <span class="ev-pill ${STATUS_PILL_CLASS[c.status] || 'confirmado'}">${STATUS_LABELS[c.status] || 'Abierto'}</span>
-          ${c.inactiveDays > 3 ? `<span class="ev-pill pendiente">sin actividad hace ${c.inactiveDays}d</span>` : ''}
-          <span class="ev-pill confirmado">${escapeHtml(c.myRoleLabel)}</span>
-        </div>
-      </div>
-      <div class="who">${c.otherNames.length ? 'Con ' + c.otherNames.map(escapeHtml).join(', ') : 'Esperando a la otra parte'}</div>
-      <div class="ts" style="margin-top:6px;">${c.messageCount} mensajes · última actividad ${fmtTs(c.lastActivity)}${c.lastOwnMessageStatus ? ' · ' + READ_RECEIPT[c.lastOwnMessageStatus] : ''}</div>
-    </div>
-  `).join('');
+  const listHtml = list.map(c => caseCardHtml(c, `openCase('${c.code}')`)).join('');
 
   el.innerHTML = statsHtml + listHtml;
 }

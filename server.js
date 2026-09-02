@@ -79,7 +79,17 @@ io.engine.use(sessionMiddleware);
 io.engine.use(passport.initialize());
 io.engine.use(passport.session());
 
-const channelRoutes = require('./routes/channels')(io);
+// Presencia (online/escribiendo): en memoria, por proceso — con un solo
+// server esto alcanza. Si en algún momento corre más de una instancia,
+// esto necesita pasar a algo compartido (Redis) para que la presencia no
+// quede partida entre instancias. Se declara ACÁ (antes de armar
+// channelRoutes) porque GET /api/channels/mine también la necesita, para
+// poder decir "hay alguien conectado ahora" en la lista de casos sin
+// obligar al cliente a unirse a la room de todos sus canales a la vez.
+const presence = new Map(); // channelCode -> Map(userId -> Set(socketId))
+const typingTimers = new Map(); // "`${code}:${userId}`" -> timeout, apaga "escribiendo" solo si no llega otra señal
+
+const channelRoutes = require('./routes/channels')(io, presence);
 const guestRoutes = require('./routes/guest')(io);
 const adminRoutes = require('./routes/admin')(io);
 const whatsappRoutes = require('./routes/whatsapp')(io);
@@ -101,14 +111,6 @@ app.use('/api/push', pushRoutes);
 app.get('/api/health', (req, res) => res.json({ ok: true, users: getDB().users.length }));
 
 // el cliente se une a la "room" de su canal después de autenticarse por HTTP
-//
-// Presencia (online/escribiendo): en memoria, por proceso — con un solo
-// server esto alcanza. Si en algún momento corre más de una instancia,
-// esto necesita pasar a algo compartido (Redis) para que la presencia no
-// quede partida entre instancias.
-const presence = new Map(); // channelCode -> Map(userId -> Set(socketId))
-const typingTimers = new Map(); // "`${code}:${userId}`" -> timeout, apaga "escribiendo" solo si no llega otra señal
-
 function isMemberOfChannel(userId, code) {
   const db = getDB();
   const channel = db.channels.find((c) => c.code === code);

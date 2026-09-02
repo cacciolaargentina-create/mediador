@@ -62,7 +62,7 @@ const assistantLimiter = rateLimit({
   message: { error: 'Demasiadas preguntas al asistente — esperá unos minutos.' },
 });
 
-module.exports = function (io) {
+module.exports = function (io, presence) {
   const router = express.Router();
 
   function requireAuth(req, res, next) {
@@ -160,10 +160,25 @@ module.exports = function (io) {
       .map((m) => {
         const channel = db.channels.find((c) => c.id === m.channelId);
         if (!channel) return null;
-        const others = db.members
-          .filter((x) => x.channelId === channel.id && x.userId !== req.user.id)
-          .map((x) => (db.users.find((u) => u.id === x.userId) || {}).name)
+        const otherMembers = db.members.filter((x) => x.channelId === channel.id && x.userId !== req.user.id);
+        const channelPresence = presence.get(channel.code);
+        // { name, role, roleLabel, online } por cada otro miembro — antes
+        // era solo el nombre en texto plano, sin forma de distinguir un
+        // mediador/a de la otra parte ni de saber si hay alguien conectado
+        // ahora mismo (para eso había que entrar al canal y abrir la ⚙).
+        const others = otherMembers
+          .map((x) => {
+            const u = db.users.find((u) => u.id === x.userId);
+            if (!u) return null;
+            return {
+              name: u.name,
+              role: x.role,
+              roleLabel: x.role === 'A' || x.role === 'B' ? null : PROFESSIONAL_ROLE_LABELS[x.role] || x.role,
+              online: !!(channelPresence && channelPresence.has(x.userId)),
+            };
+          })
           .filter(Boolean);
+        const otherOnline = others.some((o) => o.online);
         const msgs = db.messages.filter((x) => x.channelId === channel.id);
         const lastActivity = msgs.reduce((max, x) => Math.max(max, x.createdAt), channel.createdAt);
         // último mensaje que MANDÉ yo en este canal, para mostrar "enviado" /
@@ -178,7 +193,8 @@ module.exports = function (io) {
           status: channel.status || 'abierto',
           myRole: m.role,
           myRoleLabel: m.role === 'A' ? 'Parte A' : m.role === 'B' ? 'Parte B' : (PROFESSIONAL_ROLE_LABELS[m.role] || m.role),
-          otherNames: others,
+          others,
+          otherOnline,
           messageCount: msgs.length,
           lastActivity,
           lastOwnMessageStatus: lastOwnMessage ? (lastOwnMessage.readAt ? 'leido' : 'enviado') : null,
