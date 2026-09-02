@@ -107,7 +107,7 @@ module.exports = function (io) {
   // ---------- crear canal ----------
   router.post('/', requireAuth, async (req, res) => {
     const db = getDB();
-    const channel = { id: nanoid(), code: genCode(), guestToken: nanoid(24), calendarToken: nanoid(24), createdAt: Date.now() };
+    const channel = { id: nanoid(), code: genCode(), guestToken: nanoid(24), calendarToken: nanoid(24), status: 'abierto', createdAt: Date.now() };
     db.channels.push(channel);
     db.members.push({ id: nanoid(), channelId: channel.id, userId: req.user.id, role: 'A', joinedAt: Date.now() });
     db.messages.push({
@@ -168,6 +168,7 @@ module.exports = function (io) {
         const lastActivity = msgs.reduce((max, x) => Math.max(max, x.createdAt), channel.createdAt);
         return {
           code: channel.code,
+          status: channel.status || 'abierto',
           myRole: m.role,
           myRoleLabel: m.role === 'A' ? 'Parte A' : m.role === 'B' ? 'Parte B' : (PROFESSIONAL_ROLE_LABELS[m.role] || m.role),
           otherNames: others,
@@ -186,6 +187,23 @@ module.exports = function (io) {
   // ---------- info del canal ----------
   router.get('/:code', requireAuth, requireMembership, (req, res) => {
     res.json(serializeChannel(req.channel));
+  });
+
+  // ---------- estado del caso (abierto/en_proceso/cerrado) ----------
+  // Solo las partes lo cambian — un mediador/a con acceso de lectura no
+  // debería poder cerrar el caso de alguien más por su cuenta.
+  const CASE_STATUSES = ['abierto', 'en_proceso', 'cerrado'];
+  router.post('/:code/status', requireAuth, requireMembership, requireParty, async (req, res) => {
+    const { status } = req.body;
+    if (!CASE_STATUSES.includes(status)) {
+      return res.status(400).json({ error: 'Estado inválido — tiene que ser abierto, en_proceso o cerrado' });
+    }
+    const db = getDB();
+    const channel = db.channels.find((c) => c.id === req.channel.id);
+    channel.status = status;
+    await commit();
+    io.to(channel.code).emit('channel:status', { code: channel.code, status });
+    res.json({ code: channel.code, status });
   });
 
   // ---------- acceso de mediador/a o estudio jurídico ----------

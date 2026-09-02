@@ -678,6 +678,11 @@ function connectSocket(){
     const m = messages.find(x=>x.id===id);
     if(m){ m.readAt = readAt; if(currentScreen==='chat') paintMessages(); }
   });
+  socket.on('channel:status', ({code, status})=>{
+    if(channelInfo && channelInfo.code === code){ channelInfo.status = status; }
+    if(currentScreen === 'inicio') renderInicio();
+    if(currentScreen === 'chat') renderCaseTabsInfo();
+  });
 }
 let expenses = [];
 function upsertExpense(e){
@@ -919,6 +924,23 @@ function roleLabelOf(m){
 // contextual — gestión del caso ACTIVO: link para compartir, integrantes,
 // invitar mediador/a o estudio. Se llega por el ⚙ de la barra de tabs
 // contextual (antes era la pestaña global "Canal").
+async function setCaseStatus(status){
+  if(!channelInfo || channelInfo.status === status) return;
+  const previous = channelInfo.status;
+  channelInfo.status = status; // optimista — se revierte abajo si el POST falla
+  renderConfig();
+  try{
+    await api(`/api/channels/${channelInfo.code}/status`, { method:'POST', body: JSON.stringify({ status }) });
+    // el propio servidor emite channel:status por socket, que ya actualiza
+    // Inicio/tabs si están abiertos en otra pestaña o en el otro celular —
+    // acá no hace falta nada más que lo que ya hizo el render optimista.
+  }catch(e){
+    channelInfo.status = previous;
+    renderConfig();
+    alert('No se pudo cambiar el estado del caso. Probá de nuevo.');
+  }
+}
+
 function renderConfig(){
   const el = document.getElementById('config-content');
   if(!channelInfo){ el.innerHTML = `<p class="empty-hint">Elegí un caso primero.</p>`; return; }
@@ -957,6 +979,14 @@ function renderConfig(){
     </div>
   ` : '';
   el.innerHTML = `
+    <div class="card">
+      <div class="eyebrow">Estado del caso</div>
+      <div class="status-select-row">
+        <button class="status-opt ${channelInfo.status === 'abierto' ? 'active' : ''}" onclick="setCaseStatus('abierto')">Abierto</button>
+        <button class="status-opt ${channelInfo.status === 'en_proceso' ? 'active' : ''}" onclick="setCaseStatus('en_proceso')">En proceso</button>
+        <button class="status-opt ${channelInfo.status === 'cerrado' ? 'active' : ''}" onclick="setCaseStatus('cerrado')">Cerrado</button>
+      </div>
+    </div>
     <div class="card">
       <div class="eyebrow">Tu canal</div>
       <div class="code-display">${channelInfo.code}</div>
@@ -2002,11 +2032,15 @@ async function renderInicio(){
     </div>
   `;
 
+  const STATUS_LABELS = { abierto: 'Abierto', en_proceso: 'En proceso', cerrado: 'Cerrado' };
+  const STATUS_PILL_CLASS = { abierto: 'confirmado', en_proceso: 'pendiente', cerrado: 'rechazado' };
+
   const listHtml = list.map(c => `
     <div class="card" style="margin-bottom:10px; cursor:pointer;" onclick="openCase('${c.code}')">
       <div class="row1">
         <div class="what" style="font-weight:600;">${escapeHtml(c.code)}</div>
-        <div style="display:flex; gap:6px;">
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <span class="ev-pill ${STATUS_PILL_CLASS[c.status] || 'confirmado'}">${STATUS_LABELS[c.status] || 'Abierto'}</span>
           ${c.inactiveDays > 3 ? `<span class="ev-pill pendiente">sin actividad hace ${c.inactiveDays}d</span>` : ''}
           <span class="ev-pill confirmado">${escapeHtml(c.myRoleLabel)}</span>
         </div>
