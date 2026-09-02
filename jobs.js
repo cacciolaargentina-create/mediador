@@ -5,6 +5,8 @@
 
 const { getDB, commit } = require('./db');
 const { sendText } = require('./whatsapp');
+const { sendPushToUser } = require('./push');
+const { accessLinkFor } = require('./messaging');
 
 const REMINDER_AFTER_MS = 3 * 24 * 60 * 60 * 1000; // 3 días sin que se una la otra parte
 const SUMMARY_PERIOD_MS = 7 * 24 * 60 * 60 * 1000; // resumen semanal
@@ -70,16 +72,51 @@ async function generateWeeklySummaries() {
     const stats = { messages: msgs.length, flagged: flaggedCount, confirmedEvents };
     channel.lastSummary = { periodStart, periodEnd: now, stats };
 
-    const text = `Esta semana en tu canal ${channel.code}: ${stats.messages} mensajes revisados, ${stats.flagged} marcados por el sistema, ${stats.confirmedEvents} acuerdos confirmados.`;
+    // en positivo — "marcados por el sistema" suena a que alguien hizo algo
+    // mal (una nota de mala conducta); "el sistema ayudó a bajar la tensión"
+    // es el mismo dato pero se lee como que la herramienta está ayudando,
+    // no vigilando. Los acuerdos confirmados van primero porque son el
+    // resultado más concreto de la semana. Si algo dio 0, no se menciona —
+    // "0 acuerdos" o "0 marcados" no aporta y solo suma ruido.
+    const parts = [`${stats.messages} mensaje${stats.messages === 1 ? '' : 's'}`];
+    if (stats.confirmedEvents > 0) {
+      parts.push(`${stats.confirmedEvents} acuerdo${stats.confirmedEvents === 1 ? '' : 's'} confirmado${stats.confirmedEvents === 1 ? '' : 's'}`);
+    }
+    if (stats.flagged > 0) {
+      parts.push(`el sistema ayudó a bajar la tensión en ${stats.flagged} mensaje${stats.flagged === 1 ? '' : 's'}`);
+    }
+    const summaryLine = parts.join(', ');
+
     const parties = db.members.filter((m) => m.channelId === channel.id && (m.role === 'A' || m.role === 'B'));
     for (const member of parties) {
       const user = db.users.find((u) => u.id === member.userId);
-      if (!user || !user.phone) continue; // quienes no tienen teléfono lo ven como card en la pestaña Inicio de la web
+      if (!user) continue;
+      const link = accessLinkFor(channel, user);
+
+      if (user.phone) {
+        try {
+          await sendText(user.phone, `Esta semana en tu canal ${channel.code}: ${summaryLine}. Verlo: ${link}`);
+          sent++;
+        } catch (err) {
+          console.error('No se pudo mandar el resumen semanal por WhatsApp:', err);
+        }
+      }
+      // independiente del WhatsApp — antes esto era el único canal, así que
+      // quien entró solo con Google (sin vincular teléfono) nunca se
+      // enteraba del resumen salvo que abriera el chat y desplegara el
+      // panel colapsado a mano. Ahora, si además (o en cambio) aceptó
+      // notificaciones push, le llega igual.
       try {
-        await sendText(user.phone, text);
-        sent++;
+        // sendPushToUser no informa cuántos dispositivos recibieron nada
+        // (puede no tener ninguna suscripción y listo) — sent solo cuenta
+        // WhatsApp, que es lo único que sabemos con certeza que se mandó.
+        await sendPushToUser(db, commit, user.id, {
+          title: 'Resumen semanal — Puente Digital',
+          body: `Canal ${channel.code}: ${summaryLine}.`,
+          url: link,
+        });
       } catch (err) {
-        console.error('No se pudo mandar el resumen semanal:', err);
+        console.error('No se pudo mandar el resumen semanal por push:', err);
       }
     }
   }

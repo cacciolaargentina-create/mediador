@@ -1099,6 +1099,22 @@ function renderCaseTabsInfo(){
   `;
 }
 
+// mismo criterio que jobs.js del lado del servidor (que arma el texto para
+// WhatsApp/push): los acuerdos confirmados van primero porque son el
+// resultado más concreto, y "marcados por el sistema" — que suena a nota
+// de mala conducta — se reencuadra como que la herramienta ayudó a bajar
+// la tensión. Si algo dio 0, no se menciona.
+function summaryLineHtml(stats){
+  const parts = [`${stats.messages} mensaje${stats.messages === 1 ? '' : 's'}`];
+  if(stats.confirmedEvents > 0){
+    parts.push(`${stats.confirmedEvents} acuerdo${stats.confirmedEvents === 1 ? '' : 's'} confirmado${stats.confirmedEvents === 1 ? '' : 's'}`);
+  }
+  if(stats.flagged > 0){
+    parts.push(`el sistema ayudó a bajar la tensión en ${stats.flagged} mensaje${stats.flagged === 1 ? '' : 's'}`);
+  }
+  return parts.join(', ');
+}
+
 function renderCaseSummary(){
   const slot = document.getElementById('case-summary-slot');
   if(!slot) return;
@@ -1107,7 +1123,7 @@ function renderCaseSummary(){
   const summaryHtml = channelInfo.lastSummary ? `
     <div class="card">
       <div class="eyebrow">Resumen de la semana</div>
-      <p style="font-size:13px; line-height:1.5;">${channelInfo.lastSummary.stats.messages} mensajes revisados · ${channelInfo.lastSummary.stats.flagged} marcados por el sistema · ${channelInfo.lastSummary.stats.confirmedEvents} acuerdos confirmados.</p>
+      <p style="font-size:13px; line-height:1.5;">${summaryLineHtml(channelInfo.lastSummary.stats)}.</p>
     </div>
   ` : '';
 
@@ -1742,13 +1758,26 @@ function showReformCard(original, result){
     <div class="block alt"><div class="lab">Alternativa sugerida</div><div class="txt">${escapeHtml(result.reformulation)}</div></div>
     <div class="actions">
       <button class="ghost" data-action="original">Enviar original igual</button>
+      <button class="ghost" data-action="draft">🖊 Probarlo en el borrador</button>
       <button class="primary" data-action="alt">Usar alternativa</button>
     </div>
   `;
   card.querySelector('[data-action="alt"]').onclick = async ()=>{ card.remove(); await commitMessage(result.reformulation, true, result.reason); };
   card.querySelector('[data-action="original"]').onclick = async ()=>{ card.remove(); await commitMessage(original, true, 'Enviado sin cambios pese a la señal del sistema.'); };
+  // no manda nada — lleva el texto señalado al Borrador privado en vez de
+  // forzar acá mismo, bajo presión, la decisión entre "mandalo igual" o
+  // "usá la sugerencia": a veces lo que hace falta es un lugar aparte para
+  // reescribirlo con calma, sin que nada quede registrado en el canal
+  // mientras tanto.
+  card.querySelector('[data-action="draft"]').onclick = ()=>{ card.remove(); openInDraft(original); };
   log.appendChild(card);
   log.scrollTop = log.scrollHeight;
+}
+
+let draftPrefill = null; // texto que trae el Borrador precargado la próxima vez que se renderice — se usa una sola vez
+function openInDraft(text){
+  draftPrefill = text;
+  goTo('borrador');
 }
 
 async function commitMessage(text, flagged, reason){
@@ -2309,7 +2338,7 @@ async function renderInicio(){
     <div class="card" style="margin-bottom:14px; display:flex; gap:18px; flex-wrap:wrap; font-size:12.5px; color:var(--text-dim);">
       <div><span style="font-size:18px; font-weight:700; color:var(--text);">${list.length}</span><br>caso${list.length === 1 ? '' : 's'}</div>
       <div><span style="font-size:18px; font-weight:700; color:${inactive ? 'var(--warn)' : 'var(--text)'};">${inactive}</span><br>sin actividad hace +3 días</div>
-      <div><span style="font-size:18px; font-weight:700; color:var(--text);">${flaggedTotal}</span><br>mensajes moderados este mes</div>
+      <div><span style="font-size:18px; font-weight:700; color:var(--text);">${flaggedTotal}</span><br>veces que bajamos la tensión este mes</div>
     </div>
   `;
 
@@ -2391,13 +2420,19 @@ async function copyText(text, btn){
 // ==================================================================
 function renderBorrador(){
   const el = document.getElementById('borrador-content');
+  const prefill = draftPrefill;
+  draftPrefill = null; // se usa una sola vez — no se repite en la próxima visita a esta pantalla
   el.innerHTML = `
     <div class="card">
-      <textarea id="draft-input" placeholder="Escribí el mensaje que le querés mandar a la otra persona…" style="min-height:100px; margin-bottom:10px;"></textarea>
+      <textarea id="draft-input" placeholder="Escribí el mensaje que le querés mandar a la otra persona…" style="min-height:100px; margin-bottom:10px;">${prefill ? escapeHtml(prefill) : ''}</textarea>
       <button class="primary" style="width:100%" onclick="runDraftAnalyze()" id="draft-btn">Revisar</button>
       <div id="draft-result" style="margin-top:12px;"></div>
     </div>
   `;
+  // si vino desde el chat con un mensaje ya señalado, mostramos el
+  // análisis de una — no tiene sentido hacer que toque "Revisar" de nuevo
+  // para algo que el sistema ya le acababa de marcar.
+  if(prefill) runDraftAnalyze();
 }
 
 async function runDraftAnalyze(){
