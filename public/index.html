@@ -176,7 +176,13 @@
      para darle más alto al log de mensajes — sigue en el DOM (por si algo
      más lo necesita) solo invisible. ---- */
   #screen-chat #chat-title{ display:none; }
-  #screen-chat #chat-sub{ margin-bottom:4px; font-size:12px; }
+  #screen-chat #chat-sub{ margin-bottom:4px; font-size:12px; display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; }
+  /* fila de "quién más está" arriba del chat — ver updateChatPresenceLine() en app.js */
+  .presence-chip{ display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
+  .presence-dot{ width:7px; height:7px; border-radius:50%; background:var(--text-faint); flex-shrink:0; }
+  .presence-dot.online{ background:var(--calm); box-shadow:0 0 0 2px var(--calm-dim); }
+  .presence-dot.typing{ background:var(--warn); box-shadow:0 0 0 2px var(--warn-dim); animation:presence-pulse 1s ease-in-out infinite; }
+  @keyframes presence-pulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.35; } }
   /* resumen semanal + próximos eventos: colapsados por default para no
      comerle lugar al chat — quien los quiera los despliega. */
   .case-summary-toggle{ margin-bottom:6px; }
@@ -602,31 +608,31 @@
 
   <div class="section-heading reveal" id="faq">Preguntas frecuentes</div>
   <div class="faq-list">
-    <details class="faq-item reveal">
+    <details class="faq-item reveal" name="faq">
       <summary>¿Cómo funciona la moderación con IA?</summary>
       <p>Cada mensaje pasa por un análisis antes de enviarse. Si detecta lenguaje que puede escalar el conflicto (insultos, acusaciones, sarcasmo), te muestra una alternativa más neutral antes de que decidas — vos elegís si usarla o mandar el mensaje original igual.</p>
     </details>
-    <details class="faq-item reveal">
+    <details class="faq-item reveal" name="faq">
       <summary>¿La otra persona necesita crear una cuenta de Google?</summary>
       <p>No. Podés invitarla con un link que no requiere cuenta ni instalar nada — entra desde el navegador, escribe su nombre y ya puede leer y responder.</p>
     </details>
-    <details class="faq-item reveal">
+    <details class="faq-item reveal" name="faq">
       <summary>¿Quién puede ver los mensajes del canal?</summary>
       <p>Por defecto, solo las dos partes del canal. La única "tercera parte" automática es la IA, que analiza cada mensaje al momento de enviarse, no un archivo que alguien revisa después. Opcionalmente, cualquiera de las dos partes puede invitar a un mediador/a o a un estudio jurídico con acceso de <strong>solo lectura</strong> (no pueden escribir mensajes ni resolver acuerdos) — y ese ingreso siempre queda anunciado en el chat y visible para ambas partes, nunca es un acceso oculto.</p>
     </details>
-    <details class="faq-item reveal">
+    <details class="faq-item reveal" name="faq">
       <summary>¿Esto reemplaza a un abogado, mediador o terapeuta?</summary>
       <p>No. Es una herramienta de comunicación, no asesoramiento legal ni profesional. En situaciones de violencia o riesgo, contactá a las autoridades correspondientes o a la línea 144 / 137.</p>
     </details>
-    <details class="faq-item reveal">
+    <details class="faq-item reveal" name="faq">
       <summary>¿Qué pasa con los horarios y entregas que acordamos?</summary>
       <p>Quedan en el Calendario del canal: un pedido queda "pendiente" hasta que la otra parte lo confirma o rechaza, se pueden repetir automáticamente (semanal, quincenal, mensual) y podés sincronizarlos con tu Google o Apple Calendar.</p>
     </details>
-    <details class="faq-item reveal">
+    <details class="faq-item reveal" name="faq">
       <summary>¿Puedo exportar el historial?</summary>
       <p>Sí. Desde Historial podés descargar un informe con todos los mensajes, intervenciones de la IA y acuerdos del canal.</p>
     </details>
-    <details class="faq-item">
+    <details class="faq-item" name="faq">
       <summary>¿Es gratis?</summary>
       <p>Sí, para empezar no tiene costo.</p>
     </details>

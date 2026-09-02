@@ -1301,27 +1301,40 @@ function chatGateHtml(){ return `<div class="empty-hint">Primero configurá tu c
 // prioridad. Si nunca llegó un evento de socket para esta persona (recién
 // se abrió el chat), se arranca desde el lastSeenAt persistido que ya viene
 // en channelInfo, en vez de mostrar nada hasta el primer evento en vivo.
+// una fila compacta con CADA otro miembro del canal (la otra parte, y
+// también un/a mediador/a o invitado/a si ya se sumó) — antes esto solo
+// sabía mostrar a "la otra parte" (un único rol A/B), así que en cuanto
+// había un tercero en el canal (mediador/a, estudio) esa persona quedaba
+// invisible acá: para verla había que abrir la ⚙ de Configurar caso.
+// Sin esto, "¿quién está conectado?" solo se podía responder abriendo esa
+// pantalla — ahora queda a la vista arriba del chat todo el tiempo.
 function updateChatPresenceLine(){
   const el = document.getElementById('chat-sub');
   if(!el || isProfessional()) return; // el texto fijo de mediador/a ya cubre ese caso, no lo pisamos acá
-  const other = otherPartyOf(channelInfo);
-  if(!other || !other.user) return;
-  const uid = other.user.id;
-  if(!(uid in peerPresence)){
-    peerPresence[uid] = { online: false, lastSeenAt: other.lastSeenAt || null };
-  }
-  if(peerTyping[uid]){
-    el.textContent = `${other.user.name} está escribiendo...`;
+  const others = (channelInfo.members || []).filter(m => m.user && m.user.id !== me.id);
+  if(!others.length){
+    el.innerHTML = '';
+    el.textContent = 'Todavía no se unió nadie más — podés escribir igual, quedará registrado.';
     return;
   }
-  const p = peerPresence[uid];
-  if(p.online){
-    el.textContent = `${other.user.name} está en línea`;
-  } else if(p.lastSeenAt){
-    el.textContent = `${other.user.name} — última vez ${fmtRelative(p.lastSeenAt)}`;
-  } else {
-    el.textContent = 'Canal activo. El sistema revisa antes de enviar.';
-  }
+  el.innerHTML = others.map(m => {
+    const uid = m.user.id;
+    if(!(uid in peerPresence)){
+      peerPresence[uid] = { online: false, lastSeenAt: m.lastSeenAt || null };
+    }
+    const roleTag = (m.role === 'A' || m.role === 'B') ? '' : ` · ${escapeHtml(professionalRoleLabel(m.role) || m.role)}`;
+    let statusClass = 'offline', statusText;
+    if(peerTyping[uid]){
+      statusClass = 'typing'; statusText = 'escribiendo...';
+    } else if(peerPresence[uid].online){
+      statusClass = 'online'; statusText = 'en línea';
+    } else if(peerPresence[uid].lastSeenAt){
+      statusText = fmtRelative(peerPresence[uid].lastSeenAt);
+    } else {
+      statusText = 'sin conectar todavía';
+    }
+    return `<span class="presence-chip"><span class="presence-dot ${statusClass}"></span>${escapeHtml(m.user.name)}${roleTag} · ${statusText}</span>`;
+  }).join('');
 }
 
 function renderChatScreen(){
@@ -1330,12 +1343,11 @@ function renderChatScreen(){
   const other = otherPartyOf(channelInfo);
   const otherName = other && other.user ? other.user.name : 'la otra parte';
   document.getElementById('chat-title').textContent = isProfessional() ? 'Chat del canal' : 'Chat con ' + otherName;
-  document.getElementById('chat-sub').textContent = isProfessional()
-    ? `Estás viendo este canal como ${professionalRoleLabel(myRole).toLowerCase()} — acceso de solo lectura.`
-    : (other && other.user)
-      ? 'Canal activo. El sistema revisa antes de enviar.'
-      : 'Todavía no se unió la otra persona — podés escribir igual, quedará registrado.';
-  updateChatPresenceLine(); // pisa la línea de arriba con estado real si ya lo tenemos
+  if(isProfessional()){
+    // caso fijo, no depende de presencia — updateChatPresenceLine() no lo toca (ver el return temprano ahí).
+    document.getElementById('chat-sub').textContent = `Estás viendo este canal como ${professionalRoleLabel(myRole).toLowerCase()} — acceso de solo lectura.`;
+  }
+  updateChatPresenceLine(); // arma la fila de "quién más está y su estado" — ver el comentario en la función
 
   proposeFormOpen = false;
   proposeCounterFor = null;
@@ -1569,9 +1581,12 @@ function paintMessages(){
       const div = document.createElement('div');
       div.className = 'msg ' + (mine ? 'me' : 'them');
       let inner = escapeHtml(m.text);
-      // sin esto, un mediador/estudio viendo el canal no tiene forma de saber
-      // quién escribió qué — para las partes sigue implícito (si no es "mío" es "de la otra parte").
-      const senderLabel = isProfessional() ? escapeHtml(m.sender.name) + ' · ' : '';
+      // el nombre de quien escribió va siempre en los mensajes que no son
+      // míos — antes solo se mostraba para mediador/a o estudio, y las
+      // partes tenían que adivinar por "no es mío = es de la otra
+      // persona"; eso deja de alcanzar en cuanto hay más de dos
+      // participantes viendo el canal (invitado/a, mediador/a).
+      const senderLabel = !mine ? escapeHtml(m.sender.name) + ' · ' : '';
       const readLabel = (mine && m.readAt) ? ' · Visto ' + fmtTs(m.readAt) : '';
       inner += '<div class="meta">' + senderLabel + fmtTs(m.createdAt) + (m.flagged ? ' · marcado por el sistema' : '') + readLabel + '</div>';
       if(m.flagged && m.reason && mine){
