@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Puente Digital</title>
 <link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="theme-color" content="#12181A">
 <!-- Sin esto, iOS abre el ícono agregado a la pantalla de inicio dentro de
@@ -266,14 +267,30 @@
 
   .landing-screen{ overflow-y:auto; display:flex; flex-direction:column; }
 
-  .site-header{ position:sticky; top:0; z-index:20; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 20px; background:var(--header-bg); backdrop-filter:blur(6px); border-bottom:1px solid var(--line); flex-wrap:wrap; }
-  .site-header .brand{ font-family:var(--serif); font-weight:600; font-size:17px; color:var(--text); text-decoration:none; flex-shrink:0; }
+  /* ---- animación de entrada al scrollear: solo si el sistema no pidió
+     menos movimiento — si pidió reduced-motion, .reveal nunca queda oculto
+     y este bloque entero no aplica, así que ese público ve todo servido
+     de una sin esperar nada. --i (0,1,2...) en cada elemento escalona
+     items de una misma fila/grilla en vez de que entren todos a la vez. ---- */
+  @media (prefers-reduced-motion: no-preference){
+    .reveal{ opacity:0; transform:translateY(22px); transition:opacity .6s cubic-bezier(.2,.7,.3,1), transform .6s cubic-bezier(.2,.7,.3,1); transition-delay:calc(var(--i, 0) * 70ms); }
+    .reveal.reveal-visible{ opacity:1; transform:none; }
+  }
+
+  /* ---- sin justify-content:space-between a propósito: con 3 hijos
+     (brand, nav, actions) eso reparte el espacio EN PARTES IGUALES entre
+     los tres, dejando el nav de links flotando centrado en vez de pegado a
+     los íconos de la derecha — el margin-right:auto en .brand logra el
+     mismo "todo lo demás pegado a la derecha" sin ese efecto raro. ---- */
+  .site-header{ position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:14px 18px; padding:14px 20px; background:var(--header-bg); backdrop-filter:blur(6px); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .site-header .brand{ font-family:var(--serif); font-weight:600; font-size:17px; color:var(--text); text-decoration:none; flex-shrink:0; margin-right:auto; }
   .site-header .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
   .site-footer-inner .brand{ font-family:var(--serif); font-weight:600; font-size:16px; color:var(--text); text-decoration:none; }
   .site-footer-inner .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
-  .site-header-actions{ display:flex; align-items:center; gap:8px; margin-left:auto; }
+  .site-header-actions{ display:flex; align-items:center; gap:8px; }
   .hamburger-btn{ display:none; }
-  .site-nav{ display:flex; gap:18px; flex-wrap:wrap; align-items:center; width:100%; }
+  .site-nav{ display:flex; gap:18px; flex-wrap:wrap; align-items:center; width:auto; order:1; }
+  .site-header-actions{ order:2; }
   .site-nav a{ font-size:12.5px; color:var(--text-dim); text-decoration:none; font-family:var(--sans); white-space:nowrap; }
   .site-nav a:hover, .site-nav a.active{ color:var(--calm); }
 
@@ -282,7 +299,11 @@
      fila normal y el botón desaparece. ---- */
   @media (max-width:639px){
     .hamburger-btn{ display:flex; }
-    .site-nav{ display:none; width:100%; flex-direction:column; align-items:flex-start; gap:2px; padding-top:10px; margin-top:10px; border-top:1px solid var(--line); }
+    /* en mobile los íconos (con el ☰) quedan en la fila de arriba, fijos
+       al lado del logo, y el panel de links cuelga por debajo — al revés
+       del orden de desktop, donde los links van antes que los íconos. */
+    .site-header-actions{ order:1; }
+    .site-nav{ order:2; display:none; width:100%; flex-direction:column; align-items:flex-start; gap:2px; padding-top:10px; margin-top:10px; border-top:1px solid var(--line); }
     .site-nav.open{ display:flex; }
     .site-nav a{ padding:8px 2px; font-size:13.5px; width:100%; }
   }
@@ -324,7 +345,16 @@
      en vez de dejarla huérfana. */
   .feature-grid{ display:flex; flex-wrap:wrap; justify-content:center; gap:12px; }
   .feature-item{ background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:14px; flex:1 1 150px; max-width:220px; }
-  .feature-item .ic{ font-size:18px; margin-bottom:8px; display:block; }
+  /* ---- íconos de "Qué incluye": SVG en línea vía mask-image (no emoji) —
+     nítidos a cualquier tamaño/densidad de pantalla y recoloreables con
+     background-color, así que siguen el tema claro/oscuro solos. ---- */
+  .feature-item .ic{ display:flex; align-items:center; justify-content:center; width:34px; height:34px; margin-bottom:10px; border-radius:9px; background:var(--calm-dim); flex-shrink:0; }
+  .feature-item .ic::before{ content:''; display:block; width:18px; height:18px; background:var(--calm); -webkit-mask-repeat:no-repeat; mask-repeat:no-repeat; -webkit-mask-position:center; mask-position:center; -webkit-mask-size:contain; mask-size:contain; }
+  .ic-chat::before{ -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z'/%3E%3C/svg%3E"); mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z'/%3E%3C/svg%3E"); }
+  .ic-calendar::before{ -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='5' width='18' height='16' rx='2'/%3E%3Cpath d='M16 3v4M8 3v4M3 10h18'/%3E%3C/svg%3E"); mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='5' width='18' height='16' rx='2'/%3E%3Cpath d='M16 3v4M8 3v4M3 10h18'/%3E%3C/svg%3E"); }
+  .ic-archive::before{ -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='4' rx='1'/%3E%3Cpath d='M4 8v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8M10 13h4'/%3E%3C/svg%3E"); mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='4' rx='1'/%3E%3Cpath d='M4 8v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8M10 13h4'/%3E%3C/svg%3E"); }
+  .ic-shield::before{ -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z'/%3E%3Cpath d='M9 12l2 2 4-4'/%3E%3C/svg%3E"); mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z'/%3E%3Cpath d='M9 12l2 2 4-4'/%3E%3C/svg%3E"); }
+  .ic-assistant::before{ -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='8' width='16' height='12' rx='3'/%3E%3Cpath d='M12 8V4M9 4h6'/%3E%3Ccircle cx='9' cy='14' r='1.1' fill='black' stroke='none'/%3E%3Ccircle cx='15' cy='14' r='1.1' fill='black' stroke='none'/%3E%3C/svg%3E"); mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='8' width='16' height='12' rx='3'/%3E%3Cpath d='M12 8V4M9 4h6'/%3E%3Ccircle cx='9' cy='14' r='1.1' fill='black' stroke='none'/%3E%3Ccircle cx='15' cy='14' r='1.1' fill='black' stroke='none'/%3E%3C/svg%3E"); }
   .feature-item .t{ font-size:13px; font-weight:600; margin-bottom:4px; }
   .feature-item .d{ font-size:12px; color:var(--text-dim); line-height:1.4; }
 
@@ -528,16 +558,13 @@
     </div>
   </div>
 
-  <div class="card" style="max-width:480px; margin:0 auto 24px;">
+  <div class="card reveal" style="max-width:480px; margin:0 auto 24px;">
     <div class="eyebrow">Antes de que preguntes</div>
     <p style="font-size:13px; margin-bottom:12px;"><strong>¿Alguien lee mis mensajes?</strong><br><span style="color:var(--text-dim)">Pasan por un sistema automático antes de enviarse. Nadie de una oficina los mira.</span></p>
     <p style="font-size:13px;"><strong>¿Esto va a cambiar cómo me responde la otra persona?</strong><br><span style="color:var(--text-dim)">Eso no está en nuestras manos. Sí te ayuda a que lo que vos mandás no te juegue en contra.</span></p>
   </div>
 
   <div class="cta-block">
-    <a href="https://wa.me/15753222446?text=CREAR" target="_blank" rel="noopener" class="primary" style="text-align:center; text-decoration:none; padding:14px; display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:10px; max-width:280px; margin-left:auto; margin-right:auto; color:#0E1A19;">
-      💬 Empezar por WhatsApp — escribí CREAR
-    </a>
     <button class="ghost" style="width:fit-content; max-width:260px; margin:0 auto; display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 18px; background:#fff; color:#1F1F1F; border:none;" onclick="location.href='/auth/google'">
       <svg width="16" height="16" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
       Comenzar con Google
@@ -545,57 +572,57 @@
     <p class="cta-note">Gratis para empezar, sin tarjeta ni plan pago todavía. El canal queda atado a tu cuenta (de Google o tu número de WhatsApp), no a un código que cualquiera pueda adivinar.</p>
   </div>
 
-  <div class="section-heading">Cómo empezar</div>
+  <div class="section-heading reveal">Cómo empezar</div>
   <div class="steps">
-    <div class="step-item">
+    <div class="step-item reveal" style="--i:0">
       <div class="step-num">1</div>
       <div class="step-body"><div class="t">Creá tu canal</div><div class="d">Iniciás sesión con Google y armás un canal en segundos. Queda atado a tu cuenta, no a un link que cualquiera pueda reusar.</div></div>
     </div>
-    <div class="step-item">
+    <div class="step-item reveal" style="--i:1">
       <div class="step-num">2</div>
       <div class="step-body"><div class="t">Invitás a la otra persona</div><div class="d">Le compartís el link. Puede entrar con su propia cuenta de Google, o como invitada sin crear nada si todavía no está lista para eso.</div></div>
     </div>
-    <div class="step-item">
+    <div class="step-item reveal" style="--i:2">
       <div class="step-num">3</div>
       <div class="step-body"><div class="t">Se comunican por el canal</div><div class="d">Cada mensaje pasa por la IA antes de llegar. Si detecta un tono que puede escalar, propone una alternativa antes de enviarlo.</div></div>
     </div>
   </div>
 
-  <div class="section-heading">Qué incluye</div>
+  <div class="section-heading reveal">Qué incluye</div>
   <div class="feature-grid">
-    <div class="feature-item"><span class="ic">💬</span><div class="t">Chat moderado en vivo</div><div class="d">Mensajes y alertas en tiempo real, sin refrescar la página.</div></div>
-    <div class="feature-item"><span class="ic">📅</span><div class="t">Calendario de acuerdos</div><div class="d">Horarios y entregas quedan pendientes hasta que la otra parte los confirma.</div></div>
-    <div class="feature-item"><span class="ic">🗂</span><div class="t">Historial exportable</div><div class="d">Registro completo de mensajes e intervenciones de la IA, por si lo necesitás después.</div></div>
-    <div class="feature-item"><span class="ic">🔒</span><div class="t">Cuenta real, no un código</div><div class="d">Cada canal está atado a cuentas de Google verdaderas — no a un código adivinable.</div></div>
-    <div class="feature-item"><span class="ic">🤖</span><div class="t">Asistente de historial</div><div class="d">Preguntale qué pasó o qué viene — responde solo con datos reales de tu canal.</div></div>
+    <div class="feature-item reveal" style="--i:0"><span class="ic ic-chat" aria-hidden="true"></span><div class="t">Chat moderado en vivo</div><div class="d">Mensajes y alertas en tiempo real, sin refrescar la página.</div></div>
+    <div class="feature-item reveal" style="--i:1"><span class="ic ic-calendar" aria-hidden="true"></span><div class="t">Calendario de acuerdos</div><div class="d">Horarios y entregas quedan pendientes hasta que la otra parte los confirma.</div></div>
+    <div class="feature-item reveal" style="--i:2"><span class="ic ic-archive" aria-hidden="true"></span><div class="t">Historial exportable</div><div class="d">Registro completo de mensajes e intervenciones de la IA, por si lo necesitás después.</div></div>
+    <div class="feature-item reveal" style="--i:3"><span class="ic ic-shield" aria-hidden="true"></span><div class="t">Cuenta real, no un código</div><div class="d">Cada canal está atado a cuentas de Google verdaderas — no a un código adivinable.</div></div>
+    <div class="feature-item reveal" style="--i:4"><span class="ic ic-assistant" aria-hidden="true"></span><div class="t">Asistente de historial</div><div class="d">Preguntale qué pasó o qué viene — responde solo con datos reales de tu canal.</div></div>
   </div>
 
-  <div class="section-heading">Para quién es</div>
-  <p class="guest-note">Pensado para <b>padres y madres separados</b> que necesitan seguir coordinando la crianza compartida, pero también sirve para cualquier situación —familiar, de convivencia, entre socios— donde hace falta un canal con registro y con menos fricción que un chat común.</p>
+  <div class="section-heading reveal">Para quién es</div>
+  <p class="guest-note reveal">Pensado para <b>padres y madres separados</b> que necesitan seguir coordinando la crianza compartida, pero también sirve para cualquier situación —familiar, de convivencia, entre socios— donde hace falta un canal con registro y con menos fricción que un chat común.</p>
 
-  <div class="section-heading" id="faq">Preguntas frecuentes</div>
+  <div class="section-heading reveal" id="faq">Preguntas frecuentes</div>
   <div class="faq-list">
-    <details class="faq-item">
+    <details class="faq-item reveal">
       <summary>¿Cómo funciona la moderación con IA?</summary>
       <p>Cada mensaje pasa por un análisis antes de enviarse. Si detecta lenguaje que puede escalar el conflicto (insultos, acusaciones, sarcasmo), te muestra una alternativa más neutral antes de que decidas — vos elegís si usarla o mandar el mensaje original igual.</p>
     </details>
-    <details class="faq-item">
+    <details class="faq-item reveal">
       <summary>¿La otra persona necesita crear una cuenta de Google?</summary>
       <p>No. Podés invitarla con un link que no requiere cuenta ni instalar nada — entra desde el navegador, escribe su nombre y ya puede leer y responder.</p>
     </details>
-    <details class="faq-item">
+    <details class="faq-item reveal">
       <summary>¿Quién puede ver los mensajes del canal?</summary>
       <p>Por defecto, solo las dos partes del canal. La única "tercera parte" automática es la IA, que analiza cada mensaje al momento de enviarse, no un archivo que alguien revisa después. Opcionalmente, cualquiera de las dos partes puede invitar a un mediador/a o a un estudio jurídico con acceso de <strong>solo lectura</strong> (no pueden escribir mensajes ni resolver acuerdos) — y ese ingreso siempre queda anunciado en el chat y visible para ambas partes, nunca es un acceso oculto.</p>
     </details>
-    <details class="faq-item">
+    <details class="faq-item reveal">
       <summary>¿Esto reemplaza a un abogado, mediador o terapeuta?</summary>
       <p>No. Es una herramienta de comunicación, no asesoramiento legal ni profesional. En situaciones de violencia o riesgo, contactá a las autoridades correspondientes o a la línea 144 / 137.</p>
     </details>
-    <details class="faq-item">
+    <details class="faq-item reveal">
       <summary>¿Qué pasa con los horarios y entregas que acordamos?</summary>
       <p>Quedan en el Calendario del canal: un pedido queda "pendiente" hasta que la otra parte lo confirma o rechaza, se pueden repetir automáticamente (semanal, quincenal, mensual) y podés sincronizarlos con tu Google o Apple Calendar.</p>
     </details>
-    <details class="faq-item">
+    <details class="faq-item reveal">
       <summary>¿Puedo exportar el historial?</summary>
       <p>Sí. Desde Historial podés descargar un informe con todos los mensajes, intervenciones de la IA y acuerdos del canal.</p>
     </details>

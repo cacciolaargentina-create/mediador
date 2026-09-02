@@ -16,7 +16,7 @@ function serializeChannel(channel) {
   const db = getDB();
   const members = db.members
     .filter((m) => m.channelId === channel.id)
-    .map((m) => ({ role: m.role, label: m.label || null, user: publicUser(m.userId) }));
+    .map((m) => ({ role: m.role, label: m.label || null, user: publicUser(m.userId), lastSeenAt: m.lastSeenAt || null }));
   return {
     code: channel.code, status: channel.status || 'abierto', createdAt: channel.createdAt, guestToken: channel.guestToken || null, members,
     lastSummary: channel.lastSummary || null,

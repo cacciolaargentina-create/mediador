@@ -19,6 +19,9 @@ let hasMoreHistory = false;    // true si /messages todavía tiene mensajes más
 let loadingMoreHistory = false;
 let historialMessages = null;  // registro completo para la pantalla Historial — se carga aparte de `messages` (que ahora es solo la ventana en vivo del chat), null = todavía no se pidió
 let socketEverConnected = false; // distingue la primera conexión (ya cargamos todo a mano) de una reconexión (hay que resincronizar)
+let peerPresence = {};   // userId -> { online: bool, lastSeenAt: ms|null } — en memoria, se resetea al recargar la página
+let peerTyping = {};     // userId -> bool
+let typingActive = false; // si ya avisé "estoy escribiendo" en esta tanda, para no emitir en cada tecla
 
 // Ejemplos de mensajes centrados en hechos para situaciones típicas de
 // coparentalidad — un empujón hacia comunicación estructurada en vez de
@@ -41,6 +44,14 @@ function otherPartyOf(info){
 
 function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function fmtTs(iso){ return new Date(iso).toLocaleString('es-AR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}); }
+function fmtRelative(ms){
+  const diffMin = Math.round((Date.now() - ms) / 60000);
+  if(diffMin < 1) return 'hace un momento';
+  if(diffMin < 60) return `hace ${diffMin} min`;
+  const diffH = Math.round(diffMin / 60);
+  if(diffH < 24) return `hace ${diffH}h`;
+  return `hace ${Math.round(diffH/24)}d`;
+}
 
 async function api(path, opts={}){
   const headers = { 'Content-Type': 'application/json', ...(opts.headers||{}) };
@@ -130,7 +141,10 @@ function applyTheme(theme, persist){
 function initTheme(){
   let saved = null;
   try{ saved = localStorage.getItem('pd_theme'); }catch(e){ /* sin storage disponible */ }
-  const theme = saved || ((window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark');
+  // arranca siempre en oscuro por default — no se sigue la preferencia del
+  // sistema (prefers-color-scheme); el claro es opt-in, solo si alguien lo
+  // eligió antes con el toggle (ahí sí queda guardado y se respeta).
+  const theme = saved === 'light' ? 'light' : 'dark';
   applyTheme(theme, false); // false: no reescribir localStorage solo por sincronizar el ícono
 }
 
@@ -495,6 +509,33 @@ function showLogin(){
     const target = document.querySelector(location.hash);
     if(target) target.scrollIntoView();
   }
+  initScrollReveal(); // recién ahora login-screen es visible — antes los elementos .reveal medían 0 y el observer nunca disparaba
+}
+
+// ==================================================================
+// ANIMACIÓN DE ENTRADA AL SCROLLEAR (solo landing, sin sesión) — cada
+// bloque marcado con .reveal en el HTML empieza invisible/corrido y se
+// asienta en su lugar la primera vez que entra en pantalla. Con
+// prefers-reduced-motion el CSS ni siquiera aplica el estado inicial
+// oculto, así que ese público ve todo el contenido de entrada sin esperar
+// ninguna animación.
+// ==================================================================
+let scrollRevealInitialized = false;
+function initScrollReveal(){
+  if(scrollRevealInitialized) return; // showLogin() puede llamarse más de una vez en la sesión
+  scrollRevealInitialized = true;
+  const els = document.querySelectorAll('.reveal');
+  if(!els.length) return;
+  if(!('IntersectionObserver' in window)){ els.forEach(el => el.classList.add('reveal-visible')); return; }
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if(entry.isIntersecting){
+        entry.target.classList.add('reveal-visible');
+        io.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.15, rootMargin: '0px 0px -60px 0px' });
+  els.forEach(el => io.observe(el));
 }
 
 function renderUserChip(){
@@ -786,6 +827,14 @@ function connectSocket(){
     if(channelInfo && channelInfo.code === code){ channelInfo.status = status; }
     if(currentScreen === 'inicio') renderInicio();
     if(currentScreen === 'chat') renderCaseTabsInfo();
+  });
+  socket.on('peer:presence', ({userId, online, lastSeenAt})=>{
+    peerPresence[userId] = { online, lastSeenAt: lastSeenAt || (peerPresence[userId]?.lastSeenAt ?? null) };
+    if(currentScreen === 'chat') updateChatPresenceLine();
+  });
+  socket.on('peer:typing', ({userId, typing})=>{
+    peerTyping[userId] = typing;
+    if(currentScreen === 'chat') updateChatPresenceLine();
   });
 }
 let expenses = [];
@@ -1248,6 +1297,33 @@ async function joinChannelUI(){
 // ==================================================================
 function chatGateHtml(){ return `<div class="empty-hint">Primero configurá tu canal en la pestaña "Canal".</div>`; }
 
+// "en línea" / "escribiendo..." / "última vez hace X" — en ese orden de
+// prioridad. Si nunca llegó un evento de socket para esta persona (recién
+// se abrió el chat), se arranca desde el lastSeenAt persistido que ya viene
+// en channelInfo, en vez de mostrar nada hasta el primer evento en vivo.
+function updateChatPresenceLine(){
+  const el = document.getElementById('chat-sub');
+  if(!el || isProfessional()) return; // el texto fijo de mediador/a ya cubre ese caso, no lo pisamos acá
+  const other = otherPartyOf(channelInfo);
+  if(!other || !other.user) return;
+  const uid = other.user.id;
+  if(!(uid in peerPresence)){
+    peerPresence[uid] = { online: false, lastSeenAt: other.lastSeenAt || null };
+  }
+  if(peerTyping[uid]){
+    el.textContent = `${other.user.name} está escribiendo...`;
+    return;
+  }
+  const p = peerPresence[uid];
+  if(p.online){
+    el.textContent = `${other.user.name} está en línea`;
+  } else if(p.lastSeenAt){
+    el.textContent = `${other.user.name} — última vez ${fmtRelative(p.lastSeenAt)}`;
+  } else {
+    el.textContent = 'Canal activo. El sistema revisa antes de enviar.';
+  }
+}
+
 function renderChatScreen(){
   const body = document.getElementById('chat-body');
   if(!channelInfo){ body.innerHTML = chatGateHtml(); return; }
@@ -1259,6 +1335,7 @@ function renderChatScreen(){
     : (other && other.user)
       ? 'Canal activo. El sistema revisa antes de enviar.'
       : 'Todavía no se unió la otra persona — podés escribir igual, quedará registrado.';
+  updateChatPresenceLine(); // pisa la línea de arriba con estado real si ya lo tenemos
 
   proposeFormOpen = false;
   proposeCounterFor = null;
@@ -1284,6 +1361,14 @@ function renderChatScreen(){
   if(chatInput){
     chatInput.addEventListener('keydown', (e)=>{
       if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); handleSend(); }
+    });
+    chatInput.addEventListener('input', ()=>{
+      if(!socket || isProfessional()) return;
+      if(chatInput.value.trim()){
+        if(!typingActive){ typingActive = true; socket.emit('typing:start', channelCode); }
+      } else if(typingActive){
+        typingActive = false; socket.emit('typing:stop', channelCode);
+      }
     });
   }
   paintMessages();
@@ -1544,6 +1629,7 @@ async function handleSend(){
   const sendBtn = document.getElementById('send-btn');
   sendBtn.disabled = true;
   input.value = '';
+  if(typingActive && socket){ typingActive = false; socket.emit('typing:stop', channelCode); }
 
   const log = document.getElementById('chat-log');
   const analyzing = document.createElement('div');
@@ -2146,6 +2232,7 @@ async function renderInicio(){
 
   const STATUS_LABELS = { abierto: 'Abierto', en_proceso: 'En proceso', cerrado: 'Cerrado' };
   const STATUS_PILL_CLASS = { abierto: 'confirmado', en_proceso: 'pendiente', cerrado: 'rechazado' };
+  const READ_RECEIPT = { enviado: '✓ enviado', leido: '✓✓ leído' };
 
   const listHtml = list.map(c => `
     <div class="card" style="margin-bottom:10px; cursor:pointer;" onclick="openCase('${c.code}')">
@@ -2158,7 +2245,7 @@ async function renderInicio(){
         </div>
       </div>
       <div class="who">${c.otherNames.length ? 'Con ' + c.otherNames.map(escapeHtml).join(', ') : 'Esperando a la otra parte'}</div>
-      <div class="ts" style="margin-top:6px;">${c.messageCount} mensajes · última actividad ${fmtTs(c.lastActivity)}</div>
+      <div class="ts" style="margin-top:6px;">${c.messageCount} mensajes · última actividad ${fmtTs(c.lastActivity)}${c.lastOwnMessageStatus ? ' · ' + READ_RECEIPT[c.lastOwnMessageStatus] : ''}</div>
     </div>
   `).join('');
 

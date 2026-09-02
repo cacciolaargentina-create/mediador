@@ -26,7 +26,7 @@ const LEGACY_JSON_PATH = process.env.DB_PATH || path.join(__dirname, 'data.json'
 const EMPTY_DB = {
   users: [],       // { id, googleId, email, name, avatar, phone, guest, createdAt }
   channels: [],    // { id, code, guestToken, calendarToken, professionalInvites, status:'abierto'|'en_proceso'|'cerrado', createdAt }
-  members: [],     // { id, channelId, userId, role, label, webAccessToken, assignedByAdmin, joinedAt }
+  members: [],     // { id, channelId, userId, role, label, webAccessToken, assignedByAdmin, lastSeenAt, joinedAt }
   messages: [],    // { id, channelId, senderId|null, text, flagged, reason, pattern, eventId, readAt, createdAt }
   events: [],      // { id, channelId, date, detail, requestedBy(userId), status, seriesId, respondedAt, reminderSentAt, createdAt }
   caseNotes: [],   // { id, channelId, authorId, text, createdAt } — solo visibles para mediador/a, estudio jurídico o admin del canal, nunca para las partes A/B
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS channels (
 );
 CREATE TABLE IF NOT EXISTS members (
   id TEXT PRIMARY KEY, channelId TEXT, userId TEXT, role TEXT, label TEXT,
-  webAccessToken TEXT, assignedByAdmin INTEGER DEFAULT 0, joinedAt INTEGER
+  webAccessToken TEXT, assignedByAdmin INTEGER DEFAULT 0, lastSeenAt INTEGER, joinedAt INTEGER
 );
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY, channelId TEXT, senderId TEXT, text TEXT,
@@ -178,6 +178,7 @@ function openDb() {
     verifiedProfessionalRole: 'TEXT', verifiedProfessionalOrg: 'TEXT',
   });
   ensureColumns(sqlite, 'channels', { remindedAt: 'INTEGER', lastSummary: 'TEXT', status: "TEXT DEFAULT 'abierto'" });
+  ensureColumns(sqlite, 'members', { lastSeenAt: 'INTEGER' });
   if (isNew && fs.existsSync(LEGACY_JSON_PATH)) {
     migrateFromJson(sqlite, LEGACY_JSON_PATH);
   }

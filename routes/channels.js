@@ -166,6 +166,13 @@ module.exports = function (io) {
           .filter(Boolean);
         const msgs = db.messages.filter((x) => x.channelId === channel.id);
         const lastActivity = msgs.reduce((max, x) => Math.max(max, x.createdAt), channel.createdAt);
+        // último mensaje que MANDÉ yo en este canal, para mostrar "enviado" /
+        // "leído" en la lista de casos — igual que el doble check de WhatsApp,
+        // pero derivado de readAt, que ya existe y se usa dentro del chat.
+        const myMessages = msgs.filter((x) => x.senderId === req.user.id);
+        const lastOwnMessage = myMessages.length
+          ? myMessages.reduce((latest, x) => (x.createdAt > latest.createdAt ? x : latest))
+          : null;
         return {
           code: channel.code,
           status: channel.status || 'abierto',
@@ -174,6 +181,7 @@ module.exports = function (io) {
           otherNames: others,
           messageCount: msgs.length,
           lastActivity,
+          lastOwnMessageStatus: lastOwnMessage ? (lastOwnMessage.readAt ? 'leido' : 'enviado') : null,
           inactiveDays: Math.floor((now - lastActivity) / 86400000),
           flaggedThisMonth: msgs.filter((x) => x.flagged && new Date(x.createdAt).toISOString().slice(0, 7) === monthKey).length,
           createdAt: channel.createdAt,

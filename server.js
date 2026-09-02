@@ -10,7 +10,7 @@ const { Server } = require('socket.io');
 const path = require('path');
 
 const authRoutes = require('./routes/auth');
-const { getDB, resolveGuest } = require('./db');
+const { getDB, resolveGuest, commit } = require('./db');
 
 // Sin FRONTEND_URL en producción, el CORS de abajo reflejaría cualquier
 // origen (con credentials:true) — mejor no arrancar que quedar abierto.
@@ -101,6 +101,14 @@ app.use('/api/push', pushRoutes);
 app.get('/api/health', (req, res) => res.json({ ok: true, users: getDB().users.length }));
 
 // el cliente se une a la "room" de su canal después de autenticarse por HTTP
+//
+// Presencia (online/escribiendo): en memoria, por proceso — con un solo
+// server esto alcanza. Si en algún momento corre más de una instancia,
+// esto necesita pasar a algo compartido (Redis) para que la presencia no
+// quede partida entre instancias.
+const presence = new Map(); // channelCode -> Map(userId -> Set(socketId))
+const typingTimers = new Map(); // "`${code}:${userId}`" -> timeout, apaga "escribiendo" solo si no llega otra señal
+
 function isMemberOfChannel(userId, code) {
   const db = getDB();
   const channel = db.channels.find((c) => c.code === code);
@@ -122,12 +130,72 @@ io.on('connection', (socket) => {
     socket.disconnect();
     return;
   }
+  socket.data.userId = identity.id;
+  socket.data.channels = new Set();
+
   socket.on('join-channel', (code) => {
     const upper = String(code).toUpperCase();
     // antes esto confiaba ciegamente en lo que mandaba el cliente — ahora
     // valida membresía real, igual que ya hace requireMembership del lado HTTP.
     if (!isMemberOfChannel(identity.id, upper)) return;
     socket.join(upper);
+    socket.data.channels.add(upper);
+
+    if (!presence.has(upper)) presence.set(upper, new Map());
+    const channelPresence = presence.get(upper);
+    const alreadyOnline = channelPresence.has(identity.id);
+    if (!alreadyOnline) channelPresence.set(identity.id, new Set());
+    channelPresence.get(identity.id).add(socket.id);
+    if (!alreadyOnline) {
+      io.to(upper).emit('peer:presence', { userId: identity.id, online: true });
+    }
+  });
+
+  socket.on('typing:start', (code) => {
+    const upper = String(code).toUpperCase();
+    if (!socket.data.channels.has(upper)) return; // no puede "escribir" en un canal al que ni se unió
+    socket.to(upper).emit('peer:typing', { userId: identity.id, typing: true });
+    const key = upper + ':' + identity.id;
+    clearTimeout(typingTimers.get(key));
+    // si no llega otra señal en 4s (ni typing:start de nuevo, ni typing:stop
+    // al enviar), se apaga sola — cubre el caso de que se cierre la pestaña
+    // a mitad de escribir sin mandar el "stop".
+    typingTimers.set(key, setTimeout(() => {
+      io.to(upper).emit('peer:typing', { userId: identity.id, typing: false });
+      typingTimers.delete(key);
+    }, 4000));
+  });
+
+  socket.on('typing:stop', (code) => {
+    const upper = String(code).toUpperCase();
+    if (!socket.data.channels.has(upper)) return;
+    const key = upper + ':' + identity.id;
+    clearTimeout(typingTimers.get(key));
+    typingTimers.delete(key);
+    io.to(upper).emit('peer:typing', { userId: identity.id, typing: false });
+  });
+
+  socket.on('disconnect', () => {
+    for (const code of socket.data.channels) {
+      const channelPresence = presence.get(code);
+      if (!channelPresence || !channelPresence.has(identity.id)) continue;
+      const sockets = channelPresence.get(identity.id);
+      sockets.delete(socket.id);
+      if (sockets.size === 0) {
+        channelPresence.delete(identity.id);
+        const lastSeenAt = Date.now();
+        io.to(code).emit('peer:presence', { userId: identity.id, online: false, lastSeenAt });
+        // se guarda para poder mostrar "última vez hace X" la próxima vez que
+        // alguien abra el chat, no solo mientras la otra persona está conectada.
+        const db = getDB();
+        const channel = db.channels.find((c) => c.code === code);
+        const member = channel && db.members.find((m) => m.channelId === channel.id && m.userId === identity.id);
+        if (member) {
+          member.lastSeenAt = lastSeenAt;
+          commit().catch((e) => console.error('No se pudo guardar lastSeenAt', e));
+        }
+      }
+    }
   });
 });
 
