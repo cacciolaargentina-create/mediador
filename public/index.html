@@ -343,7 +343,15 @@
        header en vez de al viewport, y termina empujando scroll horizontal
        fantasma en #login-screen. Se saca acá (queda solo el tinte de
        --header-bg, sin blur) para que el drawer se posicione bien. */
-    .site-header{ backdrop-filter:none; -webkit-backdrop-filter:none; }
+    /* además: .site-nav-backdrop (z-index:44) es HERMANO de .site-header
+       (z-index:20), no de .site-nav — entonces aunque .site-nav tenga
+       z-index:45, ese valor solo cuenta DENTRO del stacking context de
+       .site-header (tope real: 20), y el backdrop terminaba pintándose
+       ARRIBA del drawer entero. Un clic real en "Apariencia" (a
+       diferencia de un .click() por JS, que no pasa por hit-testing)
+       caía en el backdrop y solo cerraba el menú. Subir acá el z-index
+       de .site-header por encima del backdrop lo arregla. */
+    .site-header{ backdrop-filter:none; -webkit-backdrop-filter:none; z-index:50; }
     .site-nav{
       display:flex; flex-direction:column; align-items:stretch; gap:2px;
       position:fixed; top:0; right:0; bottom:0; width:min(80vw,320px);
