@@ -3277,11 +3277,15 @@ async function runDraftAnalyze(){
 // Cualquier otro fallo (sin crédito de la cuenta, error de red, etc.) no es
 // algo que el usuario pueda resolver — un tono neutral evita alarmar por
 // algo que no depende de él.
+// mismo criterio que el branch "no flagged" de renderAnalysisResult:
+// .empty-hint está pensada para listas vacías (mucho padding, texto
+// chico y apagado) — acá adentro, chico y compacto, se sentía como un
+// bache en blanco. Un ícono + texto normal en vez de "hint" fantasma.
 function renderAnalysisError(e){
   if(e.status === 429){
-    return `<p class="empty-hint" style="color:var(--warn)">${escapeHtml(e.error || 'Llegaste al límite por ahora — probá de nuevo más tarde.')}</p>`;
+    return `<p style="display:flex; align-items:center; gap:7px; font-size:13px; color:var(--warn); padding:4px 2px 0;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>${escapeHtml(e.error || 'Llegaste al límite por ahora — probá de nuevo más tarde.')}</p>`;
   }
-  return `<p class="empty-hint">La revisión automática no está disponible en este momento. Tu mensaje no se modificó — podés probar de nuevo en un rato.</p>`;
+  return `<p style="display:flex; align-items:center; gap:7px; font-size:13px; color:var(--text-dim); padding:4px 2px 0;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>La revisión automática no está disponible en este momento. Tu mensaje no se modificó — podés probar de nuevo en un rato.</p>`;
 }
 
 // compartido entre el borrador (Tarea A) y la demo pública (Tarea B) — mismo
