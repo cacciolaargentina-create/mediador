@@ -27,7 +27,7 @@ const EMPTY_DB = {
   users: [],       // { id, googleId, email, name, avatar, phone, guest, createdAt }
   channels: [],    // { id, code, guestToken, calendarToken, professionalInvites, status:'abierto'|'en_proceso'|'cerrado', createdAt }
   members: [],     // { id, channelId, userId, role, label, webAccessToken, assignedByAdmin, lastSeenAt, joinedAt }
-  messages: [],    // { id, channelId, senderId|null, text, flagged, reason, pattern, eventId, readAt, createdAt }
+  messages: [],    // { id, channelId, senderId|null, text, flagged, reason, pattern, eventId, readAt, createdAt, replyToId } — replyToId: id de otro mensaje del mismo canal al que este responde (hilo estilo WhatsApp), null si no es una respuesta
   events: [],      // { id, channelId, date, detail, requestedBy(userId), status, seriesId, swapId, respondedAt, reminderSentAt, createdAt, kind:'entrega'|'vencimiento' } — kind default 'entrega' (coparentalidad, ver requireParty) en eventos viejos; 'vencimiento' es un plazo procesal (ver POST .../events/vencimiento), se crea directo en 'confirmado', sin flujo de propuesta/rechazo
   caseNotes: [],   // { id, channelId, authorId, text, createdAt } — solo visibles para mediador/a, estudio jurídico o admin del canal, nunca para las partes A/B
   expenses: [],    // { id, channelId, amount, description, requestedBy(userId), status:'pendiente'|'confirmado'|'rechazado', respondedAt, eventId, createdAt }
@@ -39,6 +39,7 @@ const EMPTY_DB = {
   professionalApplications: [], // { id, userId, role, orgName, status:'pending'|'approved'|'rejected', createdAt, decidedAt, decidedBy } — autoregistro de mediador/a o estudio jurídico, pendiente de aprobación manual de un admin
   moderationStats: [], // { id, date:'YYYY-MM-DD', channelCode|null, successCount, failCount, flaggedCount } — UNA fila por día+canal (no una por llamada), para que el panel de Costos y Salud pueda sumar por período sin que la tabla crezca sin límite
   pushSubscriptions: [], // { id, userId, endpoint, keys:{p256dh,auth}, createdAt } — un dispositivo suscripto a notificaciones push del navegador; una persona puede tener varios (celu + compu)
+  reports: [], // { id, channelId, messageId|null, reporterId, reason, createdAt, status:'pendiente'|'revisado', reviewedBy, reviewedAt } — "Reportar" desde el chat, para cuando lo que preocupa es un mensaje del OTRO lado (la moderación de IA solo filtra lo que uno mismo manda)
 };
 
 const SCHEMA = `
@@ -46,6 +47,7 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY, googleId TEXT, email TEXT, name TEXT, avatar TEXT,
   phone TEXT, guest INTEGER DEFAULT 0, aiUsage TEXT,
   verifiedProfessional INTEGER DEFAULT 0, verifiedProfessionalRole TEXT, verifiedProfessionalOrg TEXT,
+  readReceiptsEnabled INTEGER DEFAULT 1,
   createdAt INTEGER
 );
 CREATE TABLE IF NOT EXISTS channels (
@@ -60,7 +62,7 @@ CREATE TABLE IF NOT EXISTS members (
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY, channelId TEXT, senderId TEXT, text TEXT,
   flagged INTEGER DEFAULT 0, reason TEXT, pattern INTEGER DEFAULT 0,
-  eventId TEXT, readAt INTEGER, createdAt INTEGER
+  eventId TEXT, readAt INTEGER, createdAt INTEGER, replyToId TEXT
 );
 CREATE TABLE IF NOT EXISTS events (
   id TEXT PRIMARY KEY, channelId TEXT, date TEXT, detail TEXT, requestedBy TEXT,
@@ -101,6 +103,10 @@ CREATE TABLE IF NOT EXISTS moderation_stats (
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   id TEXT PRIMARY KEY, userId TEXT, endpoint TEXT UNIQUE, keys TEXT, createdAt INTEGER
 );
+CREATE TABLE IF NOT EXISTS reports (
+  id TEXT PRIMARY KEY, channelId TEXT, messageId TEXT, reporterId TEXT, reason TEXT,
+  status TEXT DEFAULT 'pendiente', reviewedBy TEXT, reviewedAt INTEGER, createdAt INTEGER
+);
 CREATE INDEX IF NOT EXISTS idx_certified_exports_hash ON certified_exports(hash);
 CREATE INDEX IF NOT EXISTS idx_professional_applications_user ON professional_applications(userId);
 CREATE INDEX IF NOT EXISTS idx_moderation_stats_date ON moderation_stats(date);
@@ -112,13 +118,14 @@ CREATE INDEX IF NOT EXISTS idx_events_channel ON events(channelId);
 CREATE INDEX IF NOT EXISTS idx_case_notes_channel ON case_notes(channelId);
 CREATE INDEX IF NOT EXISTS idx_expenses_channel ON expenses(channelId);
 CREATE INDEX IF NOT EXISTS idx_checkins_channel ON checkins(channelId);
+CREATE INDEX IF NOT EXISTS idx_reports_channel ON reports(channelId);
 `;
 
 // columnas que se guardan como 0/1 en SQLite pero son boolean en JS —
 // declaradas por tabla para poder convertir en los dos sentidos sin
 // tener que acordarse a mano en cada función.
 const BOOL_COLUMNS = {
-  users: ['guest', 'verifiedProfessional'],
+  users: ['guest', 'verifiedProfessional', 'readReceiptsEnabled'],
   members: ['assignedByAdmin'],
   messages: ['flagged', 'pattern'],
 };
@@ -136,6 +143,7 @@ const TABLE_NAMES = {
   whatsappLog: 'whatsapp_log', whatsappWebhookRaw: 'whatsapp_webhook_raw',
   certifiedExports: 'certified_exports', professionalApplications: 'professional_applications',
   moderationStats: 'moderation_stats', pushSubscriptions: 'push_subscriptions',
+  reports: 'reports',
 };
 
 function rowToRecord(collectionKey, row) {
@@ -177,12 +185,14 @@ function openDb() {
   ensureColumns(sqlite, 'users', {
     aiUsage: 'TEXT', verifiedProfessional: 'INTEGER DEFAULT 0',
     verifiedProfessionalRole: 'TEXT', verifiedProfessionalOrg: 'TEXT',
+    readReceiptsEnabled: 'INTEGER DEFAULT 1',
   });
   ensureColumns(sqlite, 'channels', { remindedAt: 'INTEGER', lastSummary: 'TEXT', status: "TEXT DEFAULT 'abierto'" });
   ensureColumns(sqlite, 'members', { lastSeenAt: 'INTEGER' });
   ensureColumns(sqlite, 'events', { swapId: 'TEXT', kind: "TEXT DEFAULT 'entrega'" });
   ensureColumns(sqlite, 'expenses', { eventId: 'TEXT' });
   ensureColumns(sqlite, 'certified_exports', { signature: 'TEXT' });
+  ensureColumns(sqlite, 'messages', { replyToId: 'TEXT' });
   if (isNew && fs.existsSync(LEGACY_JSON_PATH)) {
     migrateFromJson(sqlite, LEGACY_JSON_PATH);
   }

@@ -36,6 +36,7 @@ const SECTIONS = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'users', label: 'Usuarios y Canales' },
   { id: 'professionals', label: 'Profesionales' },
+  { id: 'reports', label: 'Reportes' },
   { id: 'subscriptions', label: 'Suscripciones' },
   { id: 'whatsapp', label: 'WhatsApp' },
   { id: 'costs', label: 'Costos y Salud' },
@@ -64,13 +65,13 @@ function restoreSection(){
   if(!check.isAdmin){ renderNoAccess(app, me); return; }
 
   try{
-    const [overview, users, channels, trend, professionals, applications, audit, waStatus, waLog, waUsers, costs, subscriptions] = await Promise.all([
+    const [overview, users, channels, trend, professionals, applications, audit, waStatus, waLog, waUsers, costs, subscriptions, reports] = await Promise.all([
       api('/api/admin/overview'), api('/api/admin/users'), api('/api/admin/channels'), api('/api/admin/trend'),
       api('/api/admin/professionals'), api('/api/admin/professional-applications'), api('/api/admin/audit'),
       api('/api/admin/whatsapp/status'), api('/api/admin/whatsapp/log'), api('/api/admin/whatsapp/users'),
-      api('/api/admin/costs'), api('/api/admin/subscriptions'),
+      api('/api/admin/costs'), api('/api/admin/subscriptions'), api('/api/admin/reports'),
     ]);
-    STATE = { me, overview, users, channels, trend, professionals, applications, audit, waStatus, waLog, waUsers, costs, subscriptions };
+    STATE = { me, overview, users, channels, trend, professionals, applications, audit, waStatus, waLog, waUsers, costs, subscriptions, reports };
     renderShell();
   }catch(e){
     app.innerHTML = `<div class="center-note"><span class="brand">Puente<em>digital</em></span>No se pudo cargar el panel. Probá recargar la página.</div>`;
@@ -136,6 +137,9 @@ const AUDIT_ACTION_LABELS = {
   reject_professional_application: 'Rechazó una solicitud de profesional',
   adjust_usage: 'Ajustó el uso mensual de IA de un usuario',
   view_invite_link: 'Vio/copió el link de invitación de un canal',
+  report_message: 'Reportó un mensaje',
+  resolve_report: 'Marcó un reporte como revisado',
+  download_backup: 'Descargó un backup de la base',
 };
 
 // ==================================================================
@@ -187,6 +191,7 @@ function renderSection(id){
   if(id === 'dashboard') el.innerHTML = renderDashboardSection();
   else if(id === 'users') el.innerHTML = renderUsersSection();
   else if(id === 'professionals') el.innerHTML = renderProfessionalsSection();
+  else if(id === 'reports') el.innerHTML = renderReportsSection();
   else if(id === 'subscriptions') el.innerHTML = renderSubscriptionsSection();
   else if(id === 'whatsapp') el.innerHTML = renderWhatsappSection();
   else if(id === 'costs') el.innerHTML = renderCostsSection();
@@ -673,6 +678,47 @@ async function adjustUsage(userId){
 // ==================================================================
 // ACTIVIDAD — el log de auditoría, ahora como sección propia
 // ==================================================================
+// ==================================================================
+// REPORTES — mensajes que una parte marcó como preocupantes desde el
+// chat (botón "Reportar"). La moderación de IA solo filtra lo que uno
+// mismo manda; esto es el canal para lo que manda EL OTRO lado.
+// ==================================================================
+function renderReportsSection(){
+  const reports = STATE.reports || [];
+  const pending = reports.filter(r => r.status === 'pendiente');
+  return `
+    <section class="block">
+      <h2 class="block-title">Reportes ${pending.length ? `<span class="pill warn">${pending.length} pendiente${pending.length === 1 ? '' : 's'}</span>` : ''}</h2>
+      <p class="chart-note" style="margin-bottom:12px;">Mensajes que alguien marcó como preocupantes desde el chat — no bloquean nada por sí solos, quedan acá para que un admin decida si hace falta actuar.</p>
+      ${reports.length ? reports.map(r => `
+        <div class="card" style="margin-bottom:10px; ${r.status === 'pendiente' ? 'border-color:var(--warn);' : ''}">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px;">
+            <div>
+              <span class="strong">${escapeHtml(r.channelCode || '—')}</span>
+              <span style="color:var(--text-dim); font-size:12.5px;"> · reportado por ${escapeHtml(r.reporterName)} · ${fmtDate(r.createdAt)}</span>
+            </div>
+            <span class="pill ${r.status === 'pendiente' ? 'warn' : 'ok'}">${r.status}</span>
+          </div>
+          <div style="background:var(--surface-2); border-radius:8px; padding:10px; margin-bottom:8px; font-size:13px;">
+            <div style="color:var(--text-dim); font-size:11.5px; margin-bottom:3px;">${escapeHtml(r.messageSenderName)}${r.messageCreatedAt ? ' · ' + fmtDate(r.messageCreatedAt) : ''}</div>
+            ${escapeHtml(r.messageText)}
+          </div>
+          <div style="font-size:13px; margin-bottom:${r.status === 'pendiente' ? '10px' : '0'};"><strong>Motivo:</strong> ${escapeHtml(r.reason)}</div>
+          ${r.status === 'pendiente' ? `<button class="ghost small" onclick="resolveReport('${r.id}')">Marcar como revisado</button>` : ''}
+        </div>
+      `).join('') : `<div class="empty-hint">Sin reportes por ahora.</div>`}
+    </section>
+  `;
+}
+async function resolveReport(id){
+  try{
+    await api(`/api/admin/reports/${id}/resolve`, { method:'POST' });
+    location.reload();
+  }catch(e){
+    alert('No se pudo marcar como revisado.');
+  }
+}
+
 function renderActivitySection(){
   const audit = STATE.audit;
   return `

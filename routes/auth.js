@@ -87,8 +87,27 @@ router.get(
 
 router.get('/me', (req, res) => {
   if (!req.user) return res.status(401).json({ error: 'No autenticado' });
-  const { id, name, email, avatar } = req.user;
-  res.json({ id, name, email, avatar });
+  const { id, name, email, avatar, readReceiptsEnabled } = req.user;
+  // !== false, no "?? true": un usuario recién creado en memoria (antes
+  // del primer commit+reload) todavía no tiene esta columna seteada, y
+  // el default real es "activado" (ver DEFAULT 1 en db.js).
+  res.json({ id, name, email, avatar, readReceiptsEnabled: readReceiptsEnabled !== false });
+});
+
+// preferencias de cuenta que no ameritan su propia tabla — hoy solo
+// "confirmaciones de lectura" (ver POST .../messages/:id/read). Body
+// parcial: solo se tocan las claves que vienen, el resto queda como
+// estaba.
+router.post('/me/preferences', async (req, res) => {
+  if (!req.user) return res.status(401).json({ error: 'No autenticado' });
+  const db = getDB();
+  const user = db.users.find((u) => u.id === req.user.id);
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+  if (typeof req.body.readReceiptsEnabled === 'boolean') {
+    user.readReceiptsEnabled = req.body.readReceiptsEnabled;
+  }
+  await commit();
+  res.json({ readReceiptsEnabled: user.readReceiptsEnabled !== false });
 });
 
 router.post('/logout', (req, res) => {

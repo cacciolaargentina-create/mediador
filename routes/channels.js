@@ -176,6 +176,7 @@ module.exports = function (io, presence) {
               role: x.role,
               roleLabel: x.role === 'A' || x.role === 'B' ? null : PROFESSIONAL_ROLE_LABELS[x.role] || x.role,
               online: !!(channelPresence && channelPresence.has(x.userId)),
+              verified: !!(u.verifiedProfessional && x.role !== 'A' && x.role !== 'B'),
             };
           })
           .filter(Boolean);
@@ -383,9 +384,9 @@ module.exports = function (io, presence) {
   // — lógica compartida con WhatsApp vía messaging.js: postMessage además
   // dispara la notificación agrupada hacia la otra parte cuando corresponde.
   router.post('/:code/messages', messageLimiter, requireAuth, requireMembership, requireParty, async (req, res) => {
-    const { text, flagged, reason } = req.body;
+    const { text, flagged, reason, replyToId } = req.body;
     if (!text || !text.trim()) return res.status(400).json({ error: 'Mensaje vacío' });
-    const out = await postMessage(io, req.channel, { senderId: req.user.id, text, flagged: !!flagged, reason: reason || null });
+    const out = await postMessage(io, req.channel, { senderId: req.user.id, text, flagged: !!flagged, reason: reason || null, replyToId: replyToId || null });
     res.json(out);
   });
 
@@ -399,10 +400,42 @@ module.exports = function (io, presence) {
     if (!msg.senderId || msg.senderId === req.user.id || msg.readAt) {
       return res.json({ id: msg.id, readAt: msg.readAt || null }); // no-op silencioso, no es un error de uso
     }
+    // recíproco, igual que WhatsApp: quien apagó "confirmaciones de
+    // lectura" no le manda un "leído" a nadie — el costo es que tampoco
+    // ve el de los demás (ver msgTicksHtml en app.js, del lado del
+    // remitente). !== false porque un usuario recién creado en memoria
+    // (antes del primer commit+reload) no tiene el campo seteado
+    // todavía y el default real es "activado".
+    if (req.user.readReceiptsEnabled === false) {
+      return res.json({ id: msg.id, readAt: msg.readAt || null });
+    }
     msg.readAt = Date.now();
     await commit();
     io.to(req.channel.code).emit('message:read', { id: msg.id, readAt: msg.readAt });
     res.json({ id: msg.id, readAt: msg.readAt });
+  });
+
+  // ---------- reportar un mensaje ----------
+  // La moderación de IA solo filtra lo que UNO MISMO manda — si lo que
+  // preocupa es algo que mandó el otro lado (una amenaza que igual
+  // decidió enviar, un patrón que asusta), hasta ahora no había ningún
+  // canal para escalarlo. Esto no bloquea nada ni le avisa a la otra
+  // parte — solo le llega al admin con el contexto del caso, para que
+  // decida si hace falta actuar.
+  router.post('/:code/messages/:id/report', requireAuth, requireMembership, async (req, res) => {
+    const { reason } = req.body;
+    if (!reason || !reason.trim()) return res.status(400).json({ error: 'Contanos brevemente qué te preocupa de este mensaje.' });
+    const db = getDB();
+    const msg = db.messages.find((m) => m.id === req.params.id && m.channelId === req.channel.id);
+    if (!msg) return res.status(404).json({ error: 'Mensaje no encontrado' });
+    const report = {
+      id: nanoid(), channelId: req.channel.id, messageId: msg.id, reporterId: req.user.id,
+      reason: reason.trim().slice(0, 1000), status: 'pendiente', reviewedBy: null, reviewedAt: null, createdAt: Date.now(),
+    };
+    db.reports.push(report);
+    logAudit(db, { actorId: req.user.id, action: 'report_message', channelCode: req.channel.code, meta: { messageId: msg.id, reportId: report.id } });
+    await commit();
+    res.json({ ok: true });
   });
 
   // ---------- calendario ----------

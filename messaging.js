@@ -16,12 +16,19 @@ const NOTIFY_DEBOUNCE_MS = Number(process.env.WHATSAPP_NOTIFY_DEBOUNCE_MS) || 2 
 // guarda el mensaje final (original o reformulado, ya decidido) de una
 // parte del canal — reemplaza la lógica que antes vivía inline en
 // POST /:code/messages de routes/channels.js.
-async function postMessage(io, channel, { senderId, text, flagged, reason }) {
+async function postMessage(io, channel, { senderId, text, flagged, reason, replyToId }) {
   const db = getDB();
   const sender = db.users.find((u) => u.id === senderId);
+  // el mensaje citado tiene que ser del MISMO canal — si no, alguien podría
+  // mandar el id de un mensaje de otro canal (uno en el que ni siquiera es
+  // miembro) y colar su contenido como cita acá.
+  const validReplyToId = replyToId && db.messages.some((m) => m.id === replyToId && m.channelId === channel.id)
+    ? replyToId
+    : null;
   const msg = {
     id: nanoid(), channelId: channel.id, senderId,
     text, flagged: !!flagged, reason: reason || null, pattern: false, readAt: null, createdAt: Date.now(),
+    replyToId: validReplyToId,
   };
   db.messages.push(msg);
 

@@ -371,6 +371,48 @@ module.exports = function (io) {
     res.json(list);
   });
 
+  // ---------- mensajes reportados ----------
+  // "Reportar" desde el chat (routes/channels.js) — a diferencia del
+  // audit log (acciones administrativas), esto es contenido que una
+  // parte marcó como preocupante y necesita que alguien lo revise.
+  // Pendientes primero, así no hay que scrollear para ver lo nuevo.
+  router.get('/reports', requireAdmin, (req, res) => {
+    const db = getDB();
+    const list = [...db.reports]
+      .sort((a, b) => (a.status === b.status ? b.createdAt - a.createdAt : a.status === 'pendiente' ? -1 : 1))
+      .map((r) => {
+        const reporter = db.users.find((u) => u.id === r.reporterId);
+        const msg = db.messages.find((m) => m.id === r.messageId);
+        const channel = db.channels.find((c) => c.id === r.channelId);
+        const msgSender = msg && msg.senderId ? db.users.find((u) => u.id === msg.senderId) : null;
+        return {
+          id: r.id,
+          status: r.status,
+          reason: r.reason,
+          reporterName: reporter ? reporter.name : 'Desconocido',
+          channelCode: channel ? channel.code : null,
+          messageText: msg ? msg.text : '(mensaje no disponible)',
+          messageSenderName: msgSender ? msgSender.name : (msg && !msg.senderId ? 'Sistema' : 'Desconocido'),
+          messageCreatedAt: msg ? msg.createdAt : null,
+          createdAt: r.createdAt,
+          reviewedAt: r.reviewedAt,
+        };
+      });
+    res.json(list);
+  });
+
+  router.post('/reports/:id/resolve', requireAdmin, async (req, res) => {
+    const db = getDB();
+    const report = db.reports.find((r) => r.id === req.params.id);
+    if (!report) return res.status(404).json({ error: 'Reporte no encontrado' });
+    report.status = 'revisado';
+    report.reviewedBy = req.user.id;
+    report.reviewedAt = Date.now();
+    logAudit(db, { actorId: req.user.id, action: 'resolve_report', meta: { reportId: report.id } });
+    await commit();
+    res.json({ ok: true });
+  });
+
   // ---------- panel de WhatsApp ----------
   router.get('/whatsapp/status', requireAdmin, (req, res) => {
     const db = getDB();

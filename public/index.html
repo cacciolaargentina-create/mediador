@@ -134,6 +134,34 @@
     .modal-sheet{ border-radius:14px; border-bottom:1px solid var(--line); }
   }
 
+  /* ---- pantalla de bloqueo (PIN / Face ID) — tapa todo, arriba incluso
+     de los modales (z-index más alto que .modal-overlay). ---- */
+  #app-lock-screen{ display:none; position:fixed; inset:0; z-index:200; background:var(--bg); align-items:center; justify-content:center; padding:24px; }
+  #app-lock-screen.show{ display:flex; }
+  .lock-inner{ display:flex; flex-direction:column; align-items:center; width:100%; max-width:300px; text-align:center; }
+  .lock-pin-dots{ display:flex; gap:14px; margin-bottom:6px; }
+  .lock-pin-dots .dot{ width:14px; height:14px; border-radius:50%; border:1.5px solid var(--line); background:none; transition:background-color .15s ease, border-color .15s ease; }
+  .lock-pin-dots .dot.filled{ background:var(--calm); border-color:var(--calm); }
+  .lock-pin-dots.shake{ animation:lock-shake .4s ease; }
+  @keyframes lock-shake{ 20%,60%{ transform:translateX(-8px); } 40%,80%{ transform:translateX(8px); } }
+  .lock-pin-error{ color:var(--danger); font-size:12.5px; min-height:18px; margin-bottom:8px; }
+  .lock-keypad{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; width:100%; max-width:240px; }
+  .lock-key{ aspect-ratio:1; border-radius:50%; border:1px solid var(--line); background:var(--surface); color:var(--text); font-size:19px; font-family:var(--sans); cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  .lock-key:hover{ border-color:var(--calm-dim); }
+  .lock-key.lock-key-ghost{ background:none; border:none; cursor:default; }
+  .lock-key.lock-key-del{ background:none; border:none; font-size:15px; color:var(--text-dim); }
+  /* ---- configuración (toggles simples) ---- */
+  .settings-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 0; border-bottom:1px solid var(--line); }
+  .settings-row:last-child{ border-bottom:none; }
+  .settings-row .st-label{ font-size:13.5px; font-weight:600; }
+  .settings-row .st-desc{ font-size:12px; color:var(--text-dim); margin-top:2px; line-height:1.4; }
+  .switch{ position:relative; display:inline-block; width:38px; height:22px; flex-shrink:0; }
+  .switch input{ opacity:0; width:0; height:0; }
+  .switch .slider{ position:absolute; inset:0; background:var(--line); border-radius:22px; cursor:pointer; transition:background-color .15s ease; }
+  .switch .slider::before{ content:''; position:absolute; width:16px; height:16px; left:3px; top:3px; background:#fff; border-radius:50%; transition:transform .15s ease; }
+  .switch input:checked + .slider{ background:var(--calm); }
+  .switch input:checked + .slider::before{ transform:translateX(16px); }
+
   .pad{ padding:18px 20px; }
   .center-pad{ padding:40px 20px; display:flex; flex-direction:column; align-items:center; text-align:center; gap:16px; }
   h1.screen-title{ font-family:var(--serif); font-size:23px; font-weight:600; margin-bottom:4px; }
@@ -212,6 +240,7 @@
   .msg-time{ font-size:10.5px; color:var(--text-faint); }
   .ticks{ display:inline-flex; color:var(--text-faint); }
   .ticks.read{ color:var(--wa-tick-read); }
+  .verified-badge{ color:var(--wa-tick-read); vertical-align:middle; margin-left:3px; flex-shrink:0; }
 
   /* ---- pantalla de chat: el título "Chat con X" repite lo que ya dice la
      barra contextual de arriba ("Con X · CODIGO"), así que se oculta acá
@@ -244,6 +273,34 @@
   .neutral-btn{ font-family:var(--mono); font-size:9.5px; text-decoration:underline; color:var(--calm); background:none; border:none; cursor:pointer; padding:0; margin-top:5px; }
   .neutral-box{ margin-top:7px; padding:8px 9px; background:var(--surface-2); border:1px solid var(--calm-dim); border-radius:7px; font-size:12.5px; color:var(--text-dim); line-height:1.4; }
   .neutral-box .lab{ font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:0.06em; color:var(--calm); margin-bottom:3px; }
+
+  /* ---- responder a un mensaje (hilo estilo WhatsApp) ---- */
+  .reply-btn{ font-family:var(--mono); font-size:9.5px; text-decoration:underline; color:var(--text-faint); background:none; border:none; cursor:pointer; padding:0; margin-top:4px; }
+  .reply-btn:hover{ color:var(--calm); }
+  /* la cita arriba del texto: borde de color a la izquierda, fondo un
+     toque más oscuro/claro que la burbuja — mismo lenguaje visual que
+     WhatsApp usa para "esto es lo que estás respondiendo". Clickeable
+     para saltar al mensaje original si todavía está cargado en pantalla. */
+  .msg-quote{ display:block; text-align:left; width:100%; background:rgba(0,0,0,0.08); border-left:3px solid var(--calm); border-radius:4px; padding:4px 7px; margin-bottom:4px; cursor:pointer; font:inherit; color:inherit; }
+  :root[data-theme="light"] .msg-quote{ background:rgba(0,0,0,0.05); }
+  .msg-quote .qname{ font-size:11.5px; font-weight:600; color:var(--calm); }
+  .msg-quote .qtext{ font-size:12px; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; }
+  .msg-quote-missing{ font-style:italic; color:var(--text-faint); }
+  /* franja de "Respondiendo a…" arriba del composer, con su X para
+     cancelar — mismo patrón que WhatsApp antes de escribir la respuesta. */
+  .reply-preview-bar{ display:flex; align-items:center; gap:8px; background:var(--surface-2); border:1px solid var(--calm-dim); border-left:3px solid var(--calm); border-radius:7px; padding:6px 8px; margin-bottom:8px; }
+  .reply-preview-bar .rp-body{ flex:1; min-width:0; }
+  .reply-preview-bar .rp-name{ font-size:11.5px; font-weight:600; color:var(--calm); }
+  .reply-preview-bar .rp-text{ font-size:12px; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .reply-preview-bar .rp-close{ background:none; border:none; color:var(--text-faint); font-size:16px; cursor:pointer; padding:2px 4px; flex-shrink:0; line-height:1; }
+  .reply-preview-bar .rp-close:hover{ color:var(--text); }
+  /* flash breve al saltar a un mensaje citado (scrollToMessage) — para
+     que quede claro cuál es el que se estaba citando, no solo que la
+     pantalla se movió. */
+  @media (prefers-reduced-motion: no-preference){
+    .msg-highlight{ animation:msg-flash 1.1s ease; }
+    @keyframes msg-flash{ 0%,100%{ box-shadow:0 1px 0.5px rgba(0,0,0,0.13); } 25%{ box-shadow:0 0 0 2px var(--calm); } }
+  }
 
   .analyzing{ align-self:flex-end; font-family:var(--mono); font-size:11px; color:var(--text-faint); display:flex; align-items:center; gap:8px; padding:6px 4px; }
   .analyzing .spin{ width:10px; height:10px; border-radius:50%; border:2px solid var(--line); border-top-color:var(--calm); animation:spin .7s linear infinite; }
@@ -458,7 +515,7 @@
   .hero-section{ width:100%; min-height:calc(100vh - 64px); display:flex; flex-direction:column; justify-content:center; box-sizing:border-box; padding:32px 22px; }
   .hero-section-inner{ width:100%; max-width:480px; margin:0 auto; text-align:left; }
   .hero-section-inner .tagline-center{ text-align:center; color:var(--text-faint); font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:0.07em; margin-bottom:22px; }
-  .hero-section-inner h1.screen-title{ text-align:center; font-size:25px; }
+  .hero-section-inner h1.screen-title{ text-align:center; font-size:27px; font-weight:700; }
   .hero-section-inner .screen-sub{ text-align:center; }
 
   /* barra flotante de login con Google — acompaña al bajar, solo en mobile.
@@ -561,7 +618,6 @@
 
     .hero-row{ display:flex; align-items:center; gap:48px; margin-bottom:6px; }
     .hero-row .hero-copy{ flex:1; }
-    .hero-row .hero-copy h1.screen-title, .hero-row .hero-copy .screen-sub{ text-align:left; }
     .hero-row .hero-demo{ flex:1; margin-bottom:0; }
 
     /* misma especificidad que ".landing-wrap .cta-block" de más arriba
@@ -614,7 +670,6 @@
   .trust-row{ display:flex; flex-wrap:wrap; gap:8px 10px; justify-content:center; margin:16px 0 26px; }
   .trust-chip{ display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text-dim); background:var(--surface); border:1px solid var(--line); border-radius:20px; padding:6px 12px; }
   .trust-chip svg{ width:13px; height:13px; color:var(--calm); flex-shrink:0; }
-  @media (min-width:900px){ .trust-row{ justify-content:flex-start; margin-left:0; } }
 
   /* ---- showcase animado: reformula un mensaje solo, en loop, para que
      se vea el valor del producto sin que nadie tenga que escribir nada.
@@ -645,6 +700,7 @@
   <div style="display:flex; align-items:center; gap:8px;">
     <button class="icon-btn install-btn" id="install-btn-app" onclick="promptInstall()" style="display:none" title="Instalar app" aria-label="Instalar app">📲</button>
     <button class="icon-btn theme-btn" onclick="toggleTheme()" title="Cambiar a modo claro" aria-label="Cambiar tema">🌙</button>
+    <button class="icon-btn" onclick="openAppSettingsModal()" title="Configuración" aria-label="Configuración">⚙️</button>
     <div class="user-chip" id="user-chip"></div>
   </div>
 </header>
@@ -770,11 +826,10 @@
 
 <section class="hero-section">
   <div class="hero-section-inner">
-    <div class="tagline-center">Comunicación mediada por IA</div>
     <div class="hero-row">
       <div class="hero-copy">
-        <h1 class="screen-title">Un tercer canal, no un árbitro.</h1>
-        <p class="screen-sub">Para cuando hay que seguir coordinando con la otra persona —horarios, entregas, acuerdos— pero cada mensaje corre el riesgo de escalar. Nadie decide quién tiene razón acá: te ayudamos a que lo que decís quede centrado en hechos.</p>
+        <h1 class="screen-title">Antes de mandarlo, mirá cómo sonaría distinto.</h1>
+        <p class="screen-sub">Un tercer canal, no un árbitro. Para cuando hay que seguir coordinando con la otra persona —horarios, entregas, acuerdos— pero cada mensaje corre el riesgo de escalar. Nadie decide quién tiene razón acá: te ayudamos a que lo que decís quede centrado en hechos.</p>
         <div class="trust-row">
           <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>Cifrado en tránsito</span>
           <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/></svg>Gratis para empezar</span>
@@ -990,6 +1045,33 @@
       <li>Confirmá tocando <strong>"Agregar"</strong> arriba a la derecha.</li>
     </ol>
     <p class="field-hint" style="margin-top:12px;">Así abre en pantalla completa, sin la barra de Safari, y podés recibir notificaciones.</p>
+  </div>
+</div>
+
+<div class="modal-overlay" id="app-settings-modal" onclick="if(event.target===this) closeAppSettingsModal()">
+  <div class="modal-sheet" style="max-width:400px;">
+    <div class="modal-head">
+      <h2 class="screen-title" style="font-size:18px; margin:0;">Configuración</h2>
+      <button class="modal-close" onclick="closeAppSettingsModal()" aria-label="Cerrar">✕</button>
+    </div>
+    <div id="app-settings-content" style="margin-top:6px;"></div>
+  </div>
+</div>
+
+<!-- pantalla de bloqueo: tapa TODA la app (incluso por encima de modales)
+     hasta que se ingresa el PIN correcto o pasa la verificación
+     biométrica — ver applock.js. No es parte del flujo de login/auth de
+     verdad, es un cerrojo LOCAL del dispositivo (mismo criterio que el
+     bloqueo con PIN de WhatsApp): la sesión sigue activa del lado del
+     server, esto solo tapa la pantalla. -->
+<div id="app-lock-screen">
+  <div class="lock-inner">
+    <div class="brand bridge-logo" style="font-size:24px; margin-bottom:6px;">Puente<em>digital</em></div>
+    <p class="screen-sub" style="margin-bottom:22px;">Ingresá tu PIN para continuar</p>
+    <div class="lock-pin-dots" id="lock-pin-dots"></div>
+    <div class="lock-pin-error" id="lock-pin-error"></div>
+    <div class="lock-keypad" id="lock-keypad"></div>
+    <button class="ghost" id="lock-biometric-btn" style="display:none; margin-top:16px;" onclick="attemptBiometricUnlock()">👆 Usar Face ID / Touch ID</button>
   </div>
 </div>
 

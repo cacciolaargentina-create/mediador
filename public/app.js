@@ -22,6 +22,7 @@ let socketEverConnected = false; // distingue la primera conexión (ya cargamos 
 let peerPresence = {};   // userId -> { online: bool, lastSeenAt: ms|null } — en memoria, se resetea al recargar la página
 let peerTyping = {};     // userId -> bool
 let typingActive = false; // si ya avisé "estoy escribiendo" en esta tanda, para no emitir en cada tecla
+let replyingTo = null;   // { id, senderName, text } del mensaje al que se está por responder, o null — se limpia al enviar o cancelar
 
 // Ejemplos de mensajes centrados en hechos para situaciones típicas de
 // coparentalidad — un empujón hacia comunicación estructurada en vez de
@@ -66,8 +67,25 @@ function dateSeparatorLabel(ts){
 // leído. No hay un estado "entregado" separado de "leído" en esta app
 // (solo se sabe si se mandó y si readAt quedó marcado), así que no se
 // inventa un tercer estado que no existe de verdad.
+// insignia de "profesional verificado" — mismo celeste que el tilde de
+// leído (--wa-tick-read), la idea es que se lea como "esto está
+// confirmado por la plataforma", el mismo lenguaje visual que ya
+// entiende cualquiera que use WhatsApp (el check azul de WhatsApp
+// Business). currentColor + una clase con el color, no un fill fijo,
+// para no tener que duplicar el valor del color acá.
+function verifiedBadgeHtml(){
+  return '<svg class="verified-badge" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="currentColor"/><path d="M4.5 8.2l2.2 2.2L11.5 5.6" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+}
+
 function msgTicksHtml(mine, readAt){
   if(!mine) return '';
+  // recíproco, igual que WhatsApp: si YO apagué "confirmaciones de
+  // lectura" (ver #app-settings-modal), no veo el "leído" de nadie
+  // tampoco, aunque el server sí haya guardado un readAt de antes de
+  // apagarlo — es la misma regla del otro lado (routes/channels.js).
+  if(me && me.readReceiptsEnabled === false){
+    return `<span class="ticks" title="Enviado"><svg viewBox="0 0 12 11" width="11" height="10.5" fill="none"><path d="M1 5.3L4.4 8.7L10.8 1.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
+  }
   if(readAt){
     return `<span class="ticks read" title="Visto ${fmtTs(readAt)}"><svg viewBox="0 0 16 11" width="15" height="10.5" fill="none"><path d="M1 5.3L4.4 8.7L10.8 1.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.3 5.3L8.7 8.7L15.1 1.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
   }
@@ -231,6 +249,287 @@ function toggleThemeWash(event){
 initTheme();
 
 // ==================================================================
+// BLOQUEO DE LA APP CON PIN / FACE ID-TOUCH ID — mismo criterio que el
+// bloqueo con PIN de WhatsApp: NO es autenticación de verdad (la sesión
+// del server sigue activa igual), es un cerrojo LOCAL de este
+// dispositivo/navegador para que alguien que agarra el teléfono ya
+// desbloqueado no pueda abrir la app directo — acá el contenido
+// (coordinación de un conflicto familiar) es más sensible que un chat
+// cualquiera. Todo vive en localStorage, atado a este navegador — no es
+// una config de la cuenta, es del aparato.
+//
+// El PIN se guarda hasheado (SHA-256 + salt propia, Web Crypto) — no en
+// texto plano, pero tampoco pretende ser una bóveda: el modelo de
+// amenaza es "alguien con el teléfono ya desbloqueado en la mano", no
+// un atacante remoto con acceso al localStorage.
+//
+// La biometría usa WebAuthn con un authenticator de plataforma
+// (Face ID/Touch ID/Windows Hello): se registra un credential una vez
+// (navigator.credentials.create) y para desbloquear alcanza con que
+// navigator.credentials.get() no tire error — el propio sistema
+// operativo ya validó la huella/cara antes de devolver algo, no hace
+// falta (ni hay) un server que verifique la firma, porque no se está
+// autenticando contra nada remoto, solo destrabando la pantalla local.
+// ==================================================================
+const LOCK_STORAGE_KEY = 'pd_lock_config';
+const LOCK_REARM_MS = 30 * 1000; // volver a pedir el PIN si la app estuvo oculta más de esto
+
+function getLockConfig(){
+  try{ return JSON.parse(localStorage.getItem(LOCK_STORAGE_KEY) || 'null'); }
+  catch(e){ return null; }
+}
+function setLockConfig(cfg){
+  try{ localStorage.setItem(LOCK_STORAGE_KEY, JSON.stringify(cfg)); }catch(e){ /* sin storage disponible — el bloqueo simplemente no persiste */ }
+}
+function isLockEnabled(){
+  const cfg = getLockConfig();
+  return !!(cfg && cfg.enabled && cfg.pinHash);
+}
+async function sha256Hex(text){
+  const data = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+function randomHex(bytes){
+  const arr = new Uint8Array(bytes);
+  crypto.getRandomValues(arr);
+  return Array.from(arr).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+async function enableAppLock(pin){
+  const salt = randomHex(16);
+  const pinHash = await sha256Hex(salt + pin);
+  const prev = getLockConfig() || {};
+  setLockConfig({ ...prev, enabled: true, pinHash, salt });
+}
+function disableAppLock(){
+  setLockConfig(null);
+}
+async function verifyLockPin(pin){
+  const cfg = getLockConfig();
+  if(!cfg || !cfg.pinHash) return false;
+  const hash = await sha256Hex(cfg.salt + pin);
+  return hash === cfg.pinHash;
+}
+
+// ---- biometría (WebAuthn, opcional además del PIN) ----
+async function biometricAvailable(){
+  if(!window.PublicKeyCredential || !PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) return false;
+  try{ return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); }
+  catch(e){ return false; }
+}
+function hasBiometricRegistered(){
+  const cfg = getLockConfig();
+  return !!(cfg && cfg.webauthnCredId);
+}
+async function registerBiometric(){
+  const challenge = crypto.getRandomValues(new Uint8Array(32));
+  const userId = crypto.getRandomValues(new Uint8Array(16));
+  const cred = await navigator.credentials.create({
+    publicKey: {
+      challenge,
+      rp: { name: 'Puente Digital' },
+      user: { id: userId, name: 'bloqueo-local', displayName: 'Bloqueo del dispositivo' },
+      pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+      authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
+      timeout: 60000,
+    },
+  });
+  if(!cred) throw new Error('No se pudo registrar');
+  const credIdB64 = btoa(String.fromCharCode(...new Uint8Array(cred.rawId)));
+  const prev = getLockConfig() || {};
+  setLockConfig({ ...prev, webauthnCredId: credIdB64 });
+}
+function clearBiometric(){
+  const prev = getLockConfig();
+  if(!prev) return;
+  setLockConfig({ ...prev, webauthnCredId: null });
+}
+async function attemptBiometricUnlock(){
+  const cfg = getLockConfig();
+  if(!cfg || !cfg.webauthnCredId) return;
+  try{
+    const idBytes = Uint8Array.from(atob(cfg.webauthnCredId), c => c.charCodeAt(0));
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    await navigator.credentials.get({
+      publicKey: { challenge, allowCredentials: [{ id: idBytes, type: 'public-key' }], userVerification: 'required', timeout: 60000 },
+    });
+    unlockApp(); // si get() no tiró error, el sistema ya validó la huella/cara
+  }catch(e){
+    // cancelado o no coincide — se queda en la pantalla de PIN, no es un error para mostrar
+  }
+}
+
+// ---- pantalla de bloqueo ----
+let lockPinBuffer = '';
+function showLockScreen(){
+  document.getElementById('app-lock-screen').classList.add('show');
+  lockPinBuffer = '';
+  renderLockPinDots();
+  renderLockKeypad();
+  document.getElementById('lock-pin-error').textContent = '';
+  biometricAvailable().then(avail => {
+    document.getElementById('lock-biometric-btn').style.display = (avail && hasBiometricRegistered()) ? 'block' : 'none';
+    if(avail && hasBiometricRegistered()) attemptBiometricUnlock(); // ofrece la biometría sola, sin esperar a que toquen el botón
+  });
+}
+function hideLockScreen(){
+  document.getElementById('app-lock-screen').classList.remove('show');
+}
+function unlockApp(){
+  hideLockScreen();
+  lastAppVisibleUnlockedAt = Date.now();
+}
+function renderLockPinDots(){
+  const wrap = document.getElementById('lock-pin-dots');
+  wrap.innerHTML = Array.from({length:4}).map((_, i) => `<span class="dot${i < lockPinBuffer.length ? ' filled' : ''}"></span>`).join('');
+}
+function renderLockKeypad(){
+  const keys = ['1','2','3','4','5','6','7','8','9','','0','del'];
+  document.getElementById('lock-keypad').innerHTML = keys.map(k => {
+    if(k === '') return '<span class="lock-key lock-key-ghost"></span>';
+    if(k === 'del') return '<button class="lock-key lock-key-del" onclick="pressLockDelete()" aria-label="Borrar">⌫</button>';
+    return `<button class="lock-key" onclick="pressLockDigit('${k}')">${k}</button>`;
+  }).join('');
+}
+async function pressLockDigit(d){
+  if(lockPinBuffer.length >= 4) return;
+  lockPinBuffer += d;
+  renderLockPinDots();
+  if(lockPinBuffer.length === 4){
+    const ok = await verifyLockPin(lockPinBuffer);
+    if(ok){
+      unlockApp();
+    }else{
+      document.getElementById('lock-pin-error').textContent = 'PIN incorrecto';
+      document.getElementById('lock-pin-dots').classList.add('shake');
+      setTimeout(() => {
+        document.getElementById('lock-pin-dots').classList.remove('shake');
+        lockPinBuffer = '';
+        renderLockPinDots();
+      }, 400);
+    }
+  }
+}
+function pressLockDelete(){
+  lockPinBuffer = lockPinBuffer.slice(0, -1);
+  renderLockPinDots();
+}
+
+// se llama una vez al arrancar boot() — si el bloqueo está activo, tapa
+// todo hasta que se resuelva; boot() sigue su curso normal por debajo,
+// la pantalla de bloqueo solo se superpone visualmente.
+function checkLockOnBoot(){
+  if(isLockEnabled()) showLockScreen();
+}
+
+// re-bloquear al volver de estar oculta un rato — no en cada cambio de
+// pestaña (molesto), solo si pasó bastante tiempo (LOCK_REARM_MS),
+// como hace WhatsApp.
+let lastAppVisibleUnlockedAt = Date.now();
+let hiddenSinceAt = null;
+document.addEventListener('visibilitychange', () => {
+  if(!isLockEnabled()) return;
+  if(document.hidden){
+    hiddenSinceAt = Date.now();
+    return;
+  }
+  if(hiddenSinceAt && Date.now() - hiddenSinceAt > LOCK_REARM_MS) showLockScreen();
+  hiddenSinceAt = null;
+});
+
+// ==================================================================
+// MODAL DE CONFIGURACIÓN — bloqueo de la app + confirmaciones de
+// lectura, las dos son preferencias que no encajan en "Configurar caso"
+// (esa es por canal; estas son de la cuenta/dispositivo).
+// ==================================================================
+function openAppSettingsModal(){
+  document.getElementById('app-settings-modal').classList.add('show');
+  renderAppSettings();
+}
+function closeAppSettingsModal(){
+  document.getElementById('app-settings-modal').classList.remove('show');
+}
+async function renderAppSettings(){
+  const el = document.getElementById('app-settings-content');
+  if(!el) return;
+  const lockOn = isLockEnabled();
+  const bioAvail = await biometricAvailable();
+  const bioOn = hasBiometricRegistered();
+  el.innerHTML = `
+    <div class="settings-row">
+      <div>
+        <div class="st-label">Confirmaciones de lectura</div>
+        <div class="st-desc">El "✓✓ leído" en los chats. Si lo apagás, tampoco vas a ver el de los demás — es recíproco, igual que en WhatsApp.</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="settings-read-receipts" ${me.readReceiptsEnabled !== false ? 'checked' : ''} onchange="onToggleReadReceipts(this.checked)"><span class="slider"></span></label>
+    </div>
+    <div class="settings-row" style="flex-direction:column; align-items:stretch;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+        <div>
+          <div class="st-label">Bloqueo de la app</div>
+          <div class="st-desc">Pedir un PIN${bioAvail ? ' (o Face ID / Touch ID)' : ''} para abrir la app en este dispositivo — es de este navegador, no de tu cuenta.</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="settings-app-lock" ${lockOn ? 'checked' : ''} onchange="onToggleAppLock(this.checked)"><span class="slider"></span></label>
+      </div>
+      <div id="app-lock-setup-slot" style="margin-top:10px;"></div>
+      ${lockOn && bioAvail ? `
+        <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text-dim); margin-top:10px; cursor:pointer;">
+          <input type="checkbox" id="settings-biometric" ${bioOn ? 'checked' : ''} onchange="onToggleBiometric(this.checked)" style="width:auto;">
+          Usar Face ID / Touch ID además del PIN
+        </label>
+      ` : ''}
+    </div>
+  `;
+}
+async function onToggleReadReceipts(checked){
+  try{
+    const res = await api('/auth/me/preferences', { method:'POST', body: JSON.stringify({ readReceiptsEnabled: checked }) });
+    me.readReceiptsEnabled = res.readReceiptsEnabled;
+    if(currentScreen === 'chat') paintMessages(); // los tildes de los mensajes ya pintados cambian con esto
+  }catch(e){
+    alert('No se pudo guardar. Probá de nuevo.');
+    renderAppSettings(); // revierte el switch a lo que realmente quedó guardado
+  }
+}
+function onToggleAppLock(checked){
+  if(!checked){
+    disableAppLock();
+    renderAppSettings();
+    return;
+  }
+  // no se activa todavía — primero hay que elegir el PIN
+  document.getElementById('settings-app-lock').checked = false;
+  document.getElementById('app-lock-setup-slot').innerHTML = `
+    <div class="card" style="padding:12px; margin:0;">
+      <label class="field-label">Elegí un PIN de 4 dígitos</label>
+      <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="lock-setup-pin" placeholder="····" style="margin-bottom:8px; letter-spacing:6px; text-align:center;">
+      <label class="field-label">Repetilo</label>
+      <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="lock-setup-pin2" placeholder="····" style="margin-bottom:10px; letter-spacing:6px; text-align:center;">
+      <div id="lock-setup-error" style="color:var(--danger); font-size:12px; margin-bottom:8px;"></div>
+      <button class="primary" style="width:100%;" onclick="confirmAppLockSetup()">Guardar PIN</button>
+    </div>
+  `;
+}
+async function confirmAppLockSetup(){
+  const pin = document.getElementById('lock-setup-pin').value;
+  const pin2 = document.getElementById('lock-setup-pin2').value;
+  const errEl = document.getElementById('lock-setup-error');
+  if(!/^\d{4}$/.test(pin)){ errEl.textContent = 'Tiene que ser un PIN de 4 números.'; return; }
+  if(pin !== pin2){ errEl.textContent = 'Los dos PIN no coinciden.'; return; }
+  await enableAppLock(pin);
+  renderAppSettings();
+}
+async function onToggleBiometric(checked){
+  if(checked){
+    try{ await registerBiometric(); }
+    catch(e){ alert('No se pudo activar Face ID / Touch ID en este dispositivo. Probá de nuevo o seguí usando el PIN.'); }
+  } else {
+    clearBiometric();
+  }
+  renderAppSettings();
+}
+
+// ==================================================================
 // MENÚ HAMBURGUESA (landing, responsive) — solo esconde/muestra los links
 // de .site-nav por debajo de 640px (ver CSS); arriba de eso el CSS ya los
 // muestra en fila y el botón queda oculto, así que este JS no hace nada ahí.
@@ -302,6 +601,7 @@ function closeInstallModal(){ document.getElementById('install-modal')?.classLis
 // BOOT
 // ==================================================================
 (async function boot(){
+  checkLockOnBoot(); // tapa la pantalla ANTES de que se llegue a pintar nada, si el bloqueo está activo en este dispositivo
   const params = new URLSearchParams(location.search);
   const guestParam = params.get('guest');
   if(guestParam){
@@ -1154,7 +1454,7 @@ const READ_RECEIPT = { enviado: '✓ enviado', leido: '✓✓ leído' };
 
 function othersLineHtml(others){
   if(!others || !others.length) return 'Esperando a la otra parte';
-  return 'Con ' + others.map(o => escapeHtml(o.name) + (o.roleLabel ? ` (${escapeHtml(o.roleLabel)})` : '')).join(', ');
+  return 'Con ' + others.map(o => escapeHtml(o.name) + (o.verified ? verifiedBadgeHtml() : '') + (o.roleLabel ? ` (${escapeHtml(o.roleLabel)})` : '')).join(', ');
 }
 
 // showStatusButtons: Inicio deja cambiar el estado directo desde la
@@ -1360,7 +1660,7 @@ function renderConfig(){
 
   const membersListHtml = channelInfo.members.map(m => `
     <div class="member-row">
-      <span>${escapeHtml(m.user ? m.user.name : '—')}${m.label ? ' <span style="color:var(--text-faint)">· ' + escapeHtml(m.label) + '</span>' : ''}</span>
+      <span>${escapeHtml(m.user ? m.user.name : '—')}${m.verified ? verifiedBadgeHtml() : ''}${m.label ? ' <span style="color:var(--text-faint)">· ' + escapeHtml(m.label) + '</span>' : ''}</span>
       <span class="ev-pill ${m.role === 'A' || m.role === 'B' ? 'confirmado' : 'pendiente'}">${roleLabelOf(m)}</span>
     </div>`).join('');
   const membersCard = `<div class="card"><div class="eyebrow">Integrantes del canal</div>${membersListHtml}</div>`;
@@ -1587,7 +1887,7 @@ function updateChatPresenceLine(){
     } else {
       statusText = 'sin conectar todavía';
     }
-    return `<span class="presence-chip"><span class="presence-dot ${statusClass}"></span>${escapeHtml(m.user.name)}${roleTag} · ${statusText}</span>`;
+    return `<span class="presence-chip"><span class="presence-dot ${statusClass}"></span>${escapeHtml(m.user.name)}${m.verified ? verifiedBadgeHtml() : ''}${roleTag} · ${statusText}</span>`;
   }).join('');
 }
 
@@ -1613,6 +1913,7 @@ function renderChatScreen(){
         <button class="chip chip-propose" onclick="toggleProposeForm()">📅 Proponer horario</button>
       </div>
       <div id="propose-form-slot"></div>
+      <div id="reply-preview-slot"></div>
       <div class="composer">
         <textarea id="chat-input" placeholder="Escribí tu mensaje..."></textarea>
         <button class="primary" id="send-btn" onclick="handleSend()">Enviar</button>
@@ -1623,6 +1924,8 @@ function renderChatScreen(){
       ${composerHtml}
     </div>
   `;
+  replyingTo = null; // pantalla de chat recién montada — no arrastrar una respuesta pendiente de antes
+  renderReplyPreview();
   const chatInput = document.getElementById('chat-input');
   if(chatInput){
     chatInput.addEventListener('keydown', (e)=>{
@@ -1638,6 +1941,53 @@ function renderChatScreen(){
     });
   }
   paintMessages();
+}
+
+// ==================================================================
+// RESPONDER A UN MENSAJE — hilo estilo WhatsApp: mientras replyingTo
+// esté seteado, se manda como replyToId junto con el próximo mensaje
+// (ver commitMessage). La franja de arriba del composer y la cita
+// dentro de la burbuja usan el mismo escapeHtml para lo que ya viene
+// truncado/preparado desde acá o desde el server (replyTo del socket).
+// ==================================================================
+function startReply(msgId){
+  const m = messages.find(x => x.id === msgId);
+  if(!m || !m.sender) return; // no se responde a mensajes de sistema
+  replyingTo = {
+    id: m.id,
+    senderName: m.sender.id === me.id ? 'Vos' : m.sender.name,
+    text: m.text.length > 140 ? m.text.slice(0, 140) + '…' : m.text,
+  };
+  renderReplyPreview();
+  const input = document.getElementById('chat-input');
+  if(input) input.focus();
+}
+function cancelReply(){
+  replyingTo = null;
+  renderReplyPreview();
+}
+function renderReplyPreview(){
+  const slot = document.getElementById('reply-preview-slot');
+  if(!slot) return;
+  slot.innerHTML = replyingTo ? `
+    <div class="reply-preview-bar">
+      <div class="rp-body">
+        <div class="rp-name">Respondiendo a ${escapeHtml(replyingTo.senderName)}</div>
+        <div class="rp-text">${escapeHtml(replyingTo.text)}</div>
+      </div>
+      <button class="rp-close" onclick="cancelReply()" aria-label="Cancelar respuesta">✕</button>
+    </div>
+  ` : '';
+}
+// salto al mensaje original al tocar la cita — solo funciona si todavía
+// está en la ventana de mensajes ya cargada (el chat no trae todo el
+// historial completo, ver hasMoreHistory); si no está, no hace nada.
+function scrollToMessage(msgId){
+  const el = document.querySelector(`[data-msg-id="${msgId}"]`);
+  if(!el) return;
+  el.scrollIntoView({ block:'center', behavior:'smooth' });
+  el.classList.add('msg-highlight');
+  setTimeout(() => el.classList.remove('msg-highlight'), 1200);
 }
 
 function applyTemplate(i){
@@ -1885,13 +2235,26 @@ function paintMessages(){
       const mine = m.sender.id === me.id;
       const div = document.createElement('div');
       div.className = 'msg ' + (mine ? 'me' : 'them');
+      div.dataset.msgId = m.id; // usado por scrollToMessage() al tocar una cita
       let inner = '';
       // el nombre de quien escribió va siempre en los mensajes que no son
       // míos — antes solo se mostraba para mediador/a o estudio, y las
       // partes tenían que adivinar por "no es mío = es de la otra
       // persona"; eso deja de alcanzar en cuanto hay más de dos
       // participantes viendo el canal (invitado/a, mediador/a).
-      if(!mine) inner += '<div class="msg-sender">' + escapeHtml(m.sender.name) + '</div>';
+      if(!mine){
+        const senderMember = channelInfo && channelInfo.members && channelInfo.members.find(mem => mem.user && mem.user.id === m.sender.id);
+        inner += '<div class="msg-sender">' + escapeHtml(m.sender.name) + (senderMember && senderMember.verified ? verifiedBadgeHtml() : '') + '</div>';
+      }
+      // cita del mensaje al que responde, si corresponde — replyTo llega
+      // armado del server (serializeMessage); si el original ya no está
+      // (raro), se avisa en vez de mostrar una cita vacía o rota.
+      if(m.replyTo){
+        inner += '<button type="button" class="msg-quote" onclick="scrollToMessage(\'' + m.replyTo.id + '\')">'
+          + '<span class="qname">' + escapeHtml(m.replyTo.senderName || 'Sistema') + '</span>'
+          + '<span class="qtext">' + escapeHtml(m.replyTo.text) + '</span>'
+          + '</button>';
+      }
       inner += '<div class="msg-text">' + escapeHtml(m.text) + '</div>';
       if(m.flagged && m.reason && mine){
         inner += '<div class="flag-note">' + escapeHtml(m.reason) + '</div>';
@@ -1899,9 +2262,26 @@ function paintMessages(){
       // hora + tildes de leído, siempre pegadas abajo a la derecha de la
       // burbuja — el patrón visual más reconocible de WhatsApp.
       inner += '<div class="msg-meta"><span class="msg-time">' + fmtTimeOnly(m.createdAt) + (m.flagged ? ' · marcado' : '') + '</span>' + msgTicksHtml(mine, m.readAt) + '</div>';
+      const actionLinks = [];
       if(!mine && !isProfessional()){
-        inner += '<div><button class="neutral-btn" onclick="requestNeutralReading(' + idx + ', this)">Ver lectura neutral</button></div>';
+        actionLinks.push('<button class="neutral-btn" onclick="requestNeutralReading(' + idx + ', this)">Ver lectura neutral</button>');
+      }
+      if(!isProfessional()){
+        actionLinks.push('<button class="reply-btn" onclick="startReply(\'' + m.id + '\')">↩ Responder</button>');
+      }
+      // reportar: solo tiene sentido en un mensaje ajeno — la moderación
+      // de IA ya filtra lo que uno mismo manda, esto es para lo que
+      // preocupa del OTRO lado. Se ofrece también a profesionales: son
+      // quienes a veces detectan un patrón que a la parte se le pasa.
+      if(!mine){
+        actionLinks.push('<button class="reply-btn" onclick="toggleReportBox(\'' + m.id + '\', ' + idx + ')">🚩 Reportar</button>');
+      }
+      if(actionLinks.length) inner += '<div style="display:flex; gap:12px; flex-wrap:wrap;">' + actionLinks.join('') + '</div>';
+      if(!mine && !isProfessional()){
         inner += '<div class="neutral-box" id="neutral-' + idx + '" style="display:none"></div>';
+      }
+      if(!mine){
+        inner += '<div class="neutral-box" id="report-box-' + idx + '" style="display:none"></div>';
       }
       div.innerHTML = inner;
       log.appendChild(div);
@@ -1942,6 +2322,42 @@ async function requestNeutralReading(idx, btn){
   }
   btn.textContent = 'Ver lectura neutral';
   btn.disabled = false;
+}
+
+// ==================================================================
+// REPORTAR UN MENSAJE — no bloquea nada ni le avisa a la otra parte,
+// solo le llega al admin con el contexto del caso (ver
+// POST .../messages/:id/report). La moderación de IA solo filtra lo
+// que uno mismo manda; esto es el canal para lo que preocupa del otro
+// lado.
+// ==================================================================
+function toggleReportBox(msgId, idx){
+  const box = document.getElementById('report-box-' + idx);
+  if(!box) return;
+  const open = box.style.display !== 'none';
+  if(open){ box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = 'block';
+  box.innerHTML = `
+    <div class="lab">Reportar este mensaje</div>
+    <p style="font-size:11.5px; color:var(--text-dim); margin-bottom:6px;">Le llega a un administrador de la plataforma con el contexto del caso — no bloquea el mensaje ni avisa a la otra parte.</p>
+    <textarea id="report-reason-${idx}" placeholder="¿Qué te preocupa de este mensaje?" style="width:100%; min-height:56px; margin-bottom:8px; background:var(--surface); border:1px solid var(--line); color:var(--text); border-radius:7px; padding:8px; font-family:var(--sans); font-size:12.5px;"></textarea>
+    <div id="report-result-${idx}" style="font-size:12px; margin-bottom:6px;"></div>
+    <button class="ghost small" onclick="submitReport('${msgId}', ${idx})" id="report-submit-${idx}">Enviar reporte</button>
+  `;
+}
+async function submitReport(msgId, idx){
+  const reason = document.getElementById(`report-reason-${idx}`).value.trim();
+  const resultEl = document.getElementById(`report-result-${idx}`);
+  const btn = document.getElementById(`report-submit-${idx}`);
+  if(!reason){ resultEl.innerHTML = '<span style="color:var(--danger)">Contanos brevemente qué te preocupa.</span>'; return; }
+  btn.disabled = true;
+  try{
+    await api(`/api/channels/${channelCode}/messages/${msgId}/report`, { method:'POST', body: JSON.stringify({ reason }) });
+    document.getElementById('report-box-' + idx).innerHTML = '<div class="lab">Reportar este mensaje</div><span style="color:var(--calm); font-size:12.5px;">✓ Reportado — un administrador lo va a revisar.</span>';
+  }catch(e){
+    resultEl.innerHTML = `<span style="color:var(--danger)">${escapeHtml(e.error || 'No se pudo enviar el reporte.')}</span>`;
+    btn.disabled = false;
+  }
 }
 
 async function handleSend(){
@@ -2007,17 +2423,20 @@ function openInDraft(text){
 }
 
 async function commitMessage(text, flagged, reason){
+  const replyToId = replyingTo ? replyingTo.id : null;
   try{
     const msg = await api(`/api/channels/${channelCode}/messages`, {
-      method:'POST', body: JSON.stringify({ text, flagged, reason }),
+      method:'POST', body: JSON.stringify({ text, flagged, reason, replyToId }),
     });
     if(!messages.find(m=>m.id===msg.id)) messages.push(msg);
+    replyingTo = null; renderReplyPreview(); // se limpia recién al confirmarse el envío, no antes
     paintMessages();
     seen.msgCount = messages.length;
   }catch(e){
     // el input ya se había vaciado en handleSend() antes de intentar el
     // envío (para que la UI se sienta ágil) — si esto falla, el texto no
     // puede quedar perdido, así que vuelve a la caja en vez de desaparecer.
+    // replyingTo se deja como estaba (sigue respondiendo a lo mismo si reintenta).
     const input = document.getElementById('chat-input');
     if(input){
       input.value = text;
@@ -2869,7 +3288,12 @@ function renderAnalysisError(e){
 // shape de respuesta {flagged, category, reason, reformulation}, mismo layout.
 function renderAnalysisResult(original, result, scopeId){
   if(!result.flagged){
-    return `<p class="empty-hint">Este mensaje no muestra señales de conflicto.</p>`;
+    // antes usaba .empty-hint (pensada para listas vacías: mucho padding,
+    // texto chico y apagado) — adentro de la demo, chica y compacta, eso
+    // se sentía como un bache en blanco en vez de una confirmación. Un
+    // check + texto en el color de marca lee como "todo bien", no como
+    // "acá no hay nada".
+    return `<p style="display:flex; align-items:center; gap:7px; font-size:13px; color:var(--calm); padding:4px 2px 0;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg>Este mensaje no muestra señales de conflicto.</p>`;
   }
   const idOrig = scopeId + '-orig-btn';
   const idRef = scopeId + '-ref-btn';
