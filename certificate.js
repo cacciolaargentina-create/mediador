@@ -45,7 +45,7 @@ function integrityHash(plainContent) {
 // pública (fuera de la app, sin login) que confirma que el documento salió
 // de Puente Digital — pensado para cuando el PDF se lleva a un ámbito donde
 // quien lo recibe no tiene cuenta ni contexto de la app.
-async function buildCertifiedReport({ channel, messages, events, nameOf, generatedBy, verifyUrl, rangeLabel, signature, publicKeyFingerprint }) {
+async function buildCertifiedReport({ channel, messages, events, nameOf, generatedBy, verifyUrl, rangeLabel, signature, publicKeyFingerprint, legalCase }) {
   const plainContent = buildPlainContent({ channel, messages, events, nameOf, rangeLabel });
   const hash = integrityHash(plainContent);
   const now = new Date();
@@ -88,6 +88,40 @@ async function buildCertifiedReport({ channel, messages, events, nameOf, generat
     }
     doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#1a1a2e').lineWidth(1.5).stroke();
     doc.moveDown(1);
+
+    // ---- carátula (opcional — solo si se completó al exportar) ----
+    // formato pensado para adjuntar directo a un escrito: juzgado,
+    // expediente y carátula bien visibles arriba, antes que nada del
+    // contenido del canal — es lo primero que alguien busca al mirar un
+    // documento para saber a qué causa corresponde.
+    if (legalCase) {
+      doc.fontSize(9);
+      // altura real de cada línea (heightOfString, no un número fijo a
+      // ojo) — una carátula con varias partes puede envolver a 2-3 líneas
+      // y un número fijo se hubiera quedado corto, cortando texto contra
+      // el borde de la caja.
+      const lineGap = 4;
+      const fields = [
+        legalCase.juzgado && { label: 'Juzgado: ', value: legalCase.juzgado },
+        legalCase.expediente && { label: 'Expediente N°: ', value: legalCase.expediente },
+        legalCase.caratula && { label: 'Carátula: ', value: legalCase.caratula },
+      ].filter(Boolean);
+      const lineHeights = fields.map((f) => doc.heightOfString(f.label + f.value, { width: 470 }));
+      const boxHeight = lineHeights.reduce((sum, h) => sum + h + lineGap, 16);
+
+      const boxTop = doc.y;
+      doc.rect(50, boxTop, 495, boxHeight).fillColor('#f5f5f8').fill();
+      doc.fillColor('#000');
+      doc.y = boxTop + 8;
+      fields.forEach((f) => {
+        doc.x = 62;
+        doc.font('Helvetica-Bold').text(f.label, { continued: true, width: 470 }).font('Helvetica').text(f.value, { width: 470 });
+        doc.moveDown(0.15);
+      });
+      doc.x = 50;
+      doc.y = boxTop + boxHeight;
+      doc.moveDown(0.6);
+    }
 
     doc.fontSize(10).fillColor('#000');
     doc.font('Helvetica-Bold').text('Código de canal: ', { continued: true }).font('Helvetica').text(channel.code);
@@ -163,6 +197,13 @@ async function buildCertifiedReport({ channel, messages, events, nameOf, generat
       );
       doc.fontSize(7).font('Courier').fillColor('#999')
         .text(`SHA-256: ${hash}`, 50, bottom + 34, { width: 495, align: 'center' });
+      // foliado — solo tiene sentido para el formato de escrito judicial
+      // (legalCase), donde la numeración de fojas es justamente lo que se
+      // va a citar ("ver fs. 3"); en el informe normal sería ruido de más.
+      if (legalCase) {
+        doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#555')
+          .text(`Fs. ${i - range.start + 1}`, 495, bottom + 34, { width: 50, align: 'right' });
+      }
     }
 
     doc.end();

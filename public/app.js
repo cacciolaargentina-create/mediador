@@ -1386,10 +1386,11 @@ function renderConfig(){
       <div class="eyebrow">Invitar a un mediador/a o estudio jurídico</div>
       <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:12px;">Va a poder ver mensajes, calendario e historial, pero no escribir en tu nombre ni de la otra parte. Su ingreso nunca queda oculto — siempre va a estar en "Integrantes del canal" acá abajo y en el estado de arriba del chat — pero podés elegir si además se anuncia con un mensaje en medio de la conversación.</p>
       <label class="field-label">Rol</label>
-      <select id="pro-invite-role" style="margin-bottom:10px;">
+      <select id="pro-invite-role" style="margin-bottom:6px;" onchange="document.getElementById('pro-invite-role-hint').style.display = this.value==='estudio' ? 'block' : 'none';">
         <option value="mediador">Mediador/a</option>
         <option value="estudio">Estudio jurídico</option>
       </select>
+      <p class="field-hint" id="pro-invite-role-hint" style="display:none; margin-bottom:10px;">Este link se puede compartir con más de un abogado/a del estudio — cada uno se suma con su propia cuenta de Google, no hace falta generar una invitación por persona.</p>
       <label class="field-label">Nombre o estudio</label>
       <input type="text" id="pro-invite-label" placeholder="Ej: Estudio Pérez &amp; Asoc." style="margin-bottom:12px;">
       <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text-dim); margin-bottom:12px; cursor:pointer;">
@@ -2015,7 +2016,7 @@ function buildCalendarGrid(){
   for(let day = 1; day <= daysInMonth; day++){
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const dayEvents = eventsByDay[dateStr] || [];
-    const dots = dayEvents.slice(0, 3).map(ev => `<span class="dot ${ev.status}"></span>`).join('');
+    const dots = dayEvents.slice(0, 3).map(ev => `<span class="dot ${ev.kind === 'vencimiento' ? 'vencimiento' : ev.status}"></span>`).join('');
     const cls = ['cal-day'];
     if(dayEvents.length) cls.push('has-events');
     if(dateStr === todayStr) cls.push('today');
@@ -2068,9 +2069,10 @@ function renderCalendario(){
               <button class="primary" style="padding:6px 12px; font-size:11.5px;" onclick="respondEvent('${ev.id}','confirmado')">Confirmar</button>
             </div>${seriesBtns}`)
           : '';
-        return `<div class="event-item">
-          <div class="row1"><div class="day">${dayLabel}</div><div class="what">${escapeHtml(ev.detail)}${ev.seriesId ? ' <span class="series-tag" title="Parte de una serie recurrente">🔁</span>' : ''}${ev.swapId ? ' <span class="series-tag" title="Parte de un intercambio de fechas">🔄</span>' : ''}</div><span class="ev-pill ${ev.status}">${ev.status}</span></div>
-          <div class="who">Pedido por ${escapeHtml(ev.requestedBy ? ev.requestedBy.name : '—')}</div>
+        const isVencimiento = ev.kind === 'vencimiento';
+        return `<div class="event-item${isVencimiento ? ' event-vencimiento' : ''}">
+          <div class="row1"><div class="day">${dayLabel}</div><div class="what">${isVencimiento ? '⚖️ ' : ''}${escapeHtml(ev.detail)}${ev.seriesId ? ' <span class="series-tag" title="Parte de una serie recurrente">🔁</span>' : ''}${ev.swapId ? ' <span class="series-tag" title="Parte de un intercambio de fechas">🔄</span>' : ''}</div><span class="ev-pill ${isVencimiento ? 'vencimiento' : ev.status}">${isVencimiento ? 'vencimiento' : ev.status}</span></div>
+          <div class="who">${isVencimiento ? 'Cargado' : 'Pedido'} por ${escapeHtml(ev.requestedBy ? ev.requestedBy.name : '—')}</div>
           ${confirmHtml}
         </div>`;
       }).join('')
@@ -2105,6 +2107,16 @@ function renderCalendario(){
     <div class="card">${buildCalendarGrid()}</div>
     <div class="card"><div class="eyebrow">${listLabel}</div>${listHtml}</div>
     ${requestFormHtml}
+    <div class="card" style="border-color:var(--warn-dim);">
+      <div class="eyebrow" style="color:var(--warn);">⚖️ Vencimiento procesal</div>
+      <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:12px; line-height:1.4;">Un plazo legal del caso (presentación, audiencia, apelación…), no una entrega de coparentalidad. Queda registrado directo — no hace falta que nadie lo confirme — y avisa un día antes a todos los que tienen acceso al canal.</p>
+      <label class="field-label">Fecha de vencimiento</label>
+      <input type="date" id="venc-date" style="margin-bottom:10px">
+      <label class="field-label">Detalle</label>
+      <input type="text" id="venc-detail" placeholder="Ej: Vence el plazo para presentar la contestación" style="margin-bottom:12px">
+      <button class="primary" style="width:100%" onclick="addVencimiento()">Registrar vencimiento</button>
+      <div id="venc-result" style="margin-top:8px; font-size:12.5px;"></div>
+    </div>
     <div class="card">
       <div class="eyebrow">Sincronizar con tu calendario</div>
       <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:12px; line-height:1.4;">Los horarios y entregas ya <strong>confirmados</strong> se agregan solos a tu calendario personal — no hace falta cargarlos dos veces. Es de solo lectura y se actualiza cada una hora aprox.</p>
@@ -2187,6 +2199,19 @@ async function addEvent(){
     await createProposal(date, detail, repeat, until);
     renderCalendario();
   }catch(e){ alert(e.error || 'No se pudo guardar la solicitud.'); }
+}
+async function addVencimiento(){
+  const date = document.getElementById('venc-date').value;
+  const detail = document.getElementById('venc-detail').value.trim();
+  const resultEl = document.getElementById('venc-result');
+  if(!date || !detail){ resultEl.innerHTML = `<span style="color:var(--danger)">Falta la fecha o el detalle.</span>`; return; }
+  try{
+    const ev = await api(`/api/channels/${channelCode}/events/vencimiento`, { method:'POST', body: JSON.stringify({ date, detail }) });
+    upsertEvent(ev);
+    seen.evCount = events.length;
+    renderCalendario();
+    if(currentScreen==='chat') paintMessages();
+  }catch(e){ resultEl.innerHTML = `<span style="color:var(--danger)">${escapeHtml(e.error || 'No se pudo registrar el vencimiento.')}</span>`; }
 }
 async function respondEvent(id, decision){
   try{
@@ -2341,6 +2366,17 @@ async function renderHistorial(keepFocus){
         <input type="date" id="export-desde" style="flex:1;">
         <input type="date" id="export-hasta" style="flex:1;">
       </div>
+      ${isProfessional() ? `
+      <details style="margin-bottom:10px;">
+        <summary style="cursor:pointer; font-size:11.5px; color:var(--calm); list-style:none;">▸ Formato para escrito judicial (opcional)</summary>
+        <p style="font-size:11px; color:var(--text-dim); margin:8px 0;">Completá esto si vas a adjuntar el informe a un escrito — agrega una carátula con los datos del expediente al PDF. Vacío, sale igual que siempre.</p>
+        <label class="field-label" style="font-size:11px;">Juzgado</label>
+        <input type="text" id="export-juzgado" placeholder="Ej: Juzgado de Familia N° 3" style="margin-bottom:8px;">
+        <label class="field-label" style="font-size:11px;">N° de expediente</label>
+        <input type="text" id="export-expediente" placeholder="Ej: FAM 12345/2026" style="margin-bottom:8px;">
+        <label class="field-label" style="font-size:11px;">Carátula</label>
+        <input type="text" id="export-caratula" placeholder="Ej: Pérez, Juan c/ Gómez, Ana s/ Régimen de comunicación" style="margin-bottom:4px;">
+      </details>` : ''}
       <button class="ghost" style="width:100%;" onclick="exportReport()">Descargar informe (.txt)</button>
       <button class="ghost" style="width:100%; margin-top:8px;" onclick="exportCertifiedReport()">Descargar informe certificado (PDF)</button>
       <div class="empty-hint" style="margin-top:4px; text-align:center;">Incluye un código QR para verificar su autenticidad</div>
@@ -2360,14 +2396,26 @@ function buildExportQuery(){
   const params = new URLSearchParams();
   if(desde) params.set('desde', desde);
   if(hasta) params.set('hasta', hasta);
-  const qs = params.toString();
-  return qs ? '?' + qs : '';
+  return params;
 }
 function exportReport(){
-  window.location.href = `/api/channels/${channelCode}/export${buildExportQuery()}`;
+  const params = buildExportQuery();
+  const qs = params.toString();
+  window.location.href = `/api/channels/${channelCode}/export${qs ? '?' + qs : ''}`;
 }
 function exportCertifiedReport(){
-  window.location.href = `/api/channels/${channelCode}/export/certified${buildExportQuery()}`;
+  const params = buildExportQuery();
+  // solo están en el DOM cuando isProfessional() mostró el <details> — con
+  // optional chaining, para las partes (que no ven ese bloque) esto no
+  // rompe nada, simplemente no agrega los campos.
+  const juzgado = document.getElementById('export-juzgado')?.value.trim();
+  const expediente = document.getElementById('export-expediente')?.value.trim();
+  const caratula = document.getElementById('export-caratula')?.value.trim();
+  if(juzgado) params.set('juzgado', juzgado);
+  if(expediente) params.set('expediente', expediente);
+  if(caratula) params.set('caratula', caratula);
+  const qs = params.toString();
+  window.location.href = `/api/channels/${channelCode}/export/certified${qs ? '?' + qs : ''}`;
 }
 
 async function loadCaseNotes(){
@@ -2535,10 +2583,21 @@ function renderProStatusCard(proStatus){
 // al nivel 2 (Chat/Calendario/Gastos/Historial/Asistente de ESE caso).
 // ==================================================================
 let inicioStatusFilter = 'todos'; // en memoria nomás — vuelve a 'todos' al recargar, no hace falta persistirlo
+let inicioSearchQuery = '';       // buscador por nombre de cliente/parte o código de caso — mismo criterio, en memoria
+let lastInicioList = [];          // último /mine ya resuelto, para que filtrar/buscar no dispare un fetch nuevo por cada tecla
 
 function setInicioFilter(filter){
   inicioStatusFilter = filter;
-  renderInicio();
+  renderInicioList();
+}
+
+// buscador por nombre de cliente (o código de caso) — filtra sobre la
+// lista ya cargada, sin volver a pedir /mine. Vive en un input aparte del
+// contenedor que se re-renderiza (#inicio-list-wrap), así cada tecla no
+// recrea el <input> y no se pierde el foco/cursor a mitad de escribir.
+function filterInicioBySearch(value){
+  inicioSearchQuery = value;
+  renderInicioList();
 }
 
 async function setCaseStatusFromList(code, status, ev){
@@ -2562,6 +2621,7 @@ async function renderInicio(){
     return;
   }
   updateInicioDot(list); // reusa este mismo fetch en vez de pedirlo de nuevo
+  lastInicioList = list;
 
   if(!list.length){
     // sin casos, puede ser por dos motivos bien distintos: alguien que
@@ -2595,16 +2655,6 @@ async function renderInicio(){
     </div>
   `;
 
-  const STATUS_ORDER = { abierto: 0, en_proceso: 1, cerrado: 2 };
-
-  // "siempre primero los abiertos" — orden por estado, y dentro de cada
-  // estado, el más activo recientemente primero.
-  const sorted = [...list].sort((a, b) => {
-    const byStatus = (STATUS_ORDER[a.status] ?? 0) - (STATUS_ORDER[b.status] ?? 0);
-    return byStatus !== 0 ? byStatus : b.lastActivity - a.lastActivity;
-  });
-  const filtered = inicioStatusFilter === 'todos' ? sorted : sorted.filter(c => c.status === inicioStatusFilter);
-
   const filterChips = ['todos', 'abierto', 'en_proceso', 'cerrado'].map(f => {
     const label = f === 'todos' ? 'Todos' : STATUS_LABELS[f];
     const count = f === 'todos' ? list.length : list.filter(c => c.status === f).length;
@@ -2612,11 +2662,44 @@ async function renderInicio(){
   }).join('');
   const filterHtml = `<div class="status-select-row" style="overflow-x:auto; margin-bottom:12px; padding-bottom:2px;">${filterChips}</div>`;
 
-  const listHtml = filtered.length
-    ? filtered.map(c => caseCardHtml(c, `openCase('${c.code}')`, { showStatusButtons: c.myRole === 'A' || c.myRole === 'B' })).join('')
-    : `<p class="empty-hint">Ningún caso con este filtro.</p>`;
+  // buscador por nombre de cliente/parte o código — solo vale la pena
+  // mostrarlo con unos pocos casos ya cargados; con 1-2 es ruido de más.
+  const searchHtml = list.length > 3
+    ? `<input type="text" id="inicio-search-input" placeholder="Buscar por nombre o código de caso…" value="${escapeHtml(inicioSearchQuery)}" oninput="filterInicioBySearch(this.value)" style="margin-bottom:12px;">`
+    : '';
 
-  el.innerHTML = statsHtml + filterHtml + listHtml;
+  el.innerHTML = statsHtml + filterHtml + searchHtml + `<div id="inicio-list-wrap"></div>`;
+  renderInicioList();
+}
+
+// re-renderiza SOLO la lista de casos (no el buscador ni las stats) a
+// partir de lastInicioList — así cambiar el filtro de estado o tipear en
+// el buscador no vuelve a pedir /mine ni recrea el <input> de búsqueda.
+function renderInicioList(){
+  const wrap = document.getElementById('inicio-list-wrap');
+  if(!wrap) return;
+  const list = lastInicioList;
+
+  const STATUS_ORDER = { abierto: 0, en_proceso: 1, cerrado: 2 };
+  // "siempre primero los abiertos" — orden por estado, y dentro de cada
+  // estado, el más activo recientemente primero.
+  const sorted = [...list].sort((a, b) => {
+    const byStatus = (STATUS_ORDER[a.status] ?? 0) - (STATUS_ORDER[b.status] ?? 0);
+    return byStatus !== 0 ? byStatus : b.lastActivity - a.lastActivity;
+  });
+  let filtered = inicioStatusFilter === 'todos' ? sorted : sorted.filter(c => c.status === inicioStatusFilter);
+
+  const q = inicioSearchQuery.trim().toLowerCase();
+  if(q){
+    filtered = filtered.filter(c =>
+      c.code.toLowerCase().includes(q) ||
+      (c.others || []).some(o => o.name && o.name.toLowerCase().includes(q))
+    );
+  }
+
+  wrap.innerHTML = filtered.length
+    ? filtered.map(c => caseCardHtml(c, `openCase('${c.code}')`, { showStatusButtons: c.myRole === 'A' || c.myRole === 'B' })).join('')
+    : `<p class="empty-hint">${q ? 'Ningún caso coincide con la búsqueda.' : 'Ningún caso con este filtro.'}</p>`;
 }
 
 // extrae el token de invitación tanto si pegaron la URL completa

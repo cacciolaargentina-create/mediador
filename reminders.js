@@ -26,11 +26,21 @@ async function checkAndSendReminders() {
     ev.reminderSentAt = Date.now(); // se marca antes de mandar — un error de red no debe reintentar infinito
     const channel = db.channels.find((c) => c.id === ev.channelId);
     if (!channel) continue;
-    const parties = db.members.filter((m) => m.channelId === channel.id && (m.role === 'A' || m.role === 'B'));
-    for (const member of parties) {
+    // un vencimiento procesal le importa también a quien lo cargó como
+    // profesional (mediador/a, estudio jurídico) — de hecho es quien más
+    // lo necesita, es su plazo el que se vence — así que ahí el
+    // recordatorio va a TODOS los miembros del canal, no solo a las
+    // partes A/B como en un evento de entrega común.
+    const isVencimiento = ev.kind === 'vencimiento';
+    const recipients = isVencimiento
+      ? db.members.filter((m) => m.channelId === channel.id)
+      : db.members.filter((m) => m.channelId === channel.id && (m.role === 'A' || m.role === 'B'));
+    for (const member of recipients) {
       const user = db.users.find((u) => u.id === member.userId);
       if (!user) continue;
-      const text = `Recordatorio de Puente Digital: mañana tenés "${ev.detail}" (${ev.date}).`;
+      const text = isVencimiento
+        ? `Recordatorio de Puente Digital: mañana vence "${ev.detail}" (${ev.date}).`
+        : `Recordatorio de Puente Digital: mañana tenés "${ev.detail}" (${ev.date}).`;
       if (user.phone) {
         try { await sendText(user.phone, text); sent++; }
         catch (err) { console.error('No se pudo enviar recordatorio de evento por WhatsApp:', err); }

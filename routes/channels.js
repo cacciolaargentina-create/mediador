@@ -252,6 +252,13 @@ module.exports = function (io, presence) {
     const invite = {
       token: nanoid(24), role, label: label.trim(), createdBy: req.user.id, createdAt: Date.now(),
       announceInChat: announceInChat !== false, // default true — solo queda en false si se pidió explícitamente
+      // un estudio jurídico real suele ser más de una persona (socios,
+      // paralegal) — a diferencia de un/a mediador/a (una persona física
+      // puntual), este mismo link se puede compartir y cada abogado/a se
+      // suma con su propia cuenta de Google, cada uno como su propio
+      // miembro del canal (ver /professional/:token/accept). No pide
+      // volver a invitar caso por caso ni persona por persona.
+      multiUse: role === 'estudio',
     };
     channel.professionalInvites.push(invite);
     await commit();
@@ -264,7 +271,7 @@ module.exports = function (io, presence) {
     for (const channel of db.channels) {
       const invite = (channel.professionalInvites || []).find((i) => i.token === req.params.token);
       if (invite) {
-        return res.json({ role: invite.role, label: invite.label, used: !!invite.usedAt });
+        return res.json({ role: invite.role, label: invite.label, used: invite.multiUse ? false : !!invite.usedAt });
       }
     }
     res.status(404).json({ error: 'Invitación no encontrada' });
@@ -279,7 +286,10 @@ module.exports = function (io, presence) {
     }
     if (!found) return res.status(404).json({ error: 'Invitación no encontrada' });
     const { channel, invite } = found;
-    if (invite.usedAt) return res.status(409).json({ error: 'Esta invitación ya fue usada' });
+    // invitación de estudio jurídico: multiUse, se puede aceptar más de una
+    // vez — cada abogado/a que la usa queda como su propio miembro, ver el
+    // comentario en /professionals/invite más arriba.
+    if (invite.usedAt && !invite.multiUse) return res.status(409).json({ error: 'Esta invitación ya fue usada' });
 
     const existing = memberOf(channel.id, req.user.id);
     if (existing) return res.json(serializeChannel(channel)); // ya es miembro (ej. recarga de página)
@@ -288,8 +298,15 @@ module.exports = function (io, presence) {
       id: nanoid(), channelId: channel.id, userId: req.user.id,
       role: invite.role, label: invite.label, joinedAt: Date.now(),
     });
-    invite.usedAt = Date.now();
-    invite.usedBy = req.user.id;
+    if (invite.multiUse) {
+      // no se marca usedAt (eso la volvería de un solo uso) — se guarda el
+      // historial de quién se sumó por acá, para poder mostrarlo después.
+      invite.acceptedBy = invite.acceptedBy || [];
+      invite.acceptedBy.push({ userId: req.user.id, at: Date.now() });
+    } else {
+      invite.usedAt = Date.now();
+      invite.usedBy = req.user.id;
+    }
 
     // el mensaje de sistema es opcional (announceInChat, elegido al invitar)
     // pero el ingreso NUNCA queda oculto: channel:update se emite siempre,
@@ -419,7 +436,7 @@ module.exports = function (io, presence) {
     const db = getDB();
     const createdEvents = dates.map((d) => ({
       id: nanoid(), channelId: req.channel.id, date: d, detail,
-      requestedBy: req.user.id, status: 'pendiente', seriesId, createdAt: Date.now(),
+      requestedBy: req.user.id, status: 'pendiente', seriesId, createdAt: Date.now(), kind: 'entrega',
     }));
     db.events.push(...createdEvents);
 
@@ -437,6 +454,37 @@ module.exports = function (io, presence) {
     createdEvents.forEach((ev) => io.to(req.channel.code).emit('event:new', serializeEvent(ev)));
     io.to(req.channel.code).emit('message:new', serializeMessage(sysMsg));
     res.json(serializeEvent(createdEvents[0]));
+  });
+
+  // ---------- vencimientos procesales ----------
+  // Igual mecanismo que un evento de entrega (mismo campo `date`, mismo
+  // recordatorio un día antes en reminders.js) pero pensado para plazos
+  // legales, no para coordinación entre las partes: NO pasa por
+  // requireParty (un/a profesional también tiene que poder cargarlo, es
+  // quien más lo necesita) y arranca directo en 'confirmado' — un
+  // vencimiento no es algo que la otra parte "confirme o rechace", es un
+  // hecho. kind:'vencimiento' es lo único que lo distingue de un evento
+  // de entrega común a la hora de mostrarlo (ver caseCardHtml/calendario
+  // en app.js) y de a quién le llega el recordatorio (ver reminders.js).
+  router.post('/:code/events/vencimiento', requireAuth, requireMembership, async (req, res) => {
+    const { date, detail } = req.body;
+    if (!date || !detail) return res.status(400).json({ error: 'Faltan datos' });
+    const db = getDB();
+    const ev = {
+      id: nanoid(), channelId: req.channel.id, date, detail,
+      requestedBy: req.user.id, status: 'confirmado', kind: 'vencimiento', createdAt: Date.now(),
+    };
+    db.events.push(ev);
+    const sysMsg = {
+      id: nanoid(), channelId: req.channel.id, senderId: null,
+      text: `${req.user.name} registró un vencimiento procesal: ${detail} (${date})`,
+      flagged: false, reason: null, pattern: false, eventId: ev.id, createdAt: Date.now(),
+    };
+    db.messages.push(sysMsg);
+    await commit();
+    io.to(req.channel.code).emit('event:new', serializeEvent(ev));
+    io.to(req.channel.code).emit('message:new', serializeMessage(sysMsg));
+    res.json(serializeEvent(ev));
   });
 
   router.post('/:code/events/series/:seriesId/respond', requireAuth, requireMembership, requireParty, async (req, res) => {
@@ -785,6 +833,15 @@ module.exports = function (io, presence) {
       // sale igual, solo sin este agregado — nunca bloquea la exportación.
       const signature = signHash(hash);
 
+      // carátula opcional para cuando el informe se va a adjuntar a un
+      // escrito judicial (ver el <details> del export en Historial) — son
+      // datos que la persona tipea al momento de exportar, no se guardan
+      // en el canal (cada escrito puede ir a un expediente distinto).
+      const juzgado = typeof req.query.juzgado === 'string' ? req.query.juzgado.trim().slice(0, 200) : '';
+      const expediente = typeof req.query.expediente === 'string' ? req.query.expediente.trim().slice(0, 200) : '';
+      const caratula = typeof req.query.caratula === 'string' ? req.query.caratula.trim().slice(0, 300) : '';
+      const legalCase = (juzgado || expediente || caratula) ? { juzgado, expediente, caratula } : null;
+
       const pdf = await buildCertifiedReport({
         channel: req.channel,
         messages: msgs,
@@ -795,6 +852,7 @@ module.exports = function (io, presence) {
         rangeLabel: rangeLabel(desde, hasta),
         signature,
         publicKeyFingerprint: signature ? publicKeyFingerprint() : null,
+        legalCase,
       });
 
       // el hash es determinístico a partir del contenido: exportar el MISMO

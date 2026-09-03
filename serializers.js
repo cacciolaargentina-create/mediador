@@ -47,6 +47,7 @@ function serializeEvent(e) {
     seriesId: e.seriesId || null,
     swapId: e.swapId || null,
     createdAt: e.createdAt,
+    kind: e.kind || 'entrega',
   };
 }
 
