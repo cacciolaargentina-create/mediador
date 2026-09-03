@@ -28,9 +28,9 @@ const EMPTY_DB = {
   channels: [],    // { id, code, guestToken, calendarToken, professionalInvites, status:'abierto'|'en_proceso'|'cerrado', createdAt }
   members: [],     // { id, channelId, userId, role, label, webAccessToken, assignedByAdmin, lastSeenAt, joinedAt }
   messages: [],    // { id, channelId, senderId|null, text, flagged, reason, pattern, eventId, readAt, createdAt }
-  events: [],      // { id, channelId, date, detail, requestedBy(userId), status, seriesId, respondedAt, reminderSentAt, createdAt }
+  events: [],      // { id, channelId, date, detail, requestedBy(userId), status, seriesId, swapId, respondedAt, reminderSentAt, createdAt }
   caseNotes: [],   // { id, channelId, authorId, text, createdAt } — solo visibles para mediador/a, estudio jurídico o admin del canal, nunca para las partes A/B
-  expenses: [],    // { id, channelId, amount, description, requestedBy(userId), status:'pendiente'|'confirmado'|'rechazado', respondedAt, createdAt }
+  expenses: [],    // { id, channelId, amount, description, requestedBy(userId), status:'pendiente'|'confirmado'|'rechazado', respondedAt, eventId, createdAt }
   checkins: [],    // { id, channelId, userId, lat, lng, createdAt } — la ubicación nunca se muestra en el texto del chat, solo queda en el registro
   auditLog: [],    // { id, actorId, action, channelCode, meta, createdAt } — acciones sensibles para el panel de admin
   whatsappLog: [],      // { id, kind, phone, userName, channelCode, detail, createdAt } — notificaciones enviadas, onboarding, mensajes entrantes procesados
@@ -64,14 +64,14 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE TABLE IF NOT EXISTS events (
   id TEXT PRIMARY KEY, channelId TEXT, date TEXT, detail TEXT, requestedBy TEXT,
-  status TEXT, seriesId TEXT, respondedAt INTEGER, reminderSentAt INTEGER, createdAt INTEGER
+  status TEXT, seriesId TEXT, swapId TEXT, respondedAt INTEGER, reminderSentAt INTEGER, createdAt INTEGER
 );
 CREATE TABLE IF NOT EXISTS case_notes (
   id TEXT PRIMARY KEY, channelId TEXT, authorId TEXT, text TEXT, createdAt INTEGER
 );
 CREATE TABLE IF NOT EXISTS expenses (
   id TEXT PRIMARY KEY, channelId TEXT, amount REAL, description TEXT,
-  requestedBy TEXT, status TEXT, respondedAt INTEGER, createdAt INTEGER
+  requestedBy TEXT, status TEXT, respondedAt INTEGER, eventId TEXT, createdAt INTEGER
 );
 CREATE TABLE IF NOT EXISTS checkins (
   id TEXT PRIMARY KEY, channelId TEXT, userId TEXT, lat REAL, lng REAL, createdAt INTEGER
@@ -179,6 +179,8 @@ function openDb() {
   });
   ensureColumns(sqlite, 'channels', { remindedAt: 'INTEGER', lastSummary: 'TEXT', status: "TEXT DEFAULT 'abierto'" });
   ensureColumns(sqlite, 'members', { lastSeenAt: 'INTEGER' });
+  ensureColumns(sqlite, 'events', { swapId: 'TEXT' });
+  ensureColumns(sqlite, 'expenses', { eventId: 'TEXT' });
   if (isNew && fs.existsSync(LEGACY_JSON_PATH)) {
     migrateFromJson(sqlite, LEGACY_JSON_PATH);
   }

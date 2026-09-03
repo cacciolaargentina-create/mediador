@@ -20,11 +20,26 @@ self.addEventListener('push', (event) => {
     data: { url: payload.url || '/' },
   };
   event.waitUntil(self.registration.showNotification(title, options));
+
+  // Badge del ícono — mejor esfuerzo. No sabemos acá el total real de casos
+  // con novedades (eso lo recalcula app.js con datos frescos del servidor
+  // la próxima vez que se abre), así que solo incrementamos en 1 como
+  // aproximación inmediata; se corrige solo apenas se abre la app.
+  if ('setAppBadge' in self.navigator) {
+    event.waitUntil(
+      self.registration.getNotifications().then((list) => {
+        self.navigator.setAppBadge(list.length).catch(() => {});
+      })
+    );
+  }
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const url = (event.notification.data && event.notification.data.url) || '/';
+  if ('clearAppBadge' in self.navigator) {
+    self.navigator.clearAppBadge().catch(() => {}); // se recalcula al toque cuando la app carga, esto es solo para no dejar el numerito viejo mientras tanto
+  }
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {

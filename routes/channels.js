@@ -486,6 +486,60 @@ module.exports = function (io, presence) {
     res.json(out);
   });
 
+  // ---------- intercambio de fechas ----------
+  // "Te doy mi turno del 15, a cambio del tuyo del 22" — dos eventos
+  // creados juntos, atados por swapId, que se confirman o rechazan como
+  // par (nunca uno sí y el otro no — un intercambio a medias no es un
+  // intercambio). Mismo patrón que ya usan las series recurrentes arriba,
+  // aplicado a un concepto distinto.
+  router.post('/:code/events/swap', requireAuth, requireMembership, requireParty, async (req, res) => {
+    const { dateA, detailA, dateB, detailB } = req.body;
+    if (!dateA || !detailA || !dateB || !detailB) return res.status(400).json({ error: 'Faltan datos de las dos fechas del intercambio' });
+
+    const db = getDB();
+    const swapId = nanoid();
+    const evA = { id: nanoid(), channelId: req.channel.id, date: dateA, detail: detailA, requestedBy: req.user.id, status: 'pendiente', swapId, createdAt: Date.now() };
+    const evB = { id: nanoid(), channelId: req.channel.id, date: dateB, detail: detailB, requestedBy: req.user.id, status: 'pendiente', swapId, createdAt: Date.now() };
+    db.events.push(evA, evB);
+
+    const sysMsg = {
+      id: nanoid(), channelId: req.channel.id, senderId: null,
+      text: `${req.user.name} propuso un intercambio: "${detailA}" (${dateA}) por "${detailB}" (${dateB})`,
+      flagged: false, reason: null, pattern: false, createdAt: Date.now(),
+    };
+    db.messages.push(sysMsg);
+    await commit();
+
+    io.to(req.channel.code).emit('event:new', serializeEvent(evA));
+    io.to(req.channel.code).emit('event:new', serializeEvent(evB));
+    io.to(req.channel.code).emit('message:new', serializeMessage(sysMsg));
+    res.json({ swapId, events: [serializeEvent(evA), serializeEvent(evB)] });
+  });
+
+  router.post('/:code/events/swap/:swapId/respond', requireAuth, requireMembership, requireParty, async (req, res) => {
+    const { decision } = req.body;
+    if (!['confirmado', 'rechazado'].includes(decision)) {
+      return res.status(400).json({ error: 'Decisión inválida' });
+    }
+    const db = getDB();
+    const evs = db.events.filter(
+      (e) => e.swapId === req.params.swapId && e.channelId === req.channel.id && e.status === 'pendiente'
+    );
+    if (evs.length !== 2) return res.status(404).json({ error: 'Intercambio no encontrado o ya resuelto' });
+    evs.forEach((e) => { e.status = decision; e.respondedAt = Date.now(); });
+    const verb = decision === 'confirmado' ? 'confirmó' : 'rechazó';
+    const sysMsg = {
+      id: nanoid(), channelId: req.channel.id, senderId: null,
+      text: `${req.user.name} ${verb} el intercambio: "${evs[0].detail}" (${evs[0].date}) por "${evs[1].detail}" (${evs[1].date})`,
+      flagged: false, reason: null, pattern: false, createdAt: Date.now(),
+    };
+    db.messages.push(sysMsg);
+    await commit();
+    evs.forEach((e) => io.to(req.channel.code).emit('event:update', serializeEvent(e)));
+    io.to(req.channel.code).emit('message:new', serializeMessage(sysMsg));
+    res.json({ updated: evs.length });
+  });
+
   // ---------- sincronizar con Google/Apple Calendar ----------
   // Devuelve la URL del feed .ics del canal, generando el token la primera
   // vez que se pide (canales creados antes de este feature no lo tienen).
@@ -521,34 +575,52 @@ module.exports = function (io, presence) {
   // Mismo patrón que los eventos: cualquier parte pide, la otra confirma o
   // rechaza. Sin pagos reales todavía — solo registro y confirmación del
   // monto, útil para llevar la cuenta de qué se dividió y qué falta saldar.
+  function serializeExpense(e) {
+    const linkedEvent = e.eventId ? getDB().events.find((ev) => ev.id === e.eventId) : null;
+    return {
+      id: e.id, amount: e.amount, description: e.description,
+      requestedBy: publicUser(e.requestedBy), status: e.status, createdAt: e.createdAt,
+      event: linkedEvent ? { id: linkedEvent.id, date: linkedEvent.date, detail: linkedEvent.detail } : null,
+    };
+  }
+
   router.get('/:code/expenses', requireAuth, requireMembership, (req, res) => {
     const db = getDB();
     const list = db.expenses
       .filter((e) => e.channelId === req.channel.id)
       .sort((a, b) => b.createdAt - a.createdAt)
-      .map((e) => ({
-        id: e.id, amount: e.amount, description: e.description,
-        requestedBy: publicUser(e.requestedBy), status: e.status, createdAt: e.createdAt,
-      }));
+      .map(serializeExpense);
     res.json(list);
   });
 
   router.post('/:code/expenses', requireAuth, requireMembership, requireParty, async (req, res) => {
-    const { amount, description } = req.body;
+    const { amount, description, eventId } = req.body;
     const numAmount = Number(amount);
     if (!Number.isFinite(numAmount) || numAmount <= 0) return res.status(400).json({ error: 'Monto inválido' });
     if (!description || !description.trim()) return res.status(400).json({ error: 'Falta la descripción del gasto' });
 
     const db = getDB();
+    // el evento vinculado (si se manda) tiene que ser del mismo canal — no
+    // hay forma de que el frontend le pase el id de un evento de OTRO caso,
+    // pero igual se valida acá, nunca confiar solo en lo que arma el cliente.
+    let linkedEventId = null;
+    if (eventId) {
+      const ev = db.events.find((e) => e.id === eventId && e.channelId === req.channel.id);
+      if (!ev) return res.status(400).json({ error: 'El evento vinculado no existe en este canal' });
+      linkedEventId = ev.id;
+    }
+
     const expense = {
       id: nanoid(), channelId: req.channel.id, amount: numAmount, description: description.trim(),
-      requestedBy: req.user.id, status: 'pendiente', createdAt: Date.now(),
+      requestedBy: req.user.id, status: 'pendiente', eventId: linkedEventId, createdAt: Date.now(),
     };
     db.expenses.push(expense);
     await commit();
 
-    await postSystemMessage(io, req.channel, `${req.user.name} registró un gasto compartido: ${description.trim()} ($${numAmount}).`);
-    const out = { id: expense.id, amount: expense.amount, description: expense.description, requestedBy: publicUser(expense.requestedBy), status: expense.status, createdAt: expense.createdAt };
+    const linkedEvent = linkedEventId ? db.events.find((e) => e.id === linkedEventId) : null;
+    const linkNote = linkedEvent ? ` — vinculado a "${linkedEvent.detail}" (${linkedEvent.date})` : '';
+    await postSystemMessage(io, req.channel, `${req.user.name} registró un gasto compartido: ${description.trim()} ($${numAmount})${linkNote}.`);
+    const out = serializeExpense(expense);
     io.to(req.channel.code).emit('expense:new', out);
     res.json(out);
   });
@@ -565,7 +637,7 @@ module.exports = function (io, presence) {
 
     const verb = decision === 'confirmado' ? 'confirmó' : 'rechazó';
     await postSystemMessage(io, req.channel, `${req.user.name} ${verb} el gasto: ${expense.description} ($${expense.amount}).`);
-    const out = { id: expense.id, amount: expense.amount, description: expense.description, requestedBy: publicUser(expense.requestedBy), status: expense.status, createdAt: expense.createdAt };
+    const out = serializeExpense(expense);
     io.to(req.channel.code).emit('expense:update', out);
     res.json(out);
   });
@@ -636,8 +708,13 @@ module.exports = function (io, presence) {
   // ---------- informe exportable ----------
   router.get('/:code/export', requireAuth, requireMembership, async (req, res) => {
     const db = getDB();
-    const msgs = db.messages.filter((m) => m.channelId === req.channel.id).sort((a, b) => a.createdAt - b.createdAt);
-    const events = db.events.filter((e) => e.channelId === req.channel.id).sort((a, b) => a.date.localeCompare(b.date));
+    const { desde, hasta } = parseDateRange(req.query);
+    let msgs = db.messages.filter((m) => m.channelId === req.channel.id).sort((a, b) => a.createdAt - b.createdAt);
+    let events = db.events.filter((e) => e.channelId === req.channel.id).sort((a, b) => a.date.localeCompare(b.date));
+    if (desde || hasta) {
+      msgs = msgs.filter((m) => inRange(m.createdAt, desde, hasta));
+      events = events.filter((e) => inRange(new Date(e.date + 'T00:00:00').getTime(), desde, hasta));
+    }
     const expenses = db.expenses.filter((e) => e.channelId === req.channel.id);
     const confirmedTotal = expenses.filter((e) => e.status === 'confirmado').reduce((sum, e) => sum + e.amount, 0);
 
@@ -645,6 +722,7 @@ module.exports = function (io, presence) {
     lines.push('INFORME — PUENTE DIGITAL');
     lines.push(`Código de canal: ${req.channel.code}`);
     lines.push(`Generado: ${new Date().toLocaleString('es-AR')}`);
+    lines.push(`Período: ${rangeLabel(desde, hasta)}`);
     lines.push('');
     lines.push('--- MENSAJES ---');
     msgs.forEach((m) => {
@@ -683,15 +761,20 @@ module.exports = function (io, presence) {
   // del contenido al momento de generarse.
   router.get('/:code/export/certified', requireAuth, requireMembership, async (req, res) => {
     const db = getDB();
-    const msgs = db.messages.filter((m) => m.channelId === req.channel.id).sort((a, b) => a.createdAt - b.createdAt);
-    const events = db.events.filter((e) => e.channelId === req.channel.id).sort((a, b) => a.date.localeCompare(b.date));
+    const { desde, hasta } = parseDateRange(req.query);
+    let msgs = db.messages.filter((m) => m.channelId === req.channel.id).sort((a, b) => a.createdAt - b.createdAt);
+    let events = db.events.filter((e) => e.channelId === req.channel.id).sort((a, b) => a.date.localeCompare(b.date));
+    if (desde || hasta) {
+      msgs = msgs.filter((m) => inRange(m.createdAt, desde, hasta));
+      events = events.filter((e) => inRange(new Date(e.date + 'T00:00:00').getTime(), desde, hasta));
+    }
     const nameOf = (id) => publicUser(id)?.name || id;
 
     try {
       // el hash se calcula acá (no adentro de buildCertifiedReport) porque
       // hace falta ANTES de armar el PDF, para poder meter la URL de
       // verificación (con el hash incluido) en el QR del propio documento.
-      const hash = integrityHash(buildPlainContent({ channel: req.channel, messages: msgs, events, nameOf }));
+      const hash = integrityHash(buildPlainContent({ channel: req.channel, messages: msgs, events, nameOf, rangeLabel: rangeLabel(desde, hasta) }));
       const generatedBy = { name: req.user.name, role: roleLabelForExport(req.membership.role) };
       const verifyUrl = `${req.protocol}://${req.get('host')}/verificar/${hash}`;
 
@@ -702,6 +785,7 @@ module.exports = function (io, presence) {
         nameOf,
         generatedBy,
         verifyUrl,
+        rangeLabel: rangeLabel(desde, hasta),
       });
 
       // el hash es determinístico a partir del contenido: exportar el MISMO
@@ -730,6 +814,34 @@ module.exports = function (io, presence) {
   function roleLabelForExport(role) {
     if (role === 'A' || role === 'B') return null;
     return PROFESSIONAL_ROLE_LABELS[role] || null;
+  }
+
+  // "2026-08-01" (input type=date del frontend, hora local implícita 00:00)
+  // -> timestamp ms. Inválido o ausente -> null, así el resto del código no
+  // tiene que distinguir "no vino" de "vino mal" en cada punto de uso.
+  function parseDateRange(query) {
+    const parseOne = (v, endOfDay) => {
+      if (!v) return null;
+      const d = new Date(v + (endOfDay ? 'T23:59:59.999' : 'T00:00:00'));
+      return isNaN(d.getTime()) ? null : d.getTime();
+    };
+    return { desde: parseOne(query.desde, false), hasta: parseOne(query.hasta, true) };
+  }
+  function inRange(ts, desde, hasta) {
+    if (desde !== null && ts < desde) return false;
+    if (hasta !== null && ts > hasta) return false;
+    return true;
+  }
+  // se imprime tal cual en el propio documento — un informe filtrado tiene
+  // que decir que lo es, si no puede leerse como "todo lo que hay" cuando en
+  // realidad es un recorte, y eso importa más todavía en un documento
+  // pensado para llevar a un juzgado o mediación.
+  function rangeLabel(desde, hasta) {
+    const fmtDate = (ms) => new Date(ms).toLocaleDateString('es-AR');
+    if (!desde && !hasta) return 'historial completo';
+    if (desde && hasta) return `${fmtDate(desde)} a ${fmtDate(hasta)}`;
+    if (desde) return `desde ${fmtDate(desde)}`;
+    return `hasta ${fmtDate(hasta)}`;
   }
 
   // ---------- notas privadas del caso ----------

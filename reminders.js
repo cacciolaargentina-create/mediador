@@ -7,6 +7,7 @@
 
 const { getDB, commit } = require('./db');
 const { sendText } = require('./whatsapp');
+const { sendPushToUser } = require('./push');
 
 function tomorrowDateStr() {
   const d = new Date();
@@ -28,12 +29,19 @@ async function checkAndSendReminders() {
     const parties = db.members.filter((m) => m.channelId === channel.id && (m.role === 'A' || m.role === 'B'));
     for (const member of parties) {
       const user = db.users.find((u) => u.id === member.userId);
-      if (!user || !user.phone) continue;
+      if (!user) continue;
+      const text = `Recordatorio de Puente Digital: mañana tenés "${ev.detail}" (${ev.date}).`;
+      if (user.phone) {
+        try { await sendText(user.phone, text); sent++; }
+        catch (err) { console.error('No se pudo enviar recordatorio de evento por WhatsApp:', err); }
+      }
+      // independiente del teléfono — si además (o en cambio) tiene push
+      // suscripto, le llega por los dos lados, mismo criterio que ya se usa
+      // para las notificaciones de mensajes nuevos en messaging.js.
       try {
-        await sendText(user.phone, `Recordatorio de Puente Digital: mañana tenés "${ev.detail}" (${ev.date}).`);
-        sent++;
+        await sendPushToUser(db, commit, user.id, { title: 'Puente Digital', body: text, url: null });
       } catch (err) {
-        console.error('No se pudo enviar recordatorio de evento:', err);
+        console.error('No se pudo enviar recordatorio de evento por push:', err);
       }
     }
   }

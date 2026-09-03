@@ -549,6 +549,7 @@ function renderUserChip(){
   `;
 }
 async function logout(){
+  updateAppBadge(0);
   await api('/auth/logout', { method:'POST' });
   location.href = '/';
 }
@@ -982,10 +983,26 @@ function getLastVisited(code){
 function markVisited(code){
   try{ localStorage.setItem('pd_last_visited_' + code, String(Date.now())); }catch(e){ /* localStorage no disponible — el badge simplemente no persiste entre recargas */ }
 }
+// ------------------------------------------------------------------
+// Badge API — el numerito sobre el ícono de la app en el celular
+// (soportado desde iOS 16.4 y en Chrome/Android). Feature-detectado:
+// en navegadores sin soporte, estas funciones no hacen nada, sin romper
+// nada — el resto de los avisos (push, WhatsApp, puntito en Inicio)
+// sigue andando igual.
+// ------------------------------------------------------------------
+function updateAppBadge(count){
+  if(!('setAppBadge' in navigator)) return;
+  try{
+    if(count > 0) navigator.setAppBadge(count).catch(()=>{});
+    else navigator.clearAppBadge().catch(()=>{});
+  }catch(e){ /* algunos navegadores tiran si se llama antes de tiempo — no es crítico */ }
+}
+
 function updateInicioDot(list){
-  const hasNews = list.some(c => c.lastActivity > getLastVisited(c.code));
+  const withNews = list.filter(c => c.lastActivity > getLastVisited(c.code));
   const dot = document.getElementById('dot-inicio');
-  if(dot) dot.classList.toggle('show', hasNews && currentScreen !== 'inicio');
+  if(dot) dot.classList.toggle('show', withNews.length > 0 && currentScreen !== 'inicio');
+  updateAppBadge(withNews.length); // mismo cálculo que ya existía, ahora también refleja en el ícono
 }
 async function refreshInicioBadge(){
   let list = [];
@@ -1011,7 +1028,17 @@ function othersLineHtml(others){
   return 'Con ' + others.map(o => escapeHtml(o.name) + (o.roleLabel ? ` (${escapeHtml(o.roleLabel)})` : '')).join(', ');
 }
 
-function caseCardHtml(c, onclickExpr){
+// showStatusButtons: Inicio deja cambiar el estado directo desde la
+// tarjeta, sin entrar al caso — el selector rápido (más compacto, ya con
+// bastante info) se queda sin esto para no recargarlo.
+function caseCardHtml(c, onclickExpr, { showStatusButtons } = {}){
+  const statusButtonsHtml = showStatusButtons ? `
+    <div class="status-select-row" style="margin-top:10px;" onclick="event.stopPropagation()">
+      <button class="status-opt ${c.status === 'abierto' ? 'active' : ''}" onclick="setCaseStatusFromList('${c.code}','abierto',event)">Abierto</button>
+      <button class="status-opt ${c.status === 'en_proceso' ? 'active' : ''}" onclick="setCaseStatusFromList('${c.code}','en_proceso',event)">En proceso</button>
+      <button class="status-opt ${c.status === 'cerrado' ? 'active' : ''}" onclick="setCaseStatusFromList('${c.code}','cerrado',event)">Cerrado</button>
+    </div>
+  ` : '';
   return `
     <div class="card case-card" style="margin-bottom:10px; cursor:pointer;" onclick="${onclickExpr}">
       <div class="row1">
@@ -1024,6 +1051,7 @@ function caseCardHtml(c, onclickExpr){
       </div>
       <div class="who">${othersLineHtml(c.others)}${c.otherOnline ? ' <span class="presence-dot online" title="Hay alguien conectado ahora"></span> en línea ahora' : ''}</div>
       <div class="ts" style="margin-top:6px;">${c.messageCount} mensajes · última actividad ${fmtTs(c.lastActivity)}${c.lastOwnMessageStatus ? ' · ' + READ_RECEIPT[c.lastOwnMessageStatus] : ''}</div>
+      ${statusButtonsHtml}
     </div>
   `;
 }
@@ -1105,7 +1133,7 @@ function renderCaseTabsInfo(){
     : (other && other.user) ? 'Con ' + escapeHtml(other.user.name) : 'Esperando a la otra parte';
   slot.innerHTML = `
     <button class="case-switch-btn" onclick="toggleCaseSwitcher()" title="Cambiar de caso">${withWhom} · ${escapeHtml(channelInfo.code)} <span class="caret">▾</span></button>
-    <button class="gear-btn" onclick="goTo('config')" title="Configurar este caso">⚙</button>
+    <button class="gear-btn" onclick="goTo('config')" title="Configurar este caso"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></button>
   `;
 }
 
@@ -1630,7 +1658,7 @@ function buildProposalCard(m){
   const card = document.createElement('div');
   card.className = 'proposal-card';
   card.innerHTML = `
-    <div class="proposal-head"><span class="ic">📅</span>${mine ? 'Propusiste vos' : escapeHtml(ev.requestedBy ? ev.requestedBy.name : 'Propuesta')}<span class="ev-pill ${ev.status}">${ev.status}</span></div>
+    <div class="proposal-head"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg></span>${mine ? 'Propusiste vos' : escapeHtml(ev.requestedBy ? ev.requestedBy.name : 'Propuesta')}<span class="ev-pill ${ev.status}">${ev.status}</span></div>
     <div class="proposal-detail">${escapeHtml(ev.detail)}</div>
     <div class="proposal-date">${dateLabel}</div>
     ${seriesNote}
@@ -1647,10 +1675,47 @@ async function respondSeries(seriesId, decision){
   }catch(e){ alert('No se pudo actualizar la serie.'); }
 }
 
+async function respondSwap(swapId, decision){
+  const verb = decision === 'confirmado' ? 'aceptar' : 'rechazar';
+  if(!confirm(`¿Seguro que querés ${verb} este intercambio? Las dos fechas se confirman o rechazan juntas.`)) return;
+  try{
+    await api(`/api/channels/${channelCode}/events/swap/${swapId}/respond`, { method:'POST', body: JSON.stringify({ decision }) });
+  }catch(e){ alert('No se pudo actualizar el intercambio.'); }
+}
+
+function toggleSwapForm(){
+  const el = document.getElementById('swap-form');
+  if(el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+async function proposeSwap(){
+  const dateA = document.getElementById('swap-date-a').value;
+  const detailA = document.getElementById('swap-detail-a').value.trim();
+  const dateB = document.getElementById('swap-date-b').value;
+  const detailB = document.getElementById('swap-detail-b').value.trim();
+  if(!dateA || !detailA || !dateB || !detailB){ alert('Completá las dos fechas y sus detalles.'); return; }
+  try{
+    await api(`/api/channels/${channelCode}/events/swap`, { method:'POST', body: JSON.stringify({ dateA, detailA, dateB, detailB }) });
+    toggleSwapForm();
+    document.getElementById('swap-date-a').value = '';
+    document.getElementById('swap-detail-a').value = '';
+    document.getElementById('swap-date-b').value = '';
+    document.getElementById('swap-detail-b').value = '';
+  }catch(e){ alert(e.error || 'No se pudo proponer el intercambio.'); }
+}
+
 function paintMessages(){
   const log = document.getElementById('chat-log');
   if(!log) return;
   log.innerHTML = '';
+
+  // el orden de llegada (socket vs. respuesta REST de tu propio envío) no
+  // siempre coincide con el orden real de creación — sobre todo con
+  // conexiones lentas, donde el mensaje del otro puede llegar por socket
+  // antes de que se confirme el tuyo que en realidad salió primero. Sin
+  // este sort, eso se traduce en mensajes fuera de orden en pantalla — es
+  // exactamente la queja más repetida sobre apps de este rubro.
+  messages.sort((a, b) => a.createdAt - b.createdAt);
 
   if(hasMoreHistory){
     const loadMoreBtn = document.createElement('button');
@@ -1894,12 +1959,17 @@ function renderCalendario(){
         const seriesBtns = (needsMyConfirm && ev.seriesId) ? `
             <button class="text-link" style="display:inline; margin:0 0 0 10px;" onclick="respondSeries('${ev.seriesId}','confirmado')">confirmar toda la serie</button>
             <button class="text-link" style="display:inline; margin:0 0 0 10px;" onclick="respondSeries('${ev.seriesId}','rechazado')">rechazar toda la serie</button>` : '';
-        const confirmHtml = needsMyConfirm ? `<div class="confirm-actions">
-            <button class="ghost small" onclick="respondEvent('${ev.id}','rechazado')">Rechazar</button>
-            <button class="primary" style="padding:6px 12px; font-size:11.5px;" onclick="respondEvent('${ev.id}','confirmado')">Confirmar</button>
-          </div>${seriesBtns}` : '';
+        const confirmHtml = needsMyConfirm
+          ? (ev.swapId ? `<div class="confirm-actions">
+              <button class="ghost small" onclick="respondSwap('${ev.swapId}','rechazado')">Rechazar intercambio</button>
+              <button class="primary" style="padding:6px 12px; font-size:11.5px;" onclick="respondSwap('${ev.swapId}','confirmado')">Aceptar intercambio</button>
+            </div>` : `<div class="confirm-actions">
+              <button class="ghost small" onclick="respondEvent('${ev.id}','rechazado')">Rechazar</button>
+              <button class="primary" style="padding:6px 12px; font-size:11.5px;" onclick="respondEvent('${ev.id}','confirmado')">Confirmar</button>
+            </div>${seriesBtns}`)
+          : '';
         return `<div class="event-item">
-          <div class="row1"><div class="day">${dayLabel}</div><div class="what">${escapeHtml(ev.detail)}${ev.seriesId ? ' <span class="series-tag" title="Parte de una serie recurrente">🔁</span>' : ''}</div><span class="ev-pill ${ev.status}">${ev.status}</span></div>
+          <div class="row1"><div class="day">${dayLabel}</div><div class="what">${escapeHtml(ev.detail)}${ev.seriesId ? ' <span class="series-tag" title="Parte de una serie recurrente">🔁</span>' : ''}${ev.swapId ? ' <span class="series-tag" title="Parte de un intercambio de fechas">🔄</span>' : ''}</div><span class="ev-pill ${ev.status}">${ev.status}</span></div>
           <div class="who">Pedido por ${escapeHtml(ev.requestedBy ? ev.requestedBy.name : '—')}</div>
           ${confirmHtml}
         </div>`;
@@ -1915,6 +1985,20 @@ function renderCalendario(){
       <input type="text" id="ev-detail" placeholder="Ej: Cambio de entrega a las 19hs" style="margin-bottom:12px">
       ${repeatFieldsHtml('ev')}
       <button class="primary" style="width:100%; margin-top:12px;" onclick="addEvent()">Enviar solicitud</button>
+    </div>
+    <div class="card">
+      <div class="eyebrow">Intercambiar dos fechas</div>
+      <button class="ghost" style="width:100%;" onclick="toggleSwapForm()">🔄 Proponer un intercambio</button>
+      <div id="swap-form" style="display:none; margin-top:12px;">
+        <p style="font-size:11.5px; color:var(--text-dim); margin-bottom:10px;">Las dos fechas se confirman o rechazan juntas — no hay intercambio a medias.</p>
+        <label class="field-label">Cedés (tu fecha)</label>
+        <input type="date" id="swap-date-a" style="margin-bottom:6px;">
+        <input type="text" id="swap-detail-a" placeholder="Ej: Mi finde del 15" style="margin-bottom:12px;">
+        <label class="field-label">A cambio de (la fecha que recibís)</label>
+        <input type="date" id="swap-date-b" style="margin-bottom:6px;">
+        <input type="text" id="swap-detail-b" placeholder="Ej: Su finde del 22" style="margin-bottom:12px;">
+        <button class="primary" style="width:100%;" onclick="proposeSwap()">Proponer intercambio</button>
+      </div>
     </div>`;
 
   el.innerHTML = `
@@ -2030,13 +2114,21 @@ function renderGastos(){
             <button class="ghost small" onclick="respondExpense('${e.id}','rechazado')">Rechazar</button>
             <button class="primary" style="padding:6px 12px; font-size:11.5px;" onclick="respondExpense('${e.id}','confirmado')">Confirmar</button>
           </div>` : '';
+        const eventBadge = e.event ? `<div class="who" style="margin-top:2px;">🔗 Vinculado a: ${escapeHtml(e.event.detail)} (${e.event.date})</div>` : '';
         return `<div class="event-item">
           <div class="row1"><div class="day">$${e.amount}</div><div class="what">${escapeHtml(e.description)}</div><span class="ev-pill ${e.status}">${e.status}</span></div>
           <div class="who">Pedido por ${escapeHtml(e.requestedBy ? e.requestedBy.name : '—')}</div>
+          ${eventBadge}
           ${confirmHtml}
         </div>`;
       }).join('')
     : `<p class="empty-hint" style="padding:8px 0;">Todavía no hay gastos registrados.</p>`;
+
+  // eventos de este mismo canal, más recientes primero, para elegir a cuál
+  // vincular el gasto — opcional, no todo gasto tiene por qué atarse a una
+  // fecha puntual del calendario.
+  const eventOptions = [...events].sort((a,b)=> b.date.localeCompare(a.date))
+    .map(ev => `<option value="${ev.id}">${escapeHtml(ev.detail)} (${ev.date})</option>`).join('');
 
   const formHtml = isProfessional() ? '' : `
     <div class="card">
@@ -2044,7 +2136,12 @@ function renderGastos(){
       <label class="field-label">Monto</label>
       <input type="number" id="exp-amount" min="0" step="0.01" placeholder="Ej: 5000" style="margin-bottom:10px">
       <label class="field-label">Descripción</label>
-      <input type="text" id="exp-desc" placeholder="Ej: Útiles escolares" style="margin-bottom:12px">
+      <input type="text" id="exp-desc" placeholder="Ej: Útiles escolares" style="margin-bottom:10px">
+      <label class="field-label">Vincular a un evento del calendario (opcional)</label>
+      <select id="exp-event" style="width:100%; background:var(--surface-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:9px 10px; font-family:var(--sans); font-size:13.5px; margin-bottom:12px;">
+        <option value="">— Sin vincular —</option>
+        ${eventOptions}
+      </select>
       <button class="primary" style="width:100%" onclick="addExpense()">Registrar</button>
     </div>`;
 
@@ -2058,9 +2155,10 @@ function renderGastos(){
 async function addExpense(){
   const amount = Number(document.getElementById('exp-amount').value);
   const description = document.getElementById('exp-desc').value.trim();
+  const eventId = document.getElementById('exp-event')?.value || null;
   if(!amount || amount <= 0 || !description) { alert('Completá un monto válido y una descripción.'); return; }
   try{
-    const e = await api(`/api/channels/${channelCode}/expenses`, { method:'POST', body: JSON.stringify({ amount, description }) });
+    const e = await api(`/api/channels/${channelCode}/expenses`, { method:'POST', body: JSON.stringify({ amount, description, eventId }) });
     upsertExpense(e);
     renderGastos();
   }catch(err){ alert(err.error || 'No se pudo registrar el gasto.'); }
@@ -2102,6 +2200,7 @@ async function renderHistorial(keepFocus){
     }
   }
 
+  historialMessages.sort((a, b) => a.createdAt - b.createdAt); // mismo resguardo que en paintMessages()
   const q = historialQuery.trim().toLowerCase();
   const items = historialMessages.filter(m => (m.sender || m.pattern) && (!q || m.text.toLowerCase().includes(q)));
   const listHtml = items.length
@@ -2128,12 +2227,24 @@ async function renderHistorial(keepFocus){
     </div>
   ` : '';
 
+  const otherForExport = otherPartyOf(channelInfo);
+  const exportTargetLabel = `${channelInfo.code}${otherForExport?.user ? ' — con ' + escapeHtml(otherForExport.user.name) : ''}`;
+
   el.innerHTML = `
     <input type="text" id="historial-search" placeholder="Buscar en el historial…" value="${escapeHtml(historialQuery)}" oninput="filterHistorial(this.value)" style="width:100%; margin-bottom:12px; background:var(--surface-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:9px 12px; font-family:var(--sans); font-size:13.5px;">
     <div class="card">${listHtml}</div>
-    <button class="ghost" style="width:100%; margin-top:12px;" onclick="exportReport()">Descargar informe (.txt)</button>
-    <button class="ghost" style="width:100%; margin-top:8px;" onclick="exportCertifiedReport()">Descargar informe certificado (PDF)</button>
-    <div class="empty-hint" style="margin-top:4px; text-align:center;">Incluye un código QR para verificar su autenticidad</div>
+    <div class="card" style="margin-top:12px;">
+      <div class="eyebrow">Exportar — ${exportTargetLabel}</div>
+      <p style="font-size:11.5px; color:var(--text-dim); margin-bottom:10px;">¿No es el caso que buscabas? Tocá "${exportTargetLabel.split(' — ')[0]} ▾" arriba para cambiar de caso antes de exportar.</p>
+      <label class="field-label" style="font-size:11px;">Rango de fechas (opcional — vacío exporta todo el historial)</label>
+      <div style="display:flex; gap:8px; margin-bottom:10px;">
+        <input type="date" id="export-desde" style="flex:1;">
+        <input type="date" id="export-hasta" style="flex:1;">
+      </div>
+      <button class="ghost" style="width:100%;" onclick="exportReport()">Descargar informe (.txt)</button>
+      <button class="ghost" style="width:100%; margin-top:8px;" onclick="exportCertifiedReport()">Descargar informe certificado (PDF)</button>
+      <div class="empty-hint" style="margin-top:4px; text-align:center;">Incluye un código QR para verificar su autenticidad</div>
+    </div>
     ${notesHtml}
   `;
   if(keepFocus){
@@ -2143,11 +2254,20 @@ async function renderHistorial(keepFocus){
   }
   if(isProfessional()) loadCaseNotes();
 }
+function buildExportQuery(){
+  const desde = document.getElementById('export-desde')?.value;
+  const hasta = document.getElementById('export-hasta')?.value;
+  const params = new URLSearchParams();
+  if(desde) params.set('desde', desde);
+  if(hasta) params.set('hasta', hasta);
+  const qs = params.toString();
+  return qs ? '?' + qs : '';
+}
 function exportReport(){
-  window.location.href = `/api/channels/${channelCode}/export`;
+  window.location.href = `/api/channels/${channelCode}/export${buildExportQuery()}`;
 }
 function exportCertifiedReport(){
-  window.location.href = `/api/channels/${channelCode}/export/certified`;
+  window.location.href = `/api/channels/${channelCode}/export/certified${buildExportQuery()}`;
 }
 
 async function loadCaseNotes(){
@@ -2314,6 +2434,24 @@ function renderProStatusCard(proStatus){
 // aparte — ver NAV-RESTRUCTURE-para-claude-code.md). Tocar un caso lleva
 // al nivel 2 (Chat/Calendario/Gastos/Historial/Asistente de ESE caso).
 // ==================================================================
+let inicioStatusFilter = 'todos'; // en memoria nomás — vuelve a 'todos' al recargar, no hace falta persistirlo
+
+function setInicioFilter(filter){
+  inicioStatusFilter = filter;
+  renderInicio();
+}
+
+async function setCaseStatusFromList(code, status, ev){
+  if(ev) ev.stopPropagation(); // si no, el click en el botón de estado también dispara openCase() por burbujeo
+  try{
+    await api(`/api/channels/${code}/status`, { method:'POST', body: JSON.stringify({ status }) });
+    if(channelInfo && channelInfo.code === code) channelInfo.status = status; // por si es el caso activo, para que Config no quede desincronizado
+    renderInicio();
+  }catch(e){
+    alert('No se pudo cambiar el estado del caso. Probá de nuevo.');
+  }
+}
+
 async function renderInicio(){
   const el = document.getElementById('inicio-content');
   el.innerHTML = `<p class="empty-hint">Cargando…</p>`;
@@ -2357,9 +2495,28 @@ async function renderInicio(){
     </div>
   `;
 
-  const listHtml = list.map(c => caseCardHtml(c, `openCase('${c.code}')`)).join('');
+  const STATUS_ORDER = { abierto: 0, en_proceso: 1, cerrado: 2 };
 
-  el.innerHTML = statsHtml + listHtml;
+  // "siempre primero los abiertos" — orden por estado, y dentro de cada
+  // estado, el más activo recientemente primero.
+  const sorted = [...list].sort((a, b) => {
+    const byStatus = (STATUS_ORDER[a.status] ?? 0) - (STATUS_ORDER[b.status] ?? 0);
+    return byStatus !== 0 ? byStatus : b.lastActivity - a.lastActivity;
+  });
+  const filtered = inicioStatusFilter === 'todos' ? sorted : sorted.filter(c => c.status === inicioStatusFilter);
+
+  const filterChips = ['todos', 'abierto', 'en_proceso', 'cerrado'].map(f => {
+    const label = f === 'todos' ? 'Todos' : STATUS_LABELS[f];
+    const count = f === 'todos' ? list.length : list.filter(c => c.status === f).length;
+    return `<button class="status-opt ${inicioStatusFilter === f ? 'active' : ''}" onclick="setInicioFilter('${f}')" style="flex:none; padding:6px 12px;">${label} (${count})</button>`;
+  }).join('');
+  const filterHtml = `<div class="status-select-row" style="overflow-x:auto; margin-bottom:12px; padding-bottom:2px;">${filterChips}</div>`;
+
+  const listHtml = filtered.length
+    ? filtered.map(c => caseCardHtml(c, `openCase('${c.code}')`, { showStatusButtons: c.myRole === 'A' || c.myRole === 'B' })).join('')
+    : `<p class="empty-hint">Ningún caso con este filtro.</p>`;
+
+  el.innerHTML = statsHtml + filterHtml + listHtml;
 }
 
 // extrae el token de invitación tanto si pegaron la URL completa

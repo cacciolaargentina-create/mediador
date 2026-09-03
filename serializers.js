@@ -45,6 +45,7 @@ function serializeEvent(e) {
     requestedBy: publicUser(e.requestedBy),
     status: e.status,
     seriesId: e.seriesId || null,
+    swapId: e.swapId || null,
     createdAt: e.createdAt,
   };
 }

@@ -17,10 +17,11 @@ function fmt(ts) {
 // mismo contenido plano que el .txt existente — es la base sobre la que se
 // calcula el hash de integridad, así el hash representa el contenido real
 // del informe y no detalles de maquetado del PDF.
-function buildPlainContent({ channel, messages, events, nameOf }) {
+function buildPlainContent({ channel, messages, events, nameOf, rangeLabel }) {
   const lines = [];
   lines.push('INFORME — PUENTE DIGITAL');
   lines.push(`Código de canal: ${channel.code}`);
+  lines.push(`Período: ${rangeLabel || 'historial completo'}`);
   lines.push('');
   lines.push('--- MENSAJES ---');
   messages.forEach((m) => {
@@ -44,8 +45,8 @@ function integrityHash(plainContent) {
 // pública (fuera de la app, sin login) que confirma que el documento salió
 // de Puente Digital — pensado para cuando el PDF se lleva a un ámbito donde
 // quien lo recibe no tiene cuenta ni contexto de la app.
-async function buildCertifiedReport({ channel, messages, events, nameOf, generatedBy, verifyUrl }) {
-  const plainContent = buildPlainContent({ channel, messages, events, nameOf });
+async function buildCertifiedReport({ channel, messages, events, nameOf, generatedBy, verifyUrl, rangeLabel }) {
+  const plainContent = buildPlainContent({ channel, messages, events, nameOf, rangeLabel });
   const hash = integrityHash(plainContent);
   const now = new Date();
 
@@ -90,6 +91,7 @@ async function buildCertifiedReport({ channel, messages, events, nameOf, generat
 
     doc.fontSize(10).fillColor('#000');
     doc.font('Helvetica-Bold').text('Código de canal: ', { continued: true }).font('Helvetica').text(channel.code);
+    doc.font('Helvetica-Bold').text('Período: ', { continued: true }).font('Helvetica').text(rangeLabel || 'historial completo');
     doc.font('Helvetica-Bold').text('Generado: ', { continued: true }).font('Helvetica').text(now.toLocaleString('es-AR', { dateStyle: 'long', timeStyle: 'short' }));
     if (generatedBy) {
       doc.font('Helvetica-Bold').text('Generado por: ', { continued: true }).font('Helvetica').text(`${generatedBy.name}${generatedBy.role ? ' (' + generatedBy.role + ')' : ''}`);

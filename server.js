@@ -39,11 +39,35 @@ app.use(
     contentSecurityPolicy: false,
   })
 );
-app.use(cors({ origin: process.env.FRONTEND_URL || true, credentials: true }));
+// origin:true junto con credentials:true refleja CUALQUIER origen que pida
+// el navegador — si FRONTEND_URL no está seteado, cualquier sitio podría
+// mandar pedidos autenticados usando la cookie de sesión de la víctima
+// (es exactamente el patrón de vulnerabilidad de "CORS mal configurado con
+// credenciales"). Como el frontend se sirve desde este mismo servidor
+// (abajo, express.static), no hace falta ningún origen cruzado para el uso
+// normal — CORS acá es solo para integraciones futuras que sí declaren su
+// propio origen. Sin FRONTEND_URL configurado, la app sigue funcionando
+// igual (mismo origen nunca lo bloquea CORS); lo único que se pierde es la
+// posibilidad de pedidos autenticados desde OTRO dominio, que es
+// justamente lo que no se quiere permitir por default.
+if (!process.env.FRONTEND_URL) {
+  console.warn('⚠ FRONTEND_URL no configurado — CORS con credenciales queda deshabilitado para orígenes cruzados (la app sigue funcionando normal desde el mismo dominio).');
+}
+app.use(cors({ origin: process.env.FRONTEND_URL || false, credentials: true }));
 // guarda el body crudo además de parsearlo — routes/whatsapp.js lo necesita
 // para verificar la firma HMAC del webhook antes de confiar en el payload.
 app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+// sin esto, un despliegue sin SESSION_SECRET en el .env firmaría las
+// cookies de sesión con un string fijo que queda visible en el código
+// fuente — cualquiera que lo vea podría forjar una cookie de sesión válida
+// para cualquier usuario. En producción esto tiene que frenar el arranque,
+// no seguir con un valor por defecto inseguro.
+if (!process.env.SESSION_SECRET && process.env.NODE_ENV === 'production') {
+  console.error('✕ SESSION_SECRET no configurado — no se puede arrancar en producción con el secreto de sesión por defecto (queda expuesto en el código fuente). Generá uno con `openssl rand -hex 32` y agregalo al .env.');
+  process.exit(1);
+}
 
 const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET || 'cambiar-este-secreto-en-produccion',
