@@ -234,17 +234,24 @@ module.exports = function (io, presence) {
   // Solo las partes pueden generar esta invitación. Quien la usa entra con su
   // propia cuenta de Google (no anónimo, para que quede identificado quién es)
   // y con acceso de solo lectura — no puede mandar mensajes ni resolver
-  // acuerdos en nombre de las partes. Su ingreso siempre queda anunciado en el
-  // chat y visible en la lista de integrantes del canal: nunca es un acceso oculto.
+  // acuerdos en nombre de las partes. Su ingreso NUNCA es un acceso oculto:
+  // siempre queda en la lista de integrantes del canal y en la fila de
+  // presencia de arriba del chat, se elija o no avisar con un mensaje de
+  // sistema en medio de la conversación (announceInChat, default true —
+  // quien prefiere sumar a su mediador/a sin interrumpir el hilo activo
+  // puede optar por eso, sin que deje de ser descubrible para la otra parte).
   router.post('/:code/professionals/invite', requireAuth, requireMembership, requireParty, async (req, res) => {
-    const { role, label } = req.body;
+    const { role, label, announceInChat } = req.body;
     if (!PROFESSIONAL_ROLE_LABELS[role]) return res.status(400).json({ error: 'Rol inválido' });
     if (!label || !label.trim()) return res.status(400).json({ error: 'Falta el nombre del mediador/a o del estudio' });
 
     const db = getDB();
     const channel = db.channels.find((c) => c.id === req.channel.id);
     if (!channel.professionalInvites) channel.professionalInvites = [];
-    const invite = { token: nanoid(24), role, label: label.trim(), createdBy: req.user.id, createdAt: Date.now() };
+    const invite = {
+      token: nanoid(24), role, label: label.trim(), createdBy: req.user.id, createdAt: Date.now(),
+      announceInChat: announceInChat !== false, // default true — solo queda en false si se pidió explícitamente
+    };
     channel.professionalInvites.push(invite);
     await commit();
     res.json({ url: `${req.protocol}://${req.get('host')}/?pro=${invite.token}` });
@@ -283,17 +290,24 @@ module.exports = function (io, presence) {
     invite.usedAt = Date.now();
     invite.usedBy = req.user.id;
 
-    const sysMsg = {
-      id: nanoid(), channelId: channel.id, senderId: null,
-      text: `${req.user.name} se unió al canal como ${PROFESSIONAL_ROLE_LABELS[invite.role]} (${invite.label}).`,
-      flagged: false, reason: null, pattern: false, createdAt: Date.now(),
-    };
-    db.messages.push(sysMsg);
+    // el mensaje de sistema es opcional (announceInChat, elegido al invitar)
+    // pero el ingreso NUNCA queda oculto: channel:update se emite siempre,
+    // así que la lista de integrantes y la fila de presencia de arriba del
+    // chat reflejan a la persona nueva de una, se haya anunciado o no acá.
+    let sysMsg = null;
+    if (invite.announceInChat !== false) {
+      sysMsg = {
+        id: nanoid(), channelId: channel.id, senderId: null,
+        text: `${req.user.name} se unió al canal como ${PROFESSIONAL_ROLE_LABELS[invite.role]} (${invite.label}).`,
+        flagged: false, reason: null, pattern: false, createdAt: Date.now(),
+      };
+      db.messages.push(sysMsg);
+    }
     await commit();
 
     const payload = serializeChannel(channel);
     io.to(channel.code).emit('channel:update', payload);
-    io.to(channel.code).emit('message:new', serializeMessage(sysMsg));
+    if (sysMsg) io.to(channel.code).emit('message:new', serializeMessage(sysMsg));
     res.json(payload);
   });
 

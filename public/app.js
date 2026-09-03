@@ -815,7 +815,17 @@ function connectSocket(){
   });
   socket.on('event:new', (e)=>{ upsertEvent(e); if(currentScreen==='calendario') renderCalendario(); if(currentScreen==='chat') paintMessages(); updateNavBadges(); });
   socket.on('event:update', (e)=>{ upsertEvent(e); if(currentScreen==='calendario') renderCalendario(); if(currentScreen==='chat') paintMessages(); updateNavBadges(); });
-  socket.on('channel:update', (info)=>{ channelInfo = info; if(currentScreen==='config') renderConfig(); if(currentScreen==='chat') renderCaseTabsInfo(); });
+  socket.on('channel:update', (info)=>{
+    channelInfo = info;
+    if(currentScreen==='config') renderConfig();
+    if(currentScreen==='chat'){
+      renderCaseTabsInfo();
+      // si un mediador/a se sumó SIN mensaje de sistema (invitación
+      // silenciosa), esto es lo único que lo hace aparecer al toque en la
+      // fila de presencia de arriba, sin esperar a que se reabra el chat.
+      updateChatPresenceLine();
+    }
+  });
   socket.on('expense:new', (e)=>{ upsertExpense(e); if(currentScreen==='gastos') renderGastos(); });
   socket.on('expense:update', (e)=>{ upsertExpense(e); if(currentScreen==='gastos') renderGastos(); });
   socket.on('checkin:new', ()=>{ if(currentScreen==='calendario') loadCheckins(); });
@@ -1246,7 +1256,7 @@ function renderConfig(){
     ${membersCard}
     <div class="card">
       <div class="eyebrow">Invitar a un mediador/a o estudio jurídico</div>
-      <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:12px;">Va a poder ver mensajes, calendario e historial, pero no escribir en tu nombre ni de la otra parte. Su ingreso queda anunciado en el chat y visible acá arriba, para las dos partes.</p>
+      <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:12px;">Va a poder ver mensajes, calendario e historial, pero no escribir en tu nombre ni de la otra parte. Su ingreso nunca queda oculto — siempre va a estar en "Integrantes del canal" acá abajo y en el estado de arriba del chat — pero podés elegir si además se anuncia con un mensaje en medio de la conversación.</p>
       <label class="field-label">Rol</label>
       <select id="pro-invite-role" style="margin-bottom:10px;">
         <option value="mediador">Mediador/a</option>
@@ -1254,6 +1264,10 @@ function renderConfig(){
       </select>
       <label class="field-label">Nombre o estudio</label>
       <input type="text" id="pro-invite-label" placeholder="Ej: Estudio Pérez &amp; Asoc." style="margin-bottom:12px;">
+      <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text-dim); margin-bottom:12px; cursor:pointer;">
+        <input type="checkbox" id="pro-invite-announce" checked style="width:auto;">
+        Avisar en el chat cuando se una
+      </label>
       <button class="ghost" style="width:100%" onclick="inviteProfessional()">Generar invitación</button>
       <div id="pro-invite-result"></div>
     </div>
@@ -1303,10 +1317,11 @@ function renderNuevo(){
 async function inviteProfessional(){
   const role = document.getElementById('pro-invite-role').value;
   const label = document.getElementById('pro-invite-label').value.trim();
+  const announceInChat = document.getElementById('pro-invite-announce').checked;
   const resultEl = document.getElementById('pro-invite-result');
   if(!label){ resultEl.innerHTML = `<p style="color:var(--danger); font-size:12px; margin-top:8px;">Completá el nombre o estudio.</p>`; return; }
   try{
-    const res = await api(`/api/channels/${channelCode}/professionals/invite`, { method:'POST', body: JSON.stringify({ role, label }) });
+    const res = await api(`/api/channels/${channelCode}/professionals/invite`, { method:'POST', body: JSON.stringify({ role, label, announceInChat }) });
     resultEl.innerHTML = `
       <div class="row-copy" style="margin-top:12px;">
         <input type="text" readonly value="${res.url}" id="pro-invite-url">
