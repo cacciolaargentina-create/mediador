@@ -640,7 +640,12 @@
     /* "Seguridad y privacidad" + "Antes de que preguntes" uno al lado del
        otro en pantallas anchas — cada .split-card pierde el max-width:480
        fijo (así puede crecer) y se reparte el espacio con flex. */
-    .split-cards{ display:flex; gap:16px; align-items:flex-start; max-width:900px; margin:0 auto 24px; }
+    /* align-items:stretch (default) a propósito, no flex-start — con
+       contenido tan distinto entre las dos (4 puntos vs. 3 preguntas)
+       quedaban de alturas bien distintas una al lado de la otra, se
+       sentía descompensado. Estiradas a la misma altura leen como un
+       par a juego aunque el contenido de adentro no llegue a llenarla. */
+    .split-cards{ display:flex; gap:16px; max-width:900px; margin:0 auto 24px; }
     .split-cards .split-card{ flex:1; max-width:none; margin:0; min-width:0; }
 
     /* "Probalo vos mismo" + "Así se ve en la práctica" uno al lado del
@@ -683,6 +688,18 @@
   .trust-row{ display:flex; flex-wrap:wrap; gap:10px 12px; justify-content:center; margin:22px 0 4px; }
   .trust-chip{ display:flex; align-items:center; gap:7px; font-size:13px; color:var(--text-dim); background:var(--surface); border:1px solid var(--line); border-radius:20px; padding:8px 15px; }
   .trust-chip svg{ width:15px; height:15px; color:var(--calm); flex-shrink:0; }
+
+  /* ---- escudos de confianza: a propósito más "sello" que los chips de
+     arriba (ícono grande en círculo, texto abajo) — chips = datos
+     puntuales cortos; esto = 4 razones de fondo para confiar, con más
+     peso visual porque van justo antes del botón de entrar. ---- */
+  .trust-badges{ display:grid; grid-template-columns:repeat(2,1fr); gap:14px 10px; max-width:420px; margin:8px auto 0; }
+  .trust-badge{ display:flex; flex-direction:column; align-items:center; text-align:center; gap:4px; }
+  .tb-ic{ width:40px; height:40px; border-radius:50%; background:var(--calm-dim); color:var(--calm); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .tb-ic svg{ width:19px; height:19px; }
+  .tb-label{ font-size:12.5px; font-weight:600; color:var(--text); line-height:1.25; }
+  .tb-sub{ font-size:10.5px; color:var(--text-faint); }
+  @media (min-width:560px){ .trust-badges{ grid-template-columns:repeat(4,1fr); max-width:560px; } }
 
   /* ---- showcase animado: reformula un mensaje solo, en loop, para que
      se vea el valor del producto sin que nadie tenga que escribir nada.
@@ -848,6 +865,34 @@
         <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg>Sin tarjeta</span>
         <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 12l2 2 4-4"/></svg>Hecho en Argentina</span>
       </div>
+
+      <!-- ---- escudos de confianza: más visuales que los chips de arriba
+           a propósito (ícono grande en círculo + texto abajo, como un
+           sello) — mismos hechos ya verificados contra privacidad.html
+           y el resto del sitio, nada inventado para la ocasión. ---- -->
+      <div class="trust-badges">
+        <div class="trust-badge">
+          <span class="tb-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg></span>
+          <div class="tb-label">Conexión cifrada</div>
+          <div class="tb-sub">HTTPS de punta a punta</div>
+        </div>
+        <div class="trust-badge">
+          <span class="tb-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-3.3 3.6-6 8-6s8 2.7 8 6"/></svg></span>
+          <div class="tb-label">Cuentas reales</div>
+          <div class="tb-sub">No un código adivinable</div>
+        </div>
+        <div class="trust-badge">
+          <span class="tb-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/><path d="M9.5 12l1.8 1.8L15 10"/></svg></span>
+          <div class="tb-label">Tus datos no se venden</div>
+          <div class="tb-sub">Nunca, a nadie</div>
+        </div>
+        <div class="trust-badge">
+          <span class="tb-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></span>
+          <div class="tb-label">Vos ves todo antes</div>
+          <div class="tb-sub">Nada cambia en silencio</div>
+        </div>
+      </div>
+
       <div class="cta-block">
         <button class="ghost" style="width:fit-content; max-width:260px; margin:0 auto; display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 18px; background:#fff; color:#1F1F1F; border:none;" onclick="location.href='/auth/google'">
           <svg width="16" height="16" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
@@ -902,7 +947,8 @@
     <div class="card reveal split-card">
       <div class="eyebrow">Antes de que preguntes</div>
       <p style="font-size:13px; margin-bottom:12px;"><strong>¿Alguien lee mis mensajes?</strong><br><span style="color:var(--text-dim)">Pasan por un sistema automático antes de enviarse. Nadie de una oficina los mira.</span></p>
-      <p style="font-size:13px;"><strong>¿Esto va a cambiar cómo me responde la otra persona?</strong><br><span style="color:var(--text-dim)">Eso no está en nuestras manos. Sí te ayuda a que lo que vos mandás no te juegue en contra.</span></p>
+      <p style="font-size:13px; margin-bottom:12px;"><strong>¿Esto va a cambiar cómo me responde la otra persona?</strong><br><span style="color:var(--text-dim)">Eso no está en nuestras manos. Sí te ayuda a que lo que vos mandás no te juegue en contra.</span></p>
+      <p style="font-size:13px;"><strong>¿Necesito instalar algo?</strong><br><span style="color:var(--text-dim)">No — funciona desde el navegador. Podés instalarla como acceso directo si querés notificaciones más rápidas, pero nunca es obligatorio.</span></p>
     </div>
   </div>
 
