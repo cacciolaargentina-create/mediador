@@ -183,7 +183,14 @@
   .row-copy input{ flex:1; }
   .row-copy button{ flex-shrink:0; }
 
-  .hero-demo{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:18px; }
+  /* ---- "probalo vos mismo": sección propia después del hero — antes
+     vivía al lado del título en la misma pantalla; ahora el título
+     respira solo arriba y esto tiene su propio momento al bajar. Sin
+     min-height:100vh (mismo motivo que .hero-section — content corto +
+     viewport alto = bache de aire), solo padding generoso arriba/abajo
+     para que se sienta como su propia parada, no un resto pegado. ---- */
+  .try-section{ width:100%; display:flex; align-items:center; justify-content:center; box-sizing:border-box; padding:8px 22px 56px; }
+  .hero-demo{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:18px; width:100%; max-width:480px; }
   .bubble{ max-width:82%; padding:10px 13px; border-radius:12px; font-size:14px; line-height:1.45; margin-bottom:8px; }
   .bubble.original{ background:var(--surface-2); border:1px solid var(--danger); color:var(--text-dim); text-decoration:line-through; text-decoration-color:var(--danger); text-decoration-thickness:1px; }
   .bubble.suggested{ background:var(--calm-dim); border:1px solid var(--calm); color:var(--text); margin-left:auto; }
@@ -503,20 +510,20 @@
   .landing-wrap .cta-block .google-btn{ width:100%; justify-content:center; }
   .landing-wrap .cta-note{ text-align:center; font-size:11.5px; color:var(--text-faint); margin-top:9px; }
 
-  /* ---- hero de entrada: SIN el logo repetido (ya está en el header) y
-     pensado para llenar la primera pantalla — "hasta el primer scroll",
+  /* ---- hero de entrada: SIN el logo repetido (ya está en el header),
      ancho completo (no acotado al mismo max-width que el resto del
-     landing, ese lo lleva .hero-section-inner por dentro). El
-     min-height se calcula descontando la altura del header sticky
-     (~64px, medido a mano) y el contenido se centra verticalmente ahí
-     adentro con flex, así en pantallas chicas (donde el contenido no
-     llega a llenar el alto) no queda flotando pegado arriba con un
-     bloque de aire vacío abajo — se ve centrado a propósito, no roto. */
-  .hero-section{ width:100%; min-height:calc(100vh - 64px); display:flex; flex-direction:column; justify-content:center; box-sizing:border-box; padding:32px 22px; }
+     landing, ese lo lleva .hero-section-inner por dentro). OJO: llegó a
+     tener min-height:100vh para "llenar la primera pantalla" — con el
+     contenido bien corto (título + párrafo + chips) eso dejaba un bache
+     enorme de aire vacío antes de la sección siguiente, bien visible en
+     widescreen. Ahora el alto lo pone el contenido + padding generoso,
+     no un forzado a ocupar el viewport entero. */
+  .hero-section{ width:100%; box-sizing:border-box; padding:56px 22px 44px; }
   .hero-section-inner{ width:100%; max-width:480px; margin:0 auto; text-align:left; }
   .hero-section-inner .tagline-center{ text-align:center; color:var(--text-faint); font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:0.07em; margin-bottom:22px; }
-  .hero-section-inner h1.screen-title{ text-align:center; font-size:27px; font-weight:700; }
-  .hero-section-inner .screen-sub{ text-align:center; }
+  .hero-section-inner h1.screen-title{ text-align:center; font-size:30px; line-height:1.18; font-weight:700; }
+  .hero-section-inner .screen-sub{ text-align:center; font-size:15.5px; line-height:1.55; }
+  .hero-copy-solo{ max-width:640px; margin:0 auto; }
 
   /* barra flotante de login con Google — acompaña al bajar, solo en mobile.
      Empieza oculta; aparece con el scroll una vez que el CTA principal ya
@@ -591,8 +598,6 @@
   .sync-actions .sync-link .ic{ font-size:15px; flex-shrink:0; }
   @media (min-width:560px){ .sync-actions{ flex-direction:row; flex-wrap:wrap; } .sync-actions .sync-link{ flex:1 1 220px; } }
 
-  .hero-row{ display:block; }
-
   /* ---- Tablet and up: give the app shell breathing room instead of a full-bleed mobile column ---- */
   @media (min-width:700px){
     header.topbar{ padding-left:max(24px, calc((100% - 680px)/2)); padding-right:max(24px, calc((100% - 680px)/2)); }
@@ -610,15 +615,12 @@
     .case-tabs-scroller{ justify-content:center; overflow-x:visible; padding-left:max(24px, calc((100% - 680px)/2)); padding-right:max(24px, calc((100% - 680px)/2)); }
   }
 
-  /* ---- Desktop: landing gets a wider canvas and a two-column hero ---- */
+  /* ---- Desktop: landing gets a wider canvas ---- */
   @media (min-width:900px){
     .landing-wrap{ max-width:900px; padding:64px 40px 72px; }
-    .hero-section-inner{ max-width:900px; }
-    .hero-section-inner h1.screen-title{ font-size:32px; }
-
-    .hero-row{ display:flex; align-items:center; gap:48px; margin-bottom:6px; }
-    .hero-row .hero-copy{ flex:1; }
-    .hero-row .hero-demo{ flex:1; margin-bottom:0; }
+    .hero-section-inner{ max-width:760px; }
+    .hero-section-inner h1.screen-title{ font-size:44px; line-height:1.12; }
+    .hero-section-inner .screen-sub{ font-size:17px; }
 
     /* misma especificidad que ".landing-wrap .cta-block" de más arriba
        (margin:22px 0 8px) — sin igualarla acá, ese margin shorthand con
@@ -653,10 +655,12 @@
   @media (min-width:1280px){
     .landing-wrap{ max-width:1240px; padding:72px 56px 90px; }
     .hero-section{ padding:40px 56px; }
-    .hero-section-inner{ max-width:1240px; }
-    .hero-section-inner h1.screen-title{ font-size:38px; line-height:1.15; }
-    .hero-section-inner .screen-sub{ font-size:15px; }
-    .hero-row{ gap:64px; margin-bottom:10px; }
+    /* el texto del hero se queda en un ancho de lectura cómodo (860px)
+       aunque .landing-wrap crezca a 1240 más abajo — ese ancho mayor es
+       para la grilla de "Qué incluye", no para un título suelto. */
+    .hero-section-inner{ max-width:860px; }
+    .hero-section-inner h1.screen-title{ font-size:54px; line-height:1.1; }
+    .hero-section-inner .screen-sub{ font-size:19px; }
     .feature-grid{ flex-wrap:nowrap; }
     .feature-item{ flex:1 1 0; max-width:none; }
     .steps{ gap:28px; }
@@ -667,9 +671,9 @@
      verificables en el momento (gratis para empezar, hecho en Argentina,
      sin tarjeta). Empuja la sensación de "esto es serio" sin storytelling
      de más. ---- */
-  .trust-row{ display:flex; flex-wrap:wrap; gap:8px 10px; justify-content:center; margin:16px 0 26px; }
-  .trust-chip{ display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text-dim); background:var(--surface); border:1px solid var(--line); border-radius:20px; padding:6px 12px; }
-  .trust-chip svg{ width:13px; height:13px; color:var(--calm); flex-shrink:0; }
+  .trust-row{ display:flex; flex-wrap:wrap; gap:10px 12px; justify-content:center; margin:22px 0 4px; }
+  .trust-chip{ display:flex; align-items:center; gap:7px; font-size:13px; color:var(--text-dim); background:var(--surface); border:1px solid var(--line); border-radius:20px; padding:8px 15px; }
+  .trust-chip svg{ width:15px; height:15px; color:var(--calm); flex-shrink:0; }
 
   /* ---- showcase animado: reformula un mensaje solo, en loop, para que
      se vea el valor del producto sin que nadie tenga que escribir nada.
@@ -826,24 +830,25 @@
 
 <section class="hero-section">
   <div class="hero-section-inner">
-    <div class="hero-row">
-      <div class="hero-copy">
-        <h1 class="screen-title">Antes de mandarlo, mirá cómo sonaría distinto.</h1>
-        <p class="screen-sub">Un tercer canal, no un árbitro. Para cuando hay que seguir coordinando con la otra persona —horarios, entregas, acuerdos— pero cada mensaje corre el riesgo de escalar. Nadie decide quién tiene razón acá: te ayudamos a que lo que decís quede centrado en hechos.</p>
-        <div class="trust-row">
-          <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>Cifrado en tránsito</span>
-          <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/></svg>Gratis para empezar</span>
-          <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg>Sin tarjeta</span>
-          <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 12l2 2 4-4"/></svg>Hecho en Argentina</span>
-        </div>
-      </div>
-      <div class="hero-demo" id="hero-demo">
-        <div class="eyebrow">Probalo vos mismo — sin registrarte</div>
-        <textarea id="demo-input" placeholder="Escribí un mensaje como el que le mandarías a la otra persona…" style="min-height:70px; margin-bottom:10px;"></textarea>
-        <button class="ghost" style="width:100%;" onclick="runDemo()" id="demo-btn">Revisar mensaje</button>
-        <div id="demo-result" style="margin-top:12px;"></div>
+    <div class="hero-copy hero-copy-solo">
+      <h1 class="screen-title">Antes de mandarlo, mirá cómo sonaría distinto.</h1>
+      <p class="screen-sub">Un tercer canal, no un árbitro. Para cuando hay que seguir coordinando con la otra persona —horarios, entregas, acuerdos— pero cada mensaje corre el riesgo de escalar. Nadie decide quién tiene razón acá: te ayudamos a que lo que decís quede centrado en hechos.</p>
+      <div class="trust-row">
+        <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>Cifrado en tránsito</span>
+        <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/></svg>Gratis para empezar</span>
+        <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg>Sin tarjeta</span>
+        <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 12l2 2 4-4"/></svg>Hecho en Argentina</span>
       </div>
     </div>
+  </div>
+</section>
+
+<section class="try-section">
+  <div class="hero-demo" id="hero-demo">
+    <div class="eyebrow">Probalo vos mismo — sin registrarte</div>
+    <textarea id="demo-input" placeholder="Escribí un mensaje como el que le mandarías a la otra persona…" style="min-height:70px; margin-bottom:10px;"></textarea>
+    <button class="ghost" style="width:100%;" onclick="runDemo()" id="demo-btn">Revisar mensaje</button>
+    <div id="demo-result" style="margin-top:12px;"></div>
   </div>
 </section>
 
