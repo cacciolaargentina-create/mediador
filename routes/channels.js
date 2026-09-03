@@ -9,6 +9,7 @@ const { publicUser, serializeChannel, serializeMessage, serializeEvent } = requi
 const { buildCalendarFeed } = require('../ics');
 const { postMessage, postSystemMessage } = require('../messaging');
 const { buildCertifiedReport, integrityHash, buildPlainContent } = require('../certificate');
+const { signHash, getPublicKeyPem, publicKeyFingerprint, signingConfigured } = require('../signing');
 const { isAdminUser, PROFESSIONAL_ROLE_LABELS } = require('../roles');
 const { logAudit } = require('../audit');
 const { requireQuotaOrSubscription } = require('../quota');
@@ -777,6 +778,12 @@ module.exports = function (io, presence) {
       const hash = integrityHash(buildPlainContent({ channel: req.channel, messages: msgs, events, nameOf, rangeLabel: rangeLabel(desde, hasta) }));
       const generatedBy = { name: req.user.name, role: roleLabelForExport(req.membership.role) };
       const verifyUrl = `${req.protocol}://${req.get('host')}/verificar/${hash}`;
+      // firma electrónica (Ley 25.506 Art. 5 — no "firma digital" en el
+      // sentido fuerte, ver signing.js) sobre el hash de integridad, no
+      // sobre el documento entero: si no hay claves configuradas todavía
+      // (SIGNING_PRIVATE_KEY/PUBLIC_KEY), signHash devuelve null y el PDF
+      // sale igual, solo sin este agregado — nunca bloquea la exportación.
+      const signature = signHash(hash);
 
       const pdf = await buildCertifiedReport({
         channel: req.channel,
@@ -786,16 +793,20 @@ module.exports = function (io, presence) {
         generatedBy,
         verifyUrl,
         rangeLabel: rangeLabel(desde, hasta),
+        signature,
+        publicKeyFingerprint: signature ? publicKeyFingerprint() : null,
       });
 
       // el hash es determinístico a partir del contenido: exportar el MISMO
       // canal dos veces sin actividad nueva en el medio da el mismo hash. La
       // columna es UNIQUE, así que insertar de nuevo rompía el commit entero
       // (y con él, cualquier otra escritura hasta reiniciar el proceso) —
-      // si ya existe un registro con este hash, no hace falta uno nuevo.
+      // si ya existe un registro con este hash, no hace falta uno nuevo
+      // (la firma tampoco cambiaría: es determinística a partir del mismo
+      // hash y la misma clave).
       if (!db.certifiedExports.some((e) => e.hash === hash)) {
         db.certifiedExports.push({
-          id: nanoid(), hash, channelCode: req.channel.code,
+          id: nanoid(), hash, signature, channelCode: req.channel.code,
           generatedByName: generatedBy.name, generatedByRole: generatedBy.role,
           createdAt: Date.now(),
         });

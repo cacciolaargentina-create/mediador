@@ -45,7 +45,7 @@ function integrityHash(plainContent) {
 // pública (fuera de la app, sin login) que confirma que el documento salió
 // de Puente Digital — pensado para cuando el PDF se lleva a un ámbito donde
 // quien lo recibe no tiene cuenta ni contexto de la app.
-async function buildCertifiedReport({ channel, messages, events, nameOf, generatedBy, verifyUrl, rangeLabel }) {
+async function buildCertifiedReport({ channel, messages, events, nameOf, generatedBy, verifyUrl, rangeLabel, signature, publicKeyFingerprint }) {
   const plainContent = buildPlainContent({ channel, messages, events, nameOf, rangeLabel });
   const hash = integrityHash(plainContent);
   const now = new Date();
@@ -97,6 +97,22 @@ async function buildCertifiedReport({ channel, messages, events, nameOf, generat
       doc.font('Helvetica-Bold').text('Generado por: ', { continued: true }).font('Helvetica').text(`${generatedBy.name}${generatedBy.role ? ' (' + generatedBy.role + ')' : ''}`);
     }
     doc.moveDown(1);
+
+    // ---- firma electrónica (Ley 25.506 Art. 5 — no "firma digital") ----
+    if (signature) {
+      doc.fontSize(9).font('Helvetica-Bold').fillColor('#1a1a2e').text('Firma electrónica');
+      doc.font('Helvetica').fillColor('#555').fontSize(8).text(
+        'Este documento está firmado electrónicamente con la clave privada de Puente Digital sobre el hash de integridad de abajo. No es firma digital en el sentido de la Ley 25.506 (sin certificador licenciado ni presunción legal automática), pero permite verificar de forma independiente que el documento salió de acá y no fue alterado.'
+      );
+      doc.moveDown(0.3);
+      doc.font('Courier').fontSize(7).fillColor('#000').text(`Firma (base64): ${signature}`);
+      if (publicKeyFingerprint) {
+        doc.font('Courier').fontSize(7).text(`Clave pública (huella): ${publicKeyFingerprint}`);
+      }
+      doc.font('Helvetica').fontSize(8).fillColor('#555').text('Verificable en la página de verificación de este documento, con la firma y el hash de arriba.');
+      doc.fillColor('#000');
+      doc.moveDown(1);
+    }
 
     // ---- mensajes ----
     doc.fontSize(13).font('Helvetica-Bold').fillColor('#1a1a2e').text('Mensajes');

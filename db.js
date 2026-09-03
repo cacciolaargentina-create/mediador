@@ -35,7 +35,7 @@ const EMPTY_DB = {
   auditLog: [],    // { id, actorId, action, channelCode, meta, createdAt } — acciones sensibles para el panel de admin
   whatsappLog: [],      // { id, kind, phone, userName, channelCode, detail, createdAt } — notificaciones enviadas, onboarding, mensajes entrantes procesados
   whatsappWebhookRaw: [], // { id, payload, createdAt } — últimos payloads crudos del webhook de Meta, para debug técnico
-  certifiedExports: [], // { id, hash, channelCode, generatedByName, generatedByRole, createdAt } — un registro por cada export certificado en PDF, para que la página pública de verificación (/verificar/:hash) pueda confirmar que el documento realmente salió de acá
+  certifiedExports: [], // { id, hash, signature, channelCode, generatedByName, generatedByRole, createdAt } — un registro por cada export certificado en PDF, para que la página pública de verificación (/verificar/:hash) pueda confirmar que el documento realmente salió de acá. signature: firma electrónica Ed25519 del hash (ver signing.js) — null en exports viejos, de antes de que existiera esto
   professionalApplications: [], // { id, userId, role, orgName, status:'pending'|'approved'|'rejected', createdAt, decidedAt, decidedBy } — autoregistro de mediador/a o estudio jurídico, pendiente de aprobación manual de un admin
   moderationStats: [], // { id, date:'YYYY-MM-DD', channelCode|null, successCount, failCount, flaggedCount } — UNA fila por día+canal (no una por llamada), para que el panel de Costos y Salud pueda sumar por período sin que la tabla crezca sin límite
   pushSubscriptions: [], // { id, userId, endpoint, keys:{p256dh,auth}, createdAt } — un dispositivo suscripto a notificaciones push del navegador; una persona puede tener varios (celu + compu)
@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_webhook_raw (
   id TEXT PRIMARY KEY, payload TEXT, createdAt INTEGER
 );
 CREATE TABLE IF NOT EXISTS certified_exports (
-  id TEXT PRIMARY KEY, hash TEXT UNIQUE, channelCode TEXT, generatedByName TEXT,
+  id TEXT PRIMARY KEY, hash TEXT UNIQUE, signature TEXT, channelCode TEXT, generatedByName TEXT,
   generatedByRole TEXT, createdAt INTEGER
 );
 CREATE TABLE IF NOT EXISTS professional_applications (
@@ -181,6 +181,7 @@ function openDb() {
   ensureColumns(sqlite, 'members', { lastSeenAt: 'INTEGER' });
   ensureColumns(sqlite, 'events', { swapId: 'TEXT' });
   ensureColumns(sqlite, 'expenses', { eventId: 'TEXT' });
+  ensureColumns(sqlite, 'certified_exports', { signature: 'TEXT' });
   if (isNew && fs.existsSync(LEGACY_JSON_PATH)) {
     migrateFromJson(sqlite, LEGACY_JSON_PATH);
   }

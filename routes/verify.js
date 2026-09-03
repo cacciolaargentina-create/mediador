@@ -9,6 +9,7 @@
 
 const express = require('express');
 const { getDB } = require('../db');
+const { verifySignature, publicKeyFingerprint } = require('../signing');
 
 const router = express.Router();
 
@@ -77,6 +78,20 @@ router.get('/:hash', (req, res) => {
     }));
   }
 
+  let signatureHtml = '';
+  if (record.signature) {
+    const valid = verifySignature(record.hash, record.signature);
+    const fingerprint = publicKeyFingerprint();
+    signatureHtml = `
+      <div class="details">
+        <div><b>Firma electrónica:</b> ${valid ? '<span class="ok">✓ válida</span>' : '<span class="warn">⚠ no se pudo verificar con la clave pública actual</span>'}</div>
+        ${fingerprint ? `<div><b>Clave pública (huella):</b> ${escapeHtml(fingerprint)}</div>` : ''}
+      </div>
+      <div class="hash">Firma (base64):<br>${escapeHtml(record.signature)}</div>
+      <p class="disclaimer" style="border-top:none;padding-top:0;margin-top:6px;">Esta firma es electrónica en los términos del Art. 5 de la Ley 25.506 (no "firma digital" del Art. 2): prueba que el documento salió de la clave privada de Puente Digital, pero no tiene la presunción legal automática de la firma digital — quien la invoque debe poder acreditar su validez.</p>
+    `;
+  }
+
   res.send(page({
     title: 'Documento auténtico — Puente Digital',
     bodyHtml: `
@@ -89,6 +104,7 @@ router.get('/:hash', (req, res) => {
         ${record.generatedByName ? `<div><b>Generado por:</b> ${escapeHtml(record.generatedByName)}${record.generatedByRole ? ' (' + escapeHtml(record.generatedByRole) + ')' : ''}</div>` : ''}
       </div>
       <div class="hash">Hash de integridad (SHA-256):<br>${escapeHtml(record.hash)}</div>
+      ${signatureHtml}
       <p class="disclaimer">Esta página solo confirma que el hash de integridad fue emitido por Puente Digital para el caso indicado. No es una certificación notarial ni pericial, y no muestra el contenido de la conversación.</p>
     `,
   }));
