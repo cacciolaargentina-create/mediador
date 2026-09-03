@@ -344,9 +344,6 @@
        fantasma en #login-screen. Se saca acá (queda solo el tinte de
        --header-bg, sin blur) para que el drawer se posicione bien. */
     .site-header{ backdrop-filter:none; -webkit-backdrop-filter:none; }
-    /* el theme-btn/install-btn sueltos del header se esconden en mobile —
-       las mismas acciones ahora viven adentro del drawer (más abajo). */
-    .site-header-actions .theme-btn, .site-header-actions .install-btn{ display:none; }
     .site-nav{
       display:flex; flex-direction:column; align-items:stretch; gap:2px;
       position:fixed; top:0; right:0; bottom:0; width:min(80vw,320px);
@@ -723,13 +720,6 @@
         <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg>Sin tarjeta</span>
         <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 12l2 2 4-4"/></svg>Hecho en Argentina</span>
       </div>
-      <div class="showcase reveal" id="showcase">
-        <div class="eyebrow">Así se ve en la práctica</div>
-        <div class="bubble-label">Mensaje original</div>
-        <div class="bubble original" id="showcase-orig">Sos un desastre, siempre llegás tarde.</div>
-        <div class="bubble-label">Lo que sugiere la IA antes de enviarlo</div>
-        <div class="bubble suggested" id="showcase-sug">Llegaste 15 minutos tarde a la entrega de hoy. ¿Podemos coordinar un margen para la próxima vez?</div>
-      </div>
     </div>
     <div class="hero-demo" id="hero-demo">
       <div class="eyebrow">Probalo vos mismo — sin registrarte</div>
@@ -737,6 +727,14 @@
       <button class="ghost" style="width:100%;" onclick="runDemo()" id="demo-btn">Revisar mensaje</button>
       <div id="demo-result" style="margin-top:12px;"></div>
     </div>
+  </div>
+
+  <div class="showcase reveal" id="showcase" style="max-width:480px; margin:0 auto 24px;">
+    <div class="eyebrow">Así se ve en la práctica</div>
+    <div class="bubble-label">Mensaje original</div>
+    <div class="bubble original" id="showcase-orig">Sos un desastre, siempre llegás tarde.</div>
+    <div class="bubble-label">Lo que sugiere la IA antes de enviarlo</div>
+    <div class="bubble suggested" id="showcase-sug">Llegaste 15 minutos tarde a la entrega de hoy. ¿Podemos coordinar un margen para la próxima vez?</div>
   </div>
 
   <div class="card reveal" style="max-width:480px; margin:0 auto 24px;">
