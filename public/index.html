@@ -139,6 +139,7 @@
   h1.screen-title{ font-family:var(--serif); font-size:23px; font-weight:600; margin-bottom:4px; }
   .screen-sub{ color:var(--text-dim); font-size:13.5px; margin-bottom:18px; line-height:1.5; }
   .card{ background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:14px; }
+  .split-card{ max-width:480px; margin:0 auto 24px; }
   .eyebrow{ font-family:var(--mono); font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-faint); margin-bottom:8px; }
   button.primary, a.primary{ background:var(--calm); color:#0E1A19; border:none; font-weight:600; font-size:14px; padding:12px 18px; border-radius:8px; cursor:pointer; font-family:var(--sans); }
   button.primary:disabled{ opacity:0.4; cursor:not-allowed; }
@@ -441,14 +442,24 @@
   .legal-wrap strong{ color:var(--text); }
   .legal-wrap a{ color:var(--calm); }
   .landing-wrap{ width:100%; max-width:480px; margin:0 auto; padding:36px 22px 48px; text-align:left; }
-  .landing-wrap .brand-row{ text-align:center; margin-bottom:2px; }
-  .landing-wrap .brand{ font-size:25px; }
-  .landing-wrap .tagline-center{ text-align:center; color:var(--text-faint); font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:0.07em; margin-bottom:30px; }
-  .landing-wrap h1.screen-title{ text-align:center; font-size:25px; }
-  .landing-wrap .screen-sub{ text-align:center; }
   .landing-wrap .cta-block{ margin:22px 0 8px; }
   .landing-wrap .cta-block .google-btn{ width:100%; justify-content:center; }
   .landing-wrap .cta-note{ text-align:center; font-size:11.5px; color:var(--text-faint); margin-top:9px; }
+
+  /* ---- hero de entrada: SIN el logo repetido (ya está en el header) y
+     pensado para llenar la primera pantalla — "hasta el primer scroll",
+     ancho completo (no acotado al mismo max-width que el resto del
+     landing, ese lo lleva .hero-section-inner por dentro). El
+     min-height se calcula descontando la altura del header sticky
+     (~64px, medido a mano) y el contenido se centra verticalmente ahí
+     adentro con flex, así en pantallas chicas (donde el contenido no
+     llega a llenar el alto) no queda flotando pegado arriba con un
+     bloque de aire vacío abajo — se ve centrado a propósito, no roto. */
+  .hero-section{ width:100%; min-height:calc(100vh - 64px); display:flex; flex-direction:column; justify-content:center; box-sizing:border-box; padding:32px 22px; }
+  .hero-section-inner{ width:100%; max-width:480px; margin:0 auto; text-align:left; }
+  .hero-section-inner .tagline-center{ text-align:center; color:var(--text-faint); font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:0.07em; margin-bottom:22px; }
+  .hero-section-inner h1.screen-title{ text-align:center; font-size:25px; }
+  .hero-section-inner .screen-sub{ text-align:center; }
 
   /* barra flotante de login con Google — acompaña al bajar, solo en mobile.
      Empieza oculta; aparece con el scroll una vez que el CTA principal ya
@@ -545,22 +556,36 @@
   /* ---- Desktop: landing gets a wider canvas and a two-column hero ---- */
   @media (min-width:900px){
     .landing-wrap{ max-width:900px; padding:64px 40px 72px; }
-    .landing-wrap h1.screen-title{ font-size:32px; }
+    .hero-section-inner{ max-width:900px; }
+    .hero-section-inner h1.screen-title{ font-size:32px; }
 
     .hero-row{ display:flex; align-items:center; gap:48px; margin-bottom:6px; }
     .hero-row .hero-copy{ flex:1; }
     .hero-row .hero-copy h1.screen-title, .hero-row .hero-copy .screen-sub{ text-align:left; }
     .hero-row .hero-demo{ flex:1; margin-bottom:0; }
 
-    .cta-block{ max-width:360px; margin-left:auto; margin-right:auto; }
+    /* misma especificidad que ".landing-wrap .cta-block" de más arriba
+       (margin:22px 0 8px) — sin igualarla acá, ese margin shorthand con
+       left/right:0 le ganaba a este margin-left/right:auto sin importar
+       que esta regla viniera después en la hoja de estilos (la
+       especificidad manda por sobre el orden), y el botón quedaba pegado
+       a la izquierda en vez de centrado. */
+    .landing-wrap .cta-block{ max-width:360px; margin-left:auto; margin-right:auto; }
 
     .steps{ flex-direction:row; gap:20px; }
     .step-item{ flex-direction:column; flex:1; }
+
+    /* "Seguridad y privacidad" + "Antes de que preguntes" uno al lado del
+       otro en pantallas anchas — cada .split-card pierde el max-width:480
+       fijo (así puede crecer) y se reparte el espacio con flex. */
+    .split-cards{ display:flex; gap:16px; align-items:flex-start; max-width:900px; margin:0 auto 24px; }
+    .split-cards .split-card{ flex:1; max-width:none; margin:0; min-width:0; }
   }
 
   /* ---- Small phones: tighten up so nothing crowds ---- */
   @media (max-width:380px){
     .landing-wrap{ padding:28px 16px 40px; }
+    .hero-section{ padding:28px 16px; }
     .feature-item{ flex-basis:100%; max-width:none; }
   }
 
@@ -571,8 +596,10 @@
      "Qué incluye" en vez de que se acomode como pueda con flex-wrap. ---- */
   @media (min-width:1280px){
     .landing-wrap{ max-width:1240px; padding:72px 56px 90px; }
-    .landing-wrap h1.screen-title{ font-size:38px; line-height:1.15; }
-    .landing-wrap .screen-sub{ font-size:15px; }
+    .hero-section{ padding:40px 56px; }
+    .hero-section-inner{ max-width:1240px; }
+    .hero-section-inner h1.screen-title{ font-size:38px; line-height:1.15; }
+    .hero-section-inner .screen-sub{ font-size:15px; }
     .hero-row{ gap:64px; margin-bottom:10px; }
     .feature-grid{ flex-wrap:nowrap; }
     .feature-item{ flex:1 1 0; max-width:none; }
@@ -740,29 +767,32 @@
   </nav>
 </header>
 <div class="site-nav-backdrop" id="site-nav-backdrop" onclick="toggleMobileNav()"></div>
-<div class="landing-wrap">
 
-  <div class="brand-row"><div class="brand bridge-logo">Puente<em>digital</em></div></div>
-  <div class="tagline-center">Comunicación mediada por IA</div>
-
-  <div class="hero-row">
-    <div class="hero-copy">
-      <h1 class="screen-title">Un tercer canal, no un árbitro.</h1>
-      <p class="screen-sub">Para cuando hay que seguir coordinando con la otra persona —horarios, entregas, acuerdos— pero cada mensaje corre el riesgo de escalar. La IA no decide quién tiene razón: ayuda a que lo que se dice quede centrado en hechos.</p>
-      <div class="trust-row">
-        <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>Cifrado en tránsito</span>
-        <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/></svg>Gratis para empezar</span>
-        <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg>Sin tarjeta</span>
-        <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 12l2 2 4-4"/></svg>Hecho en Argentina</span>
+<section class="hero-section">
+  <div class="hero-section-inner">
+    <div class="tagline-center">Comunicación mediada por IA</div>
+    <div class="hero-row">
+      <div class="hero-copy">
+        <h1 class="screen-title">Un tercer canal, no un árbitro.</h1>
+        <p class="screen-sub">Para cuando hay que seguir coordinando con la otra persona —horarios, entregas, acuerdos— pero cada mensaje corre el riesgo de escalar. Nadie decide quién tiene razón acá: te ayudamos a que lo que decís quede centrado en hechos.</p>
+        <div class="trust-row">
+          <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>Cifrado en tránsito</span>
+          <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/></svg>Gratis para empezar</span>
+          <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg>Sin tarjeta</span>
+          <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 12l2 2 4-4"/></svg>Hecho en Argentina</span>
+        </div>
+      </div>
+      <div class="hero-demo" id="hero-demo">
+        <div class="eyebrow">Probalo vos mismo — sin registrarte</div>
+        <textarea id="demo-input" placeholder="Escribí un mensaje como el que le mandarías a la otra persona…" style="min-height:70px; margin-bottom:10px;"></textarea>
+        <button class="ghost" style="width:100%;" onclick="runDemo()" id="demo-btn">Revisar mensaje</button>
+        <div id="demo-result" style="margin-top:12px;"></div>
       </div>
     </div>
-    <div class="hero-demo" id="hero-demo">
-      <div class="eyebrow">Probalo vos mismo — sin registrarte</div>
-      <textarea id="demo-input" placeholder="Escribí un mensaje como el que le mandarías a la otra persona…" style="min-height:70px; margin-bottom:10px;"></textarea>
-      <button class="ghost" style="width:100%;" onclick="runDemo()" id="demo-btn">Revisar mensaje</button>
-      <div id="demo-result" style="margin-top:12px;"></div>
-    </div>
   </div>
+</section>
+
+<div class="landing-wrap">
 
   <div class="showcase reveal" id="showcase" style="max-width:480px; margin:0 auto 24px;">
     <div class="eyebrow">Así se ve en la práctica</div>
@@ -772,30 +802,32 @@
     <div class="bubble suggested" id="showcase-sug">Llegaste 15 minutos tarde a la entrega de hoy. ¿Podemos coordinar un margen para la próxima vez?</div>
   </div>
 
-  <div class="card reveal" style="max-width:480px; margin:0 auto 24px;">
-    <div class="eyebrow">Seguridad y privacidad</div>
-    <div style="display:flex; gap:10px; margin-bottom:14px;">
-      <span style="flex-shrink:0; color:var(--calm);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg></span>
-      <p style="font-size:13px;"><strong>Cifrado en tránsito</strong><br><span style="color:var(--text-dim)">Todo lo que escribís viaja cifrado (HTTPS) de tu dispositivo a nuestro servidor, como cualquier banco o app seria.</span></p>
+  <div class="split-cards">
+    <div class="card reveal split-card">
+      <div class="eyebrow">Seguridad y privacidad</div>
+      <div style="display:flex; gap:10px; margin-bottom:14px;">
+        <span style="flex-shrink:0; color:var(--calm);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg></span>
+        <p style="font-size:13px;"><strong>Cifrado en tránsito</strong><br><span style="color:var(--text-dim)">Todo lo que escribís viaja cifrado (HTTPS) de tu dispositivo a nuestro servidor, como cualquier banco o app seria.</span></p>
+      </div>
+      <div style="display:flex; gap:10px; margin-bottom:14px;">
+        <span style="flex-shrink:0; color:var(--calm);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v11.5H8.5L4 19.5V4Z"/></svg></span>
+        <p style="font-size:13px;"><strong>Acceso restringido</strong><br><span style="color:var(--text-dim)">Solo ven el canal las personas que vos invitaste — ni siquiera un profesional puede entrar sin que se lo asignen explícitamente.</span></p>
+      </div>
+      <div style="display:flex; gap:10px; margin-bottom:14px;">
+        <span style="flex-shrink:0; color:var(--calm);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></span>
+        <p style="font-size:13px;"><strong>Transparencia</strong><br><span style="color:var(--text-dim)">Nunca cambiamos un mensaje en silencio. Todo lo que la IA sugiere, lo ves vos antes de decidir si lo mandás.</span></p>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <span style="flex-shrink:0; color:var(--calm);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 7.5-1.9"/></svg></span>
+        <p style="font-size:13px;"><strong>Acceso revocable</strong><br><span style="color:var(--text-dim)">Si invitaste a un profesional a un caso y ya no hace falta que esté, su acceso se puede revocar — no queda ahí para siempre.</span></p>
+      </div>
     </div>
-    <div style="display:flex; gap:10px; margin-bottom:14px;">
-      <span style="flex-shrink:0; color:var(--calm);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v11.5H8.5L4 19.5V4Z"/></svg></span>
-      <p style="font-size:13px;"><strong>Acceso restringido</strong><br><span style="color:var(--text-dim)">Solo ven el canal las personas que vos invitaste — ni siquiera un profesional puede entrar sin que se lo asignen explícitamente.</span></p>
-    </div>
-    <div style="display:flex; gap:10px; margin-bottom:14px;">
-      <span style="flex-shrink:0; color:var(--calm);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></span>
-      <p style="font-size:13px;"><strong>Transparencia</strong><br><span style="color:var(--text-dim)">Nunca cambiamos un mensaje en silencio. Todo lo que la IA sugiere, lo ves vos antes de decidir si lo mandás.</span></p>
-    </div>
-    <div style="display:flex; gap:10px;">
-      <span style="flex-shrink:0; color:var(--calm);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 7.5-1.9"/></svg></span>
-      <p style="font-size:13px;"><strong>Acceso revocable</strong><br><span style="color:var(--text-dim)">Si invitaste a un profesional a un caso y ya no hace falta que esté, su acceso se puede revocar — no queda ahí para siempre.</span></p>
-    </div>
-  </div>
 
-  <div class="card reveal" style="max-width:480px; margin:0 auto 24px;">
-    <div class="eyebrow">Antes de que preguntes</div>
-    <p style="font-size:13px; margin-bottom:12px;"><strong>¿Alguien lee mis mensajes?</strong><br><span style="color:var(--text-dim)">Pasan por un sistema automático antes de enviarse. Nadie de una oficina los mira.</span></p>
-    <p style="font-size:13px;"><strong>¿Esto va a cambiar cómo me responde la otra persona?</strong><br><span style="color:var(--text-dim)">Eso no está en nuestras manos. Sí te ayuda a que lo que vos mandás no te juegue en contra.</span></p>
+    <div class="card reveal split-card">
+      <div class="eyebrow">Antes de que preguntes</div>
+      <p style="font-size:13px; margin-bottom:12px;"><strong>¿Alguien lee mis mensajes?</strong><br><span style="color:var(--text-dim)">Pasan por un sistema automático antes de enviarse. Nadie de una oficina los mira.</span></p>
+      <p style="font-size:13px;"><strong>¿Esto va a cambiar cómo me responde la otra persona?</strong><br><span style="color:var(--text-dim)">Eso no está en nuestras manos. Sí te ayuda a que lo que vos mandás no te juegue en contra.</span></p>
+    </div>
   </div>
 
   <div class="cta-block">
