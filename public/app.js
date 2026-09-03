@@ -136,6 +136,11 @@ function applyTheme(theme, persist){
     b.textContent = theme === 'light' ? '🌙' : '☀️';
     b.title = theme === 'light' ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro';
   });
+  // fila "Apariencia" del drawer de la hamburguesa — mismo estado, mismo ícono.
+  const navIc = document.getElementById('site-nav-theme-ic');
+  const navLabel = document.getElementById('site-nav-theme-label');
+  if(navIc) navIc.textContent = theme === 'light' ? '🌙' : '☀️';
+  if(navLabel) navLabel.textContent = theme === 'light' ? 'Apariencia: claro' : 'Apariencia: oscuro';
 }
 
 function initTheme(){
@@ -158,6 +163,42 @@ function toggleTheme(){
     document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('animating'));
   }, 520);
 }
+
+// ==================================================================
+// "BAÑO" — cambio de tema desde el botón "Apariencia" de la hamburguesa:
+// en vez del crossfade parejo de toggleTheme(), un círculo sólido del
+// color de fondo del tema nuevo crece desde el punto donde se tocó el
+// botón hasta cubrir toda la pantalla (como una ola/baño de pintura), y
+// recién cuando la cubre por completo se aplica el cambio de tema real
+// por debajo — así lo que se ve "empujando" el tema viejo es la propia
+// animación, no un cambio de color instantáneo. Con reduced-motion, cae
+// directo al toggle de siempre (sin el círculo).
+// ==================================================================
+const THEME_BG = { dark: '#12181A', light: '#F4F7F6' };
+function toggleThemeWash(event){
+  const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(prefersReduced || !document.body.animate){ toggleTheme(); return; }
+
+  const next = currentTheme() === 'light' ? 'dark' : 'light';
+  const btn = event && event.currentTarget;
+  const rect = btn ? btn.getBoundingClientRect() : null;
+  const x = rect ? rect.left + rect.width / 2 : window.innerWidth - 40;
+  const y = rect ? rect.top + rect.height / 2 : 40;
+  const radius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
+
+  const wash = document.createElement('div');
+  wash.style.cssText = `position:fixed; left:${x - radius}px; top:${y - radius}px; width:${radius * 2}px; height:${radius * 2}px; border-radius:50%; background:${THEME_BG[next]}; z-index:9999; pointer-events:none; transform:scale(0); will-change:transform;`;
+  document.body.appendChild(wash);
+
+  const anim = wash.animate(
+    [{ transform: 'scale(0)' }, { transform: 'scale(1)' }],
+    { duration: 620, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' }
+  );
+  anim.onfinish = () => {
+    applyTheme(next, true); // se aplica tapado por el círculo ya del color nuevo — no se nota el salto
+    wash.remove();
+  };
+}
 initTheme();
 
 // ==================================================================
@@ -168,17 +209,20 @@ initTheme();
 function toggleMobileNav(){
   const nav = document.getElementById('site-nav');
   const btn = document.getElementById('hamburger-btn');
+  const backdrop = document.getElementById('site-nav-backdrop');
   if(!nav) return;
   const open = nav.classList.toggle('open');
+  if(backdrop) backdrop.classList.toggle('open', open);
   if(btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
 }
 document.addEventListener('click', (e) => {
   const nav = document.getElementById('site-nav');
   if(!nav || !nav.classList.contains('open')) return;
   // clic en un link del propio menú → lo cierra (por si es un ancla tipo
-  // #faq que no recarga la página); clic afuera → también lo cierra.
+  // #faq que no recarga la página); clic afuera (o en el backdrop) → también.
   if(e.target.closest('#site-nav a') || (!e.target.closest('#site-nav') && !e.target.closest('#hamburger-btn'))){
     nav.classList.remove('open');
+    document.getElementById('site-nav-backdrop')?.classList.remove('open');
     const btn = document.getElementById('hamburger-btn');
     if(btn) btn.setAttribute('aria-expanded', 'false');
   }
@@ -511,6 +555,42 @@ function showLogin(){
   }
   initScrollReveal(); // recién ahora login-screen es visible — antes los elementos .reveal medían 0 y el observer nunca disparaba
   setupStickyGoogleBar();
+  initShowcase();
+}
+
+// ==================================================================
+// SHOWCASE ANIMADO — ejemplos reales del "antes / después" de la
+// moderación, en loop automático, para que se entienda el valor del
+// producto con solo mirar (sin tener que escribir nada en el demo de al
+// lado). Con reduced-motion no rota sola: se queda en el primer ejemplo,
+// entero, sin fades — la idea ya se entiende igual de una imagen fija.
+// ==================================================================
+const SHOWCASE_PAIRS = [
+  { orig: 'Sos un desastre, siempre llegás tarde.', sug: 'Llegaste 15 minutos tarde a la entrega de hoy. ¿Podemos coordinar un margen para la próxima vez?' },
+  { orig: 'Como siempre, no te importa nada de lo que quedamos.', sug: 'Habíamos acordado retirarlo a las 18. ¿Qué pasó hoy? Necesito saber para organizarme.' },
+  { orig: 'No pienso pagar la mitad de eso, es un curro tuyo.', sug: 'No estoy de acuerdo con dividir este gasto. ¿Podemos hablar del detalle antes de confirmarlo?' },
+];
+let showcaseTimer = null;
+function initShowcase(){
+  if(showcaseTimer) return; // no duplicar el intervalo si showLogin() se llama de nuevo
+  const origEl = document.getElementById('showcase-orig');
+  const sugEl = document.getElementById('showcase-sug');
+  if(!origEl || !sugEl) return;
+  const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(prefersReduced) return; // se queda en el primer ejemplo, quieto
+
+  let i = 0;
+  showcaseTimer = setInterval(() => {
+    i = (i + 1) % SHOWCASE_PAIRS.length;
+    origEl.classList.add('swap');
+    sugEl.classList.add('swap');
+    setTimeout(() => {
+      origEl.textContent = SHOWCASE_PAIRS[i].orig;
+      sugEl.textContent = SHOWCASE_PAIRS[i].sug;
+      origEl.classList.remove('swap');
+      sugEl.classList.remove('swap');
+    }, 350);
+  }, 4200);
 }
 
 // Barra flotante de "Continuar con Google" — aparece recién después de

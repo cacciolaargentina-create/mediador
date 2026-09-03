@@ -59,7 +59,7 @@
   .bridge-logo{ position:relative; display:inline-block; }
   .bridge-logo .bridge-arc{ position:absolute; left:0; top:100%; width:100%; height:0.5em; pointer-events:none; overflow:visible; }
 
-  header.topbar{ padding:16px 20px 12px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; gap:10px; }
+  header.topbar{ padding:16px 20px 12px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; gap:10px; background:var(--header-bg); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); }
   header.topbar .brand{ font-family:var(--serif); font-weight:600; font-size:18px; }
   header.topbar .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
   header.topbar .tagline{ font-size:10.5px; color:var(--text-faint); font-family:var(--mono); text-transform:uppercase; letter-spacing:0.07em; }
@@ -290,7 +290,11 @@
   .empty-hint{ font-size:13px; color:var(--text-faint); text-align:center; padding:20px 10px; }
   .disclaimer{ font-size:11px; color:var(--text-faint); line-height:1.5; margin-top:20px; border-top:1px solid var(--line); padding-top:14px; }
 
-  .landing-screen{ overflow-y:auto; display:flex; flex-direction:column; }
+  /* overflow-x:hidden porque el drawer de la hamburguesa (position:fixed +
+     transform, más abajo) puede sumar overflow horizontal fantasma al
+     contenedor cuando está corrido fuera de pantalla — sin esto, abrirlo
+     empuja un scroll horizontal que no debería existir. */
+  .landing-screen{ overflow-y:auto; overflow-x:hidden; display:flex; flex-direction:column; }
 
   /* ---- animación de entrada al scrollear: solo si el sistema no pidió
      menos movimiento — si pidió reduced-motion, .reveal nunca queda oculto
@@ -320,17 +324,54 @@
   .site-nav a:hover, .site-nav a.active{ color:var(--calm); }
 
   /* ---- menú hamburguesa: por debajo de 640px los links se esconden atrás
-     del botón ☰ y bajan como un panel propio; arriba de eso vuelven a la
-     fila normal y el botón desaparece. ---- */
+     del botón ☰ y se abren como un panel propio sobre el margen derecho
+     (no un dropdown pegado al header) — traslúcido con blur, con su propio
+     backdrop atrás para poder cerrarlo tocando afuera. Arriba de 640px
+     vuelve todo a la fila normal de siempre y el botón desaparece. ---- */
   @media (max-width:639px){
     .hamburger-btn{ display:flex; }
     /* en mobile los íconos (con el ☰) quedan en la fila de arriba, fijos
-       al lado del logo, y el panel de links cuelga por debajo — al revés
-       del orden de desktop, donde los links van antes que los íconos. */
+       al lado del logo; el panel ahora es un drawer aparte, no un renglón
+       más del header — por eso ya no comparte 'order' con .site-nav. */
     .site-header-actions{ order:1; }
-    .site-nav{ order:2; display:none; width:100%; flex-direction:column; align-items:flex-start; gap:2px; padding-top:10px; margin-top:10px; border-top:1px solid var(--line); }
-    .site-nav.open{ display:flex; }
-    .site-nav a{ padding:8px 2px; font-size:13.5px; width:100%; }
+    /* backdrop-filter en .site-header crea containing block para hijos
+       position:fixed (spec de Filter Effects) — con eso puesto, el drawer
+       de acá abajo (fixed, hijo de este header) queda "fixed" relativo al
+       header en vez de al viewport, y termina empujando scroll horizontal
+       fantasma en #login-screen. Se saca acá (queda solo el tinte de
+       --header-bg, sin blur) para que el drawer se posicione bien. */
+    .site-header{ backdrop-filter:none; -webkit-backdrop-filter:none; }
+    /* el theme-btn/install-btn sueltos del header se esconden en mobile —
+       las mismas acciones ahora viven adentro del drawer (más abajo). */
+    .site-header-actions .theme-btn, .site-header-actions .install-btn{ display:none; }
+    .site-nav{
+      display:flex; flex-direction:column; align-items:stretch; gap:2px;
+      position:fixed; top:0; right:0; bottom:0; width:min(80vw,320px);
+      margin:0; padding:78px 20px 28px; border:none; border-left:1px solid var(--line);
+      background:var(--header-bg); -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
+      box-shadow:-10px 0 36px rgba(0,0,0,0.35);
+      transform:translateX(105%); transition:transform .32s cubic-bezier(.32,.72,.35,1);
+      z-index:45; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    }
+    .site-nav.open{ transform:translateX(0); }
+    .site-nav a{ padding:10px 4px; font-size:14px; width:100%; }
+    .site-nav-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:44; opacity:0; pointer-events:none; transition:opacity .3s ease; }
+    .site-nav-backdrop.open{ opacity:1; pointer-events:auto; }
+  }
+  /* fuera del drawer mobile (desktop, o el propio botón antes de abrirlo)
+     estos elementos no tienen que existir visualmente. */
+  .site-nav-divider{ display:none; }
+  .site-nav-action{ display:none; }
+  @media (max-width:639px){
+    .site-nav-divider{ display:block; height:1px; background:var(--line); margin:14px 2px; flex-shrink:0; }
+    .site-nav-action{
+      display:flex; align-items:center; gap:10px; width:100%;
+      background:none; border:1px solid var(--line); color:var(--text);
+      font-family:var(--sans); font-size:13.5px; padding:11px 12px; border-radius:9px;
+      cursor:pointer; margin-bottom:8px; text-align:left;
+    }
+    .site-nav-action .ic{ font-size:15px; flex-shrink:0; width:18px; text-align:center; }
+    .site-nav-google{ background:#fff; color:#1F1F1F; border:none; font-weight:600; justify-content:center; margin-bottom:0; }
   }
 
   .site-footer{ border-top:1px solid var(--line); padding:24px 20px 30px; margin-top:auto; }
@@ -470,6 +511,49 @@
     .landing-wrap{ padding:28px 16px 40px; }
     .feature-item{ flex-basis:100%; max-width:none; }
   }
+
+  /* ---- Pantallas anchas (monitor grande, ventana maximizada): el
+     landing dejaba de crecer en 900px y quedaba una columna angosta
+     nadando en medio de mucho espacio vacío a los lados — acá se le da
+     más ancho real (no solo más margen) y una grilla de 5 columnas para
+     "Qué incluye" en vez de que se acomode como pueda con flex-wrap. ---- */
+  @media (min-width:1280px){
+    .landing-wrap{ max-width:1240px; padding:72px 56px 90px; }
+    .landing-wrap h1.screen-title{ font-size:38px; line-height:1.15; }
+    .landing-wrap .screen-sub{ font-size:15px; }
+    .hero-row{ gap:64px; margin-bottom:10px; }
+    .feature-grid{ flex-wrap:nowrap; }
+    .feature-item{ flex:1 1 0; max-width:none; }
+    .steps{ gap:28px; }
+  }
+
+  /* ---- fila de confianza bajo el hero: chips cortos, sin prometer nada
+     que no podamos sostener (nada de números inventados) — solo hechos
+     verificables en el momento (gratis para empezar, hecho en Argentina,
+     sin tarjeta). Empuja la sensación de "esto es serio" sin storytelling
+     de más. ---- */
+  .trust-row{ display:flex; flex-wrap:wrap; gap:8px 10px; justify-content:center; margin:16px 0 26px; }
+  .trust-chip{ display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text-dim); background:var(--surface); border:1px solid var(--line); border-radius:20px; padding:6px 12px; }
+  .trust-chip svg{ width:13px; height:13px; color:var(--calm); flex-shrink:0; }
+  @media (min-width:900px){ .trust-row{ justify-content:flex-start; margin-left:0; } }
+
+  /* ---- showcase animado: reformula un mensaje solo, en loop, para que
+     se vea el valor del producto sin que nadie tenga que escribir nada.
+     Dos burbujas fijas en el DOM (mismo layout que .bubble de siempre) —
+     el texto se cambia por JS cada pocos segundos con un fade corto; con
+     reduced-motion, el fade se salta y el texto cambia directo. ---- */
+  .showcase{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:18px; position:relative; overflow:hidden; }
+  .showcase::before{
+    content:''; position:absolute; inset:-40% -20%; z-index:0; pointer-events:none;
+    background:radial-gradient(circle at 30% 20%, var(--calm-dim), transparent 55%),
+               radial-gradient(circle at 80% 80%, var(--calm-dim), transparent 50%);
+    opacity:0.55; animation:showcase-drift 14s ease-in-out infinite alternate;
+  }
+  @media (prefers-reduced-motion: reduce){ .showcase::before{ animation:none; } }
+  @keyframes showcase-drift{ from{ transform:translate(0,0) scale(1); } to{ transform:translate(-3%,3%) scale(1.08); } }
+  .showcase > *{ position:relative; z-index:1; }
+  .showcase .bubble{ transition:opacity .35s ease; }
+  .showcase .bubble.swap{ opacity:0; }
 </style>
 </head>
 <body>
@@ -586,8 +670,20 @@
     <a href="/legal.html">Marco legal</a>
     <a href="/terminos.html">Términos</a>
     <a href="/privacidad.html">Privacidad</a>
+    <div class="site-nav-divider" aria-hidden="true"></div>
+    <button class="site-nav-action" id="site-nav-theme-btn" onclick="toggleThemeWash(event)">
+      <span class="ic" id="site-nav-theme-ic">🌙</span><span id="site-nav-theme-label">Apariencia: oscuro</span>
+    </button>
+    <button class="site-nav-action install-btn" id="site-nav-install-btn" onclick="promptInstall()" style="display:none">
+      <span class="ic">📲</span>Instalar app
+    </button>
+    <button class="site-nav-action site-nav-google" onclick="location.href='/auth/google'">
+      <svg width="16" height="16" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
+      Continuar con Google
+    </button>
   </nav>
 </header>
+<div class="site-nav-backdrop" id="site-nav-backdrop" onclick="toggleMobileNav()"></div>
 <div class="landing-wrap">
 
   <div class="brand-row"><div class="brand bridge-logo">Puente<em>digital</em></div></div>
@@ -597,6 +693,19 @@
     <div class="hero-copy">
       <h1 class="screen-title">Un tercer canal, no un árbitro.</h1>
       <p class="screen-sub">Para cuando hay que seguir coordinando con la otra persona —horarios, entregas, acuerdos— pero cada mensaje corre el riesgo de escalar. La IA no decide quién tiene razón: ayuda a que lo que se dice quede centrado en hechos.</p>
+      <div class="trust-row">
+        <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>Cifrado en tránsito</span>
+        <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/></svg>Gratis para empezar</span>
+        <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg>Sin tarjeta</span>
+        <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 12l2 2 4-4"/></svg>Hecho en Argentina</span>
+      </div>
+      <div class="showcase reveal" id="showcase">
+        <div class="eyebrow">Así se ve en la práctica</div>
+        <div class="bubble-label">Mensaje original</div>
+        <div class="bubble original" id="showcase-orig">Sos un desastre, siempre llegás tarde.</div>
+        <div class="bubble-label">Lo que sugiere la IA antes de enviarlo</div>
+        <div class="bubble suggested" id="showcase-sug">Llegaste 15 minutos tarde a la entrega de hoy. ¿Podemos coordinar un margen para la próxima vez?</div>
+      </div>
     </div>
     <div class="hero-demo" id="hero-demo">
       <div class="eyebrow">Probalo vos mismo — sin registrarte</div>

@@ -29,7 +29,7 @@
   }
   *{ box-sizing:border-box; margin:0; padding:0; }
   html,body{ height:100%; }
-  body{ background:var(--bg); color:var(--text); font-family:var(--sans); -webkit-font-smoothing:antialiased; min-height:100vh; display:flex; flex-direction:column; }
+  body{ background:var(--bg); color:var(--text); font-family:var(--sans); -webkit-font-smoothing:antialiased; min-height:100vh; display:flex; flex-direction:column; overflow-x:hidden; }
 
   html.theme-anim, html.theme-anim *{ transition:background-color .35s ease, color .35s ease, border-color .35s ease, box-shadow .35s ease !important; }
   .icon-btn{ background:none; border:1px solid var(--line); color:var(--text-dim); width:32px; height:32px; border-radius:8px; font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
@@ -56,9 +56,36 @@
   @media (max-width:639px){
     .hamburger-btn{ display:flex; }
     .site-header-actions{ order:1; }
-    .site-nav{ order:2; display:none; width:100%; flex-direction:column; align-items:flex-start; gap:2px; padding-top:10px; margin-top:10px; border-top:1px solid var(--line); }
-    .site-nav.open{ display:flex; }
-    .site-nav a{ padding:8px 2px; font-size:13.5px; width:100%; }
+    .site-header-actions .theme-btn{ display:none; }
+    /* backdrop-filter en .site-header crea containing block para hijos
+       position:fixed — rompe el drawer de acá abajo (ver comentario largo
+       en index.html). Se saca acá, queda solo el tinte de --header-bg. */
+    .site-header{ backdrop-filter:none; -webkit-backdrop-filter:none; }
+    .site-nav{
+      display:flex; flex-direction:column; align-items:stretch; gap:2px;
+      position:fixed; top:0; right:0; bottom:0; width:min(80vw,320px);
+      margin:0; padding:78px 20px 28px; border:none; border-left:1px solid var(--line);
+      background:var(--header-bg); -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
+      box-shadow:-10px 0 36px rgba(0,0,0,0.35);
+      transform:translateX(105%); transition:transform .32s cubic-bezier(.32,.72,.35,1);
+      z-index:45; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    }
+    .site-nav.open{ transform:translateX(0); }
+    .site-nav a{ padding:10px 4px; font-size:14px; width:100%; }
+    .site-nav-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:44; opacity:0; pointer-events:none; transition:opacity .3s ease; }
+    .site-nav-backdrop.open{ opacity:1; pointer-events:auto; }
+  }
+  .site-nav-divider{ display:none; }
+  .site-nav-action{ display:none; }
+  @media (max-width:639px){
+    .site-nav-divider{ display:block; height:1px; background:var(--line); margin:14px 2px; flex-shrink:0; }
+    .site-nav-action{
+      display:flex; align-items:center; gap:10px; width:100%;
+      background:none; border:1px solid var(--line); color:var(--text);
+      font-family:var(--sans); font-size:13.5px; padding:11px 12px; border-radius:9px;
+      cursor:pointer; margin-bottom:8px; text-align:left;
+    }
+    .site-nav-action .ic{ font-size:15px; flex-shrink:0; width:18px; text-align:center; }
   }
 
   .site-footer{ border-top:1px solid var(--line); padding:24px 20px 30px; margin-top:auto; }
@@ -91,8 +118,13 @@
     <a href="/legal.html">Marco legal</a>
     <a href="/terminos.html" class="active">Términos</a>
     <a href="/privacidad.html">Privacidad</a>
+    <div class="site-nav-divider" aria-hidden="true"></div>
+    <button class="site-nav-action" id="site-nav-theme-btn" onclick="toggleThemeWash(event)">
+      <span class="ic" id="site-nav-theme-ic">🌙</span><span id="site-nav-theme-label">Apariencia: oscuro</span>
+    </button>
   </nav>
 </header>
+<div class="site-nav-backdrop" id="site-nav-backdrop" onclick="toggleMobileNav()"></div>
 
 <div class="legal-wrap">
   <h1>Términos y condiciones</h1>
