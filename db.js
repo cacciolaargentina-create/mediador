@@ -283,4 +283,16 @@ function resolveGuest(token) {
   return user ? { channel, user } : null;
 }
 
-module.exports = { getDB, commit, resolveGuest };
+// snapshot completo y consistente de la base a un archivo aparte — usa
+// VACUUM INTO en vez de copiar el .sqlite a mano porque así no hay que
+// lidiar con el WAL/shm (VACUUM INTO arma un único archivo limpio,
+// autocontenido, ya consistente al momento en que se pide). Pensado para
+// el botón de "descargar backup" del panel de admin: a este volumen es
+// prácticamente instantáneo, y da un archivo .sqlite abrible con cualquier
+// cliente SQLite (o re-usable directo como SQLITE_PATH de otra instalación).
+function backupTo(destPath) {
+  if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
+  sqlite.exec(`VACUUM INTO '${destPath.replace(/'/g, "''")}'`);
+}
+
+module.exports = { getDB, commit, resolveGuest, backupTo };

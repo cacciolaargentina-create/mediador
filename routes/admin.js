@@ -11,8 +11,9 @@
 // segundo: cuántos hay, en qué canales, y una vía para que un admin los
 // asigne directamente a un canal sin depender de que las partes lo inviten.
 const express = require('express');
+const fs = require('fs');
 const { nanoid } = require('nanoid');
-const { getDB, commit } = require('../db');
+const { getDB, commit, backupTo } = require('../db');
 const { serializeMessage } = require('../serializers');
 const { isAdminUser, PROFESSIONAL_ROLE_LABELS } = require('../roles');
 const { logAudit } = require('../audit');
@@ -595,6 +596,29 @@ module.exports = function (io) {
     logAudit(db, { actorId: req.user.id, action: 'view_invite_link', channelCode: channel.code });
     await commit();
     res.json({ url, guestUrl });
+  });
+
+  // backup completo de la base (VACUUM INTO — ver db.js) como descarga
+  // directa. Pensado para exportar todo antes de escalar, migrar de
+  // servidor, o simplemente tener un respaldo manual con fecha cierta.
+  router.get('/backup', requireAdmin, async (req, res) => {
+    const db = getDB();
+    const os = require('os');
+    const path = require('path');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const tmpPath = path.join(os.tmpdir(), `puente-digital-backup-${stamp}.sqlite`);
+    try {
+      backupTo(tmpPath);
+      logAudit(db, { actorId: req.user.id, action: 'download_backup' });
+      await commit();
+      res.download(tmpPath, `puente-digital-${stamp}.sqlite`, (err) => {
+        fs.unlink(tmpPath, () => {});
+        if (err && !res.headersSent) res.status(500).json({ error: 'No se pudo generar el backup' });
+      });
+    } catch (e) {
+      console.error('Error generando backup:', e);
+      res.status(500).json({ error: 'No se pudo generar el backup' });
+    }
   });
 
   return router;

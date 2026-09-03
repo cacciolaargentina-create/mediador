@@ -154,6 +154,7 @@ function renderShell(){
           <button class="icon-btn theme-btn" onclick="toggleTheme()" title="${currentTheme() === 'light' ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro'}" aria-label="Cambiar tema">${currentTheme() === 'light' ? '🌙' : '☀️'}</button>
           ${STATE.me.avatar ? `<img src="${STATE.me.avatar}" alt="">` : ''}
           <span>${escapeHtml(STATE.me.name)}</span>
+          <a href="/api/admin/backup" title="Descarga un snapshot completo de la base de datos (.sqlite)">Descargar backup</a>
           <a href="/">Ir a la app</a>
           <button onclick="logout()">Salir</button>
         </div>
