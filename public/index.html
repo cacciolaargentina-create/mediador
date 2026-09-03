@@ -183,14 +183,13 @@
   .row-copy input{ flex:1; }
   .row-copy button{ flex-shrink:0; }
 
-  /* ---- "probalo vos mismo": sección propia después del hero — antes
-     vivía al lado del título en la misma pantalla; ahora el título
-     respira solo arriba y esto tiene su propio momento al bajar. Sin
-     min-height:100vh (mismo motivo que .hero-section — content corto +
-     viewport alto = bache de aire), solo padding generoso arriba/abajo
-     para que se sienta como su propia parada, no un resto pegado. ---- */
-  .try-section{ width:100%; display:flex; align-items:center; justify-content:center; box-sizing:border-box; padding:8px 22px 56px; }
-  .hero-demo{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:18px; width:100%; max-width:480px; }
+  /* ---- "probalo vos mismo" al lado de "así se ve en la práctica": el
+     demo interactivo y el showcase automático muestran la misma idea
+     (la reformulación) de dos formas — probarlo vos mismo vs. verlo
+     andar solo — así que van juntos, uno al lado del otro en pantallas
+     anchas, apilados en mobile. ---- */
+  .try-showcase-row{ display:flex; flex-direction:column; gap:16px; margin-bottom:24px; }
+  .hero-demo{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:18px; width:100%; max-width:480px; margin:0 auto; }
   .bubble{ max-width:82%; padding:10px 13px; border-radius:12px; font-size:14px; line-height:1.45; margin-bottom:8px; }
   .bubble.original{ background:var(--surface-2); border:1px solid var(--danger); color:var(--text-dim); text-decoration:line-through; text-decoration-color:var(--danger); text-decoration-thickness:1px; }
   .bubble.suggested{ background:var(--calm-dim); border:1px solid var(--calm); color:var(--text); margin-left:auto; }
@@ -643,6 +642,11 @@
        fijo (así puede crecer) y se reparte el espacio con flex. */
     .split-cards{ display:flex; gap:16px; align-items:flex-start; max-width:900px; margin:0 auto 24px; }
     .split-cards .split-card{ flex:1; max-width:none; margin:0; min-width:0; }
+
+    /* "Probalo vos mismo" + "Así se ve en la práctica" uno al lado del
+       otro — mismo criterio que .split-cards de acá arriba. */
+    .try-showcase-row{ flex-direction:row; align-items:flex-start; max-width:900px; margin-left:auto; margin-right:auto; }
+    .try-showcase-row .hero-demo, .try-showcase-row .showcase{ flex:1; max-width:none; margin:0; min-width:0; }
   }
 
   /* ---- Small phones: tighten up so nothing crowds ---- */
@@ -685,7 +689,7 @@
      Dos burbujas fijas en el DOM (mismo layout que .bubble de siempre) —
      el texto se cambia por JS cada pocos segundos con un fade corto; con
      reduced-motion, el fade se salta y el texto cambia directo. ---- */
-  .showcase{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:18px; position:relative; overflow:hidden; }
+  .showcase{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:18px; width:100%; max-width:480px; margin:0 auto; position:relative; overflow:hidden; }
   .showcase::before{
     content:''; position:absolute; inset:-40% -20%; z-index:0; pointer-events:none;
     background:radial-gradient(circle at 30% 20%, var(--calm-dim), transparent 55%),
@@ -855,23 +859,23 @@
   </div>
 </section>
 
-<section class="try-section">
-  <div class="hero-demo" id="hero-demo">
-    <div class="eyebrow">Probalo vos mismo — sin registrarte</div>
-    <textarea id="demo-input" placeholder="Escribí un mensaje como el que le mandarías a la otra persona…" style="min-height:70px; margin-bottom:10px;"></textarea>
-    <button class="ghost" style="width:100%;" onclick="runDemo()" id="demo-btn">Revisar mensaje</button>
-    <div id="demo-result" style="margin-top:12px;"></div>
-  </div>
-</section>
-
 <div class="landing-wrap">
 
-  <div class="showcase reveal" id="showcase" style="max-width:480px; margin:0 auto 24px;">
-    <div class="eyebrow">Así se ve en la práctica</div>
-    <div class="bubble-label">Mensaje original</div>
-    <div class="bubble original" id="showcase-orig">Sos un desastre, siempre llegás tarde.</div>
-    <div class="bubble-label">Lo que sugiere la IA antes de enviarlo</div>
-    <div class="bubble suggested" id="showcase-sug">Llegaste 15 minutos tarde a la entrega de hoy. ¿Podemos coordinar un margen para la próxima vez?</div>
+  <div class="try-showcase-row">
+    <div class="hero-demo" id="hero-demo">
+      <div class="eyebrow">Probalo vos mismo — sin registrarte</div>
+      <textarea id="demo-input" placeholder="Escribí un mensaje como el que le mandarías a la otra persona…" style="min-height:70px; margin-bottom:10px;"></textarea>
+      <button class="ghost" style="width:100%;" onclick="runDemo()" id="demo-btn">Revisar mensaje</button>
+      <div id="demo-result" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="showcase reveal" id="showcase">
+      <div class="eyebrow">Así se ve en la práctica</div>
+      <div class="bubble-label">Mensaje original</div>
+      <div class="bubble original" id="showcase-orig">Sos un desastre, siempre llegás tarde.</div>
+      <div class="bubble-label">Lo que sugiere la IA antes de enviarlo</div>
+      <div class="bubble suggested" id="showcase-sug">Llegaste 15 minutos tarde a la entrega de hoy. ¿Podemos coordinar un margen para la próxima vez?</div>
+    </div>
   </div>
 
   <div class="split-cards">
