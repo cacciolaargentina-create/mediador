@@ -151,6 +151,7 @@ function renderShell(){
           <div class="brand-sub">Panel de administración</div>
         </div>
         <div class="user-chip">
+          <button class="icon-btn theme-btn" onclick="toggleTheme()" title="${currentTheme() === 'light' ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro'}" aria-label="Cambiar tema">${currentTheme() === 'light' ? '🌙' : '☀️'}</button>
           ${STATE.me.avatar ? `<img src="${STATE.me.avatar}" alt="">` : ''}
           <span>${escapeHtml(STATE.me.name)}</span>
           <a href="/">Ir a la app</a>

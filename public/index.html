@@ -356,6 +356,28 @@
   .landing-wrap .cta-block{ margin:22px 0 8px; }
   .landing-wrap .cta-block .google-btn{ width:100%; justify-content:center; }
   .landing-wrap .cta-note{ text-align:center; font-size:11.5px; color:var(--text-faint); margin-top:9px; }
+
+  /* barra flotante de login con Google — acompaña al bajar, solo en mobile.
+     Empieza oculta; aparece con el scroll una vez que el CTA principal ya
+     quedó atrás, así siempre hay una forma rápida de entrar sin scrollear
+     de nuevo hacia arriba. background usa --header-bg (no un rgba fijo) para
+     que se vea bien en modo claro y oscuro, igual que el header sticky. */
+  .sticky-google-bar{
+    position: fixed; left:0; right:0; bottom:0; z-index:40;
+    padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px));
+    background: var(--header-bg);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    border-top: 1px solid var(--line);
+    opacity: 0; transform: translateY(100%); pointer-events: none;
+    transition: opacity .25s ease, transform .25s ease;
+  }
+  .sticky-google-bar.show{ opacity:1; transform: translateY(0); pointer-events:auto; }
+  .sticky-google-bar button{
+    width:100%; display:flex; align-items:center; justify-content:center; gap:8px;
+    padding:11px 16px; border-radius:8px; border:none; background:#fff; color:#1F1F1F;
+    font-family:var(--sans); font-size:13.5px; font-weight:600; cursor:pointer;
+  }
+  @media (min-width: 700px){ .sticky-google-bar{ display:none; } }
   .section-heading{ font-family:var(--serif); font-size:17px; font-weight:600; margin:36px 0 14px; }
 
   .steps{ display:flex; flex-direction:column; gap:14px; }
@@ -585,6 +607,26 @@
   </div>
 
   <div class="card reveal" style="max-width:480px; margin:0 auto 24px;">
+    <div class="eyebrow">Seguridad y privacidad</div>
+    <div style="display:flex; gap:10px; margin-bottom:14px;">
+      <span style="flex-shrink:0; color:var(--calm);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg></span>
+      <p style="font-size:13px;"><strong>Cifrado en tránsito</strong><br><span style="color:var(--text-dim)">Todo lo que escribís viaja cifrado (HTTPS) de tu dispositivo a nuestro servidor, como cualquier banco o app seria.</span></p>
+    </div>
+    <div style="display:flex; gap:10px; margin-bottom:14px;">
+      <span style="flex-shrink:0; color:var(--calm);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v11.5H8.5L4 19.5V4Z"/></svg></span>
+      <p style="font-size:13px;"><strong>Acceso restringido</strong><br><span style="color:var(--text-dim)">Solo ven el canal las personas que vos invitaste — ni siquiera un profesional puede entrar sin que se lo asignen explícitamente.</span></p>
+    </div>
+    <div style="display:flex; gap:10px; margin-bottom:14px;">
+      <span style="flex-shrink:0; color:var(--calm);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></span>
+      <p style="font-size:13px;"><strong>Transparencia</strong><br><span style="color:var(--text-dim)">Nunca cambiamos un mensaje en silencio. Todo lo que la IA sugiere, lo ves vos antes de decidir si lo mandás.</span></p>
+    </div>
+    <div style="display:flex; gap:10px;">
+      <span style="flex-shrink:0; color:var(--calm);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 7.5-1.9"/></svg></span>
+      <p style="font-size:13px;"><strong>Acceso revocable</strong><br><span style="color:var(--text-dim)">Si invitaste a un profesional a un caso y ya no hace falta que esté, su acceso se puede revocar — no queda ahí para siempre.</span></p>
+    </div>
+  </div>
+
+  <div class="card reveal" style="max-width:480px; margin:0 auto 24px;">
     <div class="eyebrow">Antes de que preguntes</div>
     <p style="font-size:13px; margin-bottom:12px;"><strong>¿Alguien lee mis mensajes?</strong><br><span style="color:var(--text-dim)">Pasan por un sistema automático antes de enviarse. Nadie de una oficina los mira.</span></p>
     <p style="font-size:13px;"><strong>¿Esto va a cambiar cómo me responde la otra persona?</strong><br><span style="color:var(--text-dim)">Eso no está en nuestras manos. Sí te ayuda a que lo que vos mandás no te juegue en contra.</span></p>
@@ -668,6 +710,13 @@
   </div>
 
   <p class="disclaimer">Esta app no reemplaza a un abogado, mediador, terapeuta o a la Justicia. En situaciones de violencia o riesgo, contactá a las autoridades correspondientes o a la línea 144 / 137.</p>
+
+  <div class="sticky-google-bar" id="sticky-google-bar">
+    <button onclick="location.href='/auth/google'">
+      <svg width="16" height="16" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
+      Continuar con Google
+    </button>
+  </div>
 
 </div>
 

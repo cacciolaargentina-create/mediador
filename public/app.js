@@ -510,6 +510,26 @@ function showLogin(){
     if(target) target.scrollIntoView();
   }
   initScrollReveal(); // recién ahora login-screen es visible — antes los elementos .reveal medían 0 y el observer nunca disparaba
+  setupStickyGoogleBar();
+}
+
+// Barra flotante de "Continuar con Google" — aparece recién después de
+// pasar el CTA principal (así no se pisan al ver la landing por primera
+// vez), y se mantiene visible mientras se sigue bajando, para no obligar a
+// volver a subir para loguearse. Solo vive dentro de #login-screen, así que
+// desaparece sola cuando esa pantalla se oculta (display:none la tapa).
+let stickyGoogleBarReady = false;
+function setupStickyGoogleBar(){
+  if(stickyGoogleBarReady) return; // evita atar el listener de nuevo cada vez que se llama showLogin()
+  stickyGoogleBarReady = true;
+  const bar = document.getElementById('sticky-google-bar');
+  const scroller = document.getElementById('login-screen'); // el que scrollea de verdad es #login-screen (overflow-y:auto), no window
+  const mainCta = document.querySelector('.cta-block');
+  if(!bar || !scroller) return;
+  const threshold = () => (mainCta ? mainCta.offsetTop + mainCta.offsetHeight : 400);
+  scroller.addEventListener('scroll', () => {
+    bar.classList.toggle('show', scroller.scrollTop > threshold());
+  }, { passive:true });
 }
 
 // ==================================================================

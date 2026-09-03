@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Puente Digital — Admin</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#12181A">
+<!-- corre ANTES de pintar: si no, quien eligió modo claro ve un flash oscuro
+     (el tema por default) hasta que site-common.js carga al final del body. -->
+<script>(function(){try{var t=localStorage.getItem('pd_theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -11,12 +18,24 @@
     --bg:#12181A; --surface:#1B2326; --surface-2:#222C30; --line:#2E393D;
     --text:#E7EDEC; --text-dim:#93A3A2; --text-faint:#5E6E6D;
     --calm:#5FA8A0; --calm-dim:#3E6E69; --warn:#D98C4A; --warn-dim:#5A4327;
-    --danger:#C4614A; --danger-dim:#4A2C23;
+    --danger:#C4614A; --danger-dim:#4A2C23; --header-bg:rgba(18,24,26,0.92);
     --serif:'Fraunces',serif; --sans:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
+  }
+  :root[data-theme="light"]{
+    --bg:#F4F7F6; --surface:#FFFFFF; --surface-2:#EBF0EF; --line:#DCE4E2;
+    --text:#16211F; --text-dim:#4C5C59; --text-faint:#7C8C89;
+    --calm:#2E7A72; --calm-dim:#D9EDE9; --warn:#A85A1D; --warn-dim:#FBE8D2;
+    --danger:#B23A24; --danger-dim:#F8DFD8; --header-bg:rgba(244,247,246,0.92);
   }
   *{ box-sizing:border-box; margin:0; padding:0; }
   html,body{ height:100%; }
   body{ background:var(--bg); color:var(--text); font-family:var(--sans); -webkit-font-smoothing:antialiased; }
+
+  html.theme-anim, html.theme-anim *{ transition:background-color .35s ease, color .35s ease, border-color .35s ease, box-shadow .35s ease !important; }
+  .icon-btn{ background:none; border:1px solid var(--line); color:var(--text-dim); width:30px; height:30px; border-radius:7px; font-size:14px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .icon-btn:hover{ border-color:var(--calm-dim); color:var(--text); }
+  @keyframes theme-icon-pop{ 0%{ transform:rotate(0) scale(1); } 45%{ transform:rotate(160deg) scale(0.65); } 100%{ transform:rotate(360deg) scale(1); } }
+  .icon-btn.animating{ animation:theme-icon-pop .5s ease; }
 
   .wrap{ max-width:1100px; margin:0 auto; padding:28px 20px 60px; }
   header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:26px; flex-wrap:wrap; gap:12px; }
@@ -96,6 +115,7 @@
 </head>
 <body>
 <div id="app"><div class="center-note">Cargando…</div></div>
+<script src="/site-common.js"></script>
 <script src="/admin.js"></script>
 </body>
 </html>

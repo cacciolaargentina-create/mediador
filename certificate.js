@@ -124,17 +124,29 @@ async function buildCertifiedReport({ channel, messages, events, nameOf, generat
     }
 
     // ---- pie legal + hash de integridad en cada página ----
+    // antes era texto plano pegado al borde inferior, sin ninguna separación
+    // del contenido — con una página corta quedaba mucho aire en blanco
+    // arriba y el aviso legal se sentía como algo olvidado, no como parte
+    // del diseño del documento. Ahora es un pie de página de verdad: línea
+    // separadora, texto centrado en cursiva (registro legal, no cuerpo del
+    // informe), y el hash en su propia línea monoespaciada abajo.
     const range = doc.bufferedPageRange();
     for (let i = range.start; i < range.start + range.count; i++) {
       doc.switchToPage(i);
-      const bottom = doc.page.height - 60;
-      doc.fontSize(7.5).fillColor('#777').font('Helvetica');
+      // el documento tiene margin:50 — todo el bloque del pie (línea +
+      // aviso de 2 renglones + hash) tiene que terminar ANTES de esa
+      // frontera. Si una parte cae dentro de la zona de margen, PDFKit
+      // corta o pagina el texto en silencio, sin avisar del error.
+      const bottom = doc.page.height - 95;
+      doc.moveTo(50, bottom).lineTo(545, bottom).lineWidth(0.5).strokeColor('#ccc').stroke();
+      doc.fontSize(7.5).fillColor('#777').font('Helvetica-Oblique');
       doc.text(
         'Documento generado automáticamente por Puente Digital a partir del registro digital del canal. ' +
         'No constituye una certificación notarial ni pericial, pero es un registro fiel del contenido del canal al momento de su generación.',
-        50, bottom, { width: 495, align: 'left' }
+        50, bottom + 8, { width: 495, align: 'center' }
       );
-      doc.text(`Hash de integridad (SHA-256): ${hash}`, 50, bottom + 20, { width: 495, align: 'left' });
+      doc.fontSize(7).font('Courier').fillColor('#999')
+        .text(`SHA-256: ${hash}`, 50, bottom + 34, { width: 495, align: 'center' });
     }
 
     doc.end();
