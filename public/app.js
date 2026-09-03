@@ -44,6 +44,35 @@ function otherPartyOf(info){
 
 function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function fmtTs(iso){ return new Date(iso).toLocaleString('es-AR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}); }
+// solo hora — para la hora chica dentro de cada burbuja del chat, donde
+// la fecha ya la da el separador de día (ver dateSeparatorLabel), no
+// hace falta repetirla mensaje por mensaje como sí hace fmtTs().
+function fmtTimeOnly(iso){ return new Date(iso).toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit' }); }
+// clave de día en horario local (no un slice de ISO en UTC) — dos
+// mensajes cerca de medianoche en zona horaria local tienen que quedar
+// en el separador correcto, no el de UTC.
+function dayKeyOf(ts){ const d = new Date(ts); return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate(); }
+function dateSeparatorLabel(ts){
+  const d = new Date(ts);
+  const now = new Date();
+  const startOfDay = (dt) => new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86400000);
+  if(diffDays === 0) return 'Hoy';
+  if(diffDays === 1) return 'Ayer';
+  const label = d.toLocaleDateString('es-AR', { day:'numeric', month:'long', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+// tildes estilo WhatsApp: un tilde gris = enviado, doble tilde celeste =
+// leído. No hay un estado "entregado" separado de "leído" en esta app
+// (solo se sabe si se mandó y si readAt quedó marcado), así que no se
+// inventa un tercer estado que no existe de verdad.
+function msgTicksHtml(mine, readAt){
+  if(!mine) return '';
+  if(readAt){
+    return `<span class="ticks read" title="Visto ${fmtTs(readAt)}"><svg viewBox="0 0 16 11" width="15" height="10.5" fill="none"><path d="M1 5.3L4.4 8.7L10.8 1.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.3 5.3L8.7 8.7L15.1 1.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
+  }
+  return `<span class="ticks" title="Enviado"><svg viewBox="0 0 12 11" width="11" height="10.5" fill="none"><path d="M1 5.3L4.4 8.7L10.8 1.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
+}
 function fmtRelative(ms){
   const diffMin = Math.round((Date.now() - ms) / 60000);
   if(diffMin < 1) return 'hace un momento';
@@ -1828,7 +1857,21 @@ function paintMessages(){
     log.appendChild(loadMoreBtn);
   }
 
+  // separador de fecha entre días, estilo WhatsApp ("Hoy" / "Ayer" / la
+  // fecha) — se compara contra el día del mensaje anterior a medida que
+  // se recorre la lista, ya ordenada por createdAt más arriba.
+  let lastDayKey = null;
+
   messages.forEach((m, idx)=>{
+    const thisDayKey = dayKeyOf(m.createdAt);
+    if(thisDayKey !== lastDayKey){
+      lastDayKey = thisDayKey;
+      const sep = document.createElement('div');
+      sep.className = 'date-sep';
+      sep.textContent = dateSeparatorLabel(m.createdAt);
+      log.appendChild(sep);
+    }
+
     if(!m.sender){
       if(m.eventId){
         log.appendChild(buildProposalCard(m));
@@ -1842,18 +1885,20 @@ function paintMessages(){
       const mine = m.sender.id === me.id;
       const div = document.createElement('div');
       div.className = 'msg ' + (mine ? 'me' : 'them');
-      let inner = escapeHtml(m.text);
+      let inner = '';
       // el nombre de quien escribió va siempre en los mensajes que no son
       // míos — antes solo se mostraba para mediador/a o estudio, y las
       // partes tenían que adivinar por "no es mío = es de la otra
       // persona"; eso deja de alcanzar en cuanto hay más de dos
       // participantes viendo el canal (invitado/a, mediador/a).
-      const senderLabel = !mine ? escapeHtml(m.sender.name) + ' · ' : '';
-      const readLabel = (mine && m.readAt) ? ' · Visto ' + fmtTs(m.readAt) : '';
-      inner += '<div class="meta">' + senderLabel + fmtTs(m.createdAt) + (m.flagged ? ' · marcado por el sistema' : '') + readLabel + '</div>';
+      if(!mine) inner += '<div class="msg-sender">' + escapeHtml(m.sender.name) + '</div>';
+      inner += '<div class="msg-text">' + escapeHtml(m.text) + '</div>';
       if(m.flagged && m.reason && mine){
         inner += '<div class="flag-note">' + escapeHtml(m.reason) + '</div>';
       }
+      // hora + tildes de leído, siempre pegadas abajo a la derecha de la
+      // burbuja — el patrón visual más reconocible de WhatsApp.
+      inner += '<div class="msg-meta"><span class="msg-time">' + fmtTimeOnly(m.createdAt) + (m.flagged ? ' · marcado' : '') + '</span>' + msgTicksHtml(mine, m.readAt) + '</div>';
       if(!mine && !isProfessional()){
         inner += '<div><button class="neutral-btn" onclick="requestNeutralReading(' + idx + ', this)">Ver lectura neutral</button></div>';
         inner += '<div class="neutral-box" id="neutral-' + idx + '" style="display:none"></div>';

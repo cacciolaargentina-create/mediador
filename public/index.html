@@ -28,6 +28,11 @@
     --calm:#5FA8A0; --calm-dim:#3E6E69; --warn:#D98C4A; --warn-dim:#5A4327;
     --danger:#C4614A; --danger-dim:#4A2C23; --header-bg:rgba(18,24,26,0.92);
     --serif:'Fraunces',serif; --sans:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
+    /* colores de burbuja del chat, aparte de --calm — WhatsApp usa un verde
+       propio para "mis" mensajes que no es el --calm de marca del resto de
+       la app; se separan en variables propias para poder pedir "que se vea
+       como WhatsApp" sin desteñir el resto de la interfaz. */
+    --wa-me-bg:#005c4b; --wa-them-bg:#202c33; --wa-tick-read:#53bdeb;
   }
   /* ---- modo claro: mismos tokens, otros valores — todo el resto de la hoja
      de estilos usa var(--...), así que alcanza con redefinirlos acá para
@@ -37,6 +42,7 @@
     --text:#16211F; --text-dim:#4C5C59; --text-faint:#7C8C89;
     --calm:#2E7A72; --calm-dim:#D9EDE9; --warn:#A85A1D; --warn-dim:#FBE8D2;
     --danger:#B23A24; --danger-dim:#F8DFD8; --header-bg:rgba(244,247,246,0.92);
+    --wa-me-bg:#d9fdd3; --wa-them-bg:#ffffff; --wa-tick-read:#53bdeb;
   }
   *{box-sizing:border-box; margin:0; padding:0;}
   html,body{height:100%;}
@@ -185,10 +191,26 @@
      el composer — medido a mano, no es un número al azar. */
   .chat-wrap{ display:flex; flex-direction:column; height:calc(100vh - 300px); min-height:320px; }
   .chat-log{ flex:1; overflow-y:auto; padding:4px 0 12px; display:flex; flex-direction:column; gap:8px; }
-  .msg{ max-width:80%; padding:9px 12px; border-radius:14px; font-size:14px; line-height:1.42; }
-  .msg.me{ background:var(--calm-dim); border:1px solid var(--calm); align-self:flex-end; border-bottom-right-radius:3px; }
-  .msg.them{ background:var(--surface); border:1px solid var(--line); align-self:flex-start; border-bottom-left-radius:3px; }
-  .msg .meta{ font-family:var(--mono); font-size:9.5px; color:var(--text-faint); margin-top:4px; }
+  /* ---- burbujas estilo WhatsApp: menos redondeadas que antes (7.5px, no
+     14px), sin borde (una sombra chica hace ese trabajo), esquina inferior
+     casi recta del lado de la "cola" — mismo truco liviano que ya usaba
+     esta hoja de estilos (border-radius en vez de un SVG de cola de
+     verdad), solo que ahora más marcado para leerse como WhatsApp a
+     primera vista. ---- */
+  .msg{ max-width:78%; padding:6px 9px; border-radius:7.5px; font-size:14.5px; line-height:1.4; box-shadow:0 1px 0.5px rgba(0,0,0,0.13); }
+  .msg.me{ background:var(--wa-me-bg); color:var(--text); align-self:flex-end; border-bottom-right-radius:2px; }
+  .msg.them{ background:var(--wa-them-bg); color:var(--text); align-self:flex-start; border-bottom-left-radius:2px; }
+  .msg-sender{ font-size:12.5px; font-weight:600; color:var(--calm); margin-bottom:1px; }
+  .msg-text{ white-space:pre-wrap; word-break:break-word; }
+  /* fila de hora + tildes, siempre pegada abajo a la derecha de la
+     burbuja — el patrón más reconocible de WhatsApp. Un solo tilde gris
+     = enviado; doble tilde celeste = leído. No existe un estado
+     "entregado" separado de "leído" en el modelo de datos de acá, así
+     que no se inventa uno — se muestra lo que realmente se sabe. */
+  .msg-meta{ display:flex; align-items:center; justify-content:flex-end; gap:3px; margin-top:2px; }
+  .msg-time{ font-size:10.5px; color:var(--text-faint); }
+  .ticks{ display:inline-flex; color:var(--text-faint); }
+  .ticks.read{ color:var(--wa-tick-read); }
 
   /* ---- pantalla de chat: el título "Chat con X" repite lo que ya dice la
      barra contextual de arriba ("Con X · CODIGO"), así que se oculta acá
@@ -210,6 +232,11 @@
   .case-summary-toggle summary::before{ content:'▸'; transition:transform .15s ease; }
   .case-summary-toggle[open] summary::before{ transform:rotate(90deg); }
   .case-summary-toggle .card:last-child{ margin-bottom:0; }
+  /* separador de fecha entre días — la píldora centrada de "HOY"/"AYER"
+     que agrupa los mensajes por día, igual que WhatsApp. Antes cada
+     mensaje solo tenía su propia hora, sin ningún corte visual entre un
+     día y el siguiente. */
+  .date-sep{ align-self:center; background:var(--surface-2); color:var(--text-dim); font-size:11px; font-family:var(--mono); text-transform:uppercase; letter-spacing:0.05em; padding:4px 13px; border-radius:8px; margin:8px 0 4px; }
   .msg.system{ align-self:center; background:none; border:1px dashed var(--line); color:var(--text-faint); font-size:11.5px; font-family:var(--mono); text-align:center; max-width:92%; }
   .msg.pattern{ border-color:var(--warn); color:var(--warn); }
   .msg .flag-note{ margin-top:6px; font-size:11.5px; color:var(--warn); border-top:1px solid var(--warn-dim); padding-top:5px; }
