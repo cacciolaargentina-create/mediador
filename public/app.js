@@ -2293,6 +2293,11 @@ function paintMessages(){
       // hora + tildes de leído, siempre pegadas abajo a la derecha de la
       // burbuja — el patrón visual más reconocible de WhatsApp.
       inner += '<div class="msg-meta"><span class="msg-time">' + fmtTimeOnly(m.createdAt) + (m.flagged ? ' · marcado' : '') + '</span>' + msgTicksHtml(mine, m.readAt) + '</div>';
+      // solo ocupa lugar si YA hay alguna reacción puesta — el botón para
+      // agregar una vive en la fila de acciones de abajo, no acá arriba
+      // (antes estaba siempre visible en TODOS los mensajes, y esa fila
+      // extra permanente era justamente lo que hacía sentir las burbujas
+      // más grandes de lo que deberían, tengan o no reacciones).
       inner += renderReactionsRow(m);
       const actionLinks = [];
       if(!mine && !isProfessional()){
@@ -2300,6 +2305,7 @@ function paintMessages(){
       }
       if(!isProfessional()){
         actionLinks.push('<button class="reply-btn" onclick="startReply(\'' + m.id + '\')">↩ Responder</button>');
+        actionLinks.push('<button class="reply-btn" onclick="toggleReactionPicker(\'' + m.id + '\', this)">😀 Reaccionar</button>');
       }
       // reportar: solo tiene sentido en un mensaje ajeno — la moderación
       // de IA ya filtra lo que uno mismo manda, esto es para lo que
@@ -2308,7 +2314,13 @@ function paintMessages(){
       if(!mine){
         actionLinks.push('<button class="reply-btn" onclick="toggleReportBox(\'' + m.id + '\', ' + idx + ')">🚩 Reportar</button>');
       }
-      if(actionLinks.length) inner += '<div style="display:flex; gap:12px; flex-wrap:wrap;">' + actionLinks.join('') + '</div>';
+      if(actionLinks.length){
+        inner += '<div class="msg-actions" style="display:flex; gap:12px; flex-wrap:wrap; position:relative;">' + actionLinks.join('')
+          + (isProfessional() ? '' : '<div class="reaction-picker" id="picker-' + m.id + '" style="display:none">'
+              + QUICK_REACTIONS.map(e => '<button onclick="toggleReaction(\'' + m.id + '\',\'' + e + '\'); closeReactionPickers();">' + e + '</button>').join('')
+              + '</div>')
+          + '</div>';
+      }
       if(!mine && !isProfessional()){
         inner += '<div class="neutral-box" id="neutral-' + idx + '" style="display:none"></div>';
       }
@@ -2331,21 +2343,19 @@ function paintMessages(){
 // ==================================================================
 const QUICK_REACTIONS = ['👍', '✅', '🙏', '❤️'];
 
+// solo las pastillas de lo que YA está reaccionado — el disparador para
+// agregar una vive en la fila de acciones ("😀 Reaccionar", junto a
+// Responder/Reportar), no acá, así un mensaje sin reacciones no arrastra
+// ninguna fila extra de UI permanente.
 function renderReactionsRow(m){
   const counts = (m.reactions && m.reactions.counts) || {};
   const mine = m.reactions ? m.reactions.mine : null;
-  const pills = Object.entries(counts).map(([emoji, n]) => `
-    <button class="reaction-pill ${emoji === mine ? 'mine' : ''}" onclick="toggleReaction('${m.id}','${emoji}')">${emoji} ${n}</button>
-  `).join('');
-  // un profesional mira reacciones, no las agrega — mismo criterio que ya
-  // se usa para el resto de las acciones que solo son de las partes.
-  const addBtn = isProfessional() ? '' : `<button class="reaction-add-btn" onclick="toggleReactionPicker('${m.id}', this)" aria-label="Agregar reacción">+</button>`;
-  const picker = isProfessional() ? '' : `
-    <div class="reaction-picker" id="picker-${m.id}" style="display:none">
-      ${QUICK_REACTIONS.map(e => `<button onclick="toggleReaction('${m.id}','${e}'); closeReactionPickers();">${e}</button>`).join('')}
-    </div>`;
-  if(!pills && !addBtn) return '';
-  return `<div class="reactions-row">${pills}${addBtn}${picker}</div>`;
+  const entries = Object.entries(counts);
+  if(!entries.length) return '';
+  const pills = entries.map(([emoji, n]) =>
+    `<button class="reaction-pill ${emoji === mine ? 'mine' : ''}" onclick="toggleReaction('${m.id}','${emoji}')">${emoji} ${n}</button>`
+  ).join('');
+  return `<div class="reactions-row">${pills}</div>`;
 }
 function closeReactionPickers(){
   document.querySelectorAll('.reaction-picker').forEach(p => p.style.display = 'none');
@@ -2365,7 +2375,7 @@ async function toggleReaction(messageId, emoji){
   }catch(e){ /* sin feedback especial — no es una acción crítica, se puede reintentar tocando de nuevo */ }
 }
 document.addEventListener('click', (e) => {
-  if(!e.target.closest('.reaction-picker') && !e.target.closest('.reaction-add-btn')) closeReactionPickers();
+  if(!e.target.closest('.reaction-picker') && !e.target.closest('.reply-btn')) closeReactionPickers();
 });
 
 // ==================================================================
