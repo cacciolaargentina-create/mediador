@@ -370,6 +370,7 @@ function renderProfessionalsSection(){
         <select id="assign-role" style="margin-bottom:10px;">
           <option value="mediador">Mediador/a</option>
           <option value="estudio">Estudio jurídico</option>
+          <option value="psicologo">Psicólogo/a o terapeuta</option>
         </select>
         <label class="field-label">Nombre o estudio a mostrar</label>
         <input type="text" id="assign-label" placeholder="Ej: Estudio Pérez &amp; Asoc." style="margin-bottom:12px;">

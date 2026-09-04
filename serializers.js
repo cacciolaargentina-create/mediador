@@ -59,6 +59,10 @@ function serializeMessage(m) {
     eventId: m.eventId || null,
     readAt: m.readAt || null,
     createdAt: m.createdAt,
+    // igual a createdAt salvo mientras está en su ventana de "deshacer
+    // envío" (ver messaging.js) — el frontend lo usa para saber si todavía
+    // se puede deshacer y para el conteo regresivo de la barra.
+    deliverAt: m.deliverAt || m.createdAt,
     replyTo: replyPreview(m.replyToId),
   };
 }

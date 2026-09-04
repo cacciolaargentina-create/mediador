@@ -7,7 +7,7 @@ const { analyzeMessage } = require('../moderation');
 const { askAssistant } = require('../assistant');
 const { publicUser, serializeChannel, serializeMessage, serializeEvent } = require('../serializers');
 const { buildCalendarFeed } = require('../ics');
-const { postMessage, postSystemMessage } = require('../messaging');
+const { postMessage, postSystemMessage, undoMessage } = require('../messaging');
 const { buildCertifiedReport, integrityHash, buildPlainContent } = require('../certificate');
 const { signHash, getPublicKeyPem, publicKeyFingerprint, signingConfigured } = require('../signing');
 const { isAdminUser, PROFESSIONAL_ROLE_LABELS } = require('../roles');
@@ -344,12 +344,19 @@ module.exports = function (io, presence) {
   // promete ser el registro completo).
   router.get('/:code/messages', requireAuth, requireMembership, (req, res) => {
     const db = getDB();
+    const now = Date.now();
+    // un mensaje todavía en su ventana de "deshacer" (deliverAt en el
+    // futuro) solo lo ve quien lo escribió — para cualquier otro, es como
+    // si no existiera todavía. Los de sistema (senderId null) no tienen
+    // remitente que lo pueda deshacer, así que siempre son visibles.
     const all = db.messages
       .filter((m) => m.channelId === req.channel.id)
+      .filter((m) => !m.senderId || m.senderId === req.user.id || (m.deliverAt || 0) <= now)
       .sort((a, b) => a.createdAt - b.createdAt);
+    const serialize = (m) => ({ ...serializeMessage(m), reactions: reactionsSummary(db, m.id, req.user.id) });
 
     if (req.query.all) {
-      return res.json({ messages: all.map(serializeMessage), hasMore: false });
+      return res.json({ messages: all.map(serialize), hasMore: false });
     }
 
     const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
@@ -358,7 +365,7 @@ module.exports = function (io, presence) {
 
     const page = filtered.slice(-limit);
     res.json({
-      messages: page.map(serializeMessage),
+      messages: page.map(serialize),
       hasMore: filtered.length > page.length,
     });
   });
@@ -383,11 +390,31 @@ module.exports = function (io, presence) {
   // guarda el mensaje final (original o reformulado, ya decidido por el usuario)
   // — lógica compartida con WhatsApp vía messaging.js: postMessage además
   // dispara la notificación agrupada hacia la otra parte cuando corresponde.
+  //
+  // deliverDelayMs=8000 le da a quien escribe una ventana de "deshacer
+  // envío" — el mensaje recién se transmite al resto del canal (y dispara
+  // notificación) si pasan 8 segundos sin que se cancele. Solo aplica a
+  // mensajes de la web; los que entran por WhatsApp (routes/whatsapp.js)
+  // no pasan por acá, se transmiten directo — ahí no hay "deshacer" posible
+  // una vez que ya se mandó por ese canal.
+  const UNDO_SEND_WINDOW_MS = 8000;
   router.post('/:code/messages', messageLimiter, requireAuth, requireMembership, requireParty, async (req, res) => {
     const { text, flagged, reason, replyToId } = req.body;
     if (!text || !text.trim()) return res.status(400).json({ error: 'Mensaje vacío' });
-    const out = await postMessage(io, req.channel, { senderId: req.user.id, text, flagged: !!flagged, reason: reason || null, replyToId: replyToId || null });
+    const out = await postMessage(io, req.channel, {
+      senderId: req.user.id, text, flagged: !!flagged, reason: reason || null,
+      replyToId: replyToId || null, deliverDelayMs: UNDO_SEND_WINDOW_MS,
+    });
     res.json(out);
+  });
+
+  // cancela un mensaje todavía dentro de su ventana de deshacer — si ya se
+  // transmitió, undoMessage devuelve false y acá se lo traduce en un 409
+  // (no es un error del cliente, solo llegó tarde).
+  router.post('/:code/messages/:id/undo', requireAuth, requireMembership, requireParty, async (req, res) => {
+    const ok = await undoMessage(req.channel, req.params.id, req.user.id);
+    if (!ok) return res.status(409).json({ error: 'Ya no se puede deshacer — o no es tuyo, o ya se envió.' });
+    res.json({ undone: true });
   });
 
   // marca de "leído" — solo la pone quien NO escribió el mensaje, y solo la
@@ -413,6 +440,68 @@ module.exports = function (io, presence) {
     await commit();
     io.to(req.channel.code).emit('message:read', { id: msg.id, readAt: msg.readAt });
     res.json({ id: msg.id, readAt: msg.readAt });
+  });
+
+  // como el de arriba pero para todos los pendientes de una — se usa al
+  // abrir el chat, en vez de una llamada por cada mensaje sin leer.
+  router.post('/:code/messages/read-all', requireAuth, requireMembership, async (req, res) => {
+    const db = getDB();
+    const now = Date.now();
+    // mismo criterio de reciprocidad que el endpoint de arriba.
+    if (req.user.readReceiptsEnabled === false) return res.json({ updated: 0 });
+    const toMark = db.messages.filter(
+      (m) => m.channelId === req.channel.id && m.senderId && m.senderId !== req.user.id && !m.readAt
+    );
+    if (!toMark.length) return res.json({ updated: 0 });
+    toMark.forEach((m) => { m.readAt = now; });
+    await commit();
+    toMark.forEach((m) => io.to(req.channel.code).emit('message:read', { id: m.id, readAt: now }));
+    res.json({ updated: toMark.length });
+  });
+
+  // ---------- reacciones rápidas ----------
+  // Un emoji sobre un mensaje, sin pasar por moderación — no es texto libre,
+  // no hay nada que reformular ahí. Como máximo una reacción activa por
+  // persona por mensaje: reaccionar de nuevo con otro emoji reemplaza la
+  // anterior, reaccionar con el mismo la saca (toggle).
+  const QUICK_REACTIONS = ['👍', '✅', '🙏', '❤️'];
+
+  function reactionsSummary(db, messageId, requesterId) {
+    const rows = db.messageReactions.filter((r) => r.messageId === messageId);
+    const counts = {};
+    let mine = null;
+    for (const r of rows) {
+      counts[r.emoji] = (counts[r.emoji] || 0) + 1;
+      if (r.userId === requesterId) mine = r.emoji;
+    }
+    return { counts, mine };
+  }
+
+  router.post('/:code/messages/:id/react', requireAuth, requireMembership, requireParty, async (req, res) => {
+    const { emoji } = req.body;
+    if (emoji && !QUICK_REACTIONS.includes(emoji)) {
+      return res.status(400).json({ error: 'Emoji no soportado' });
+    }
+    const db = getDB();
+    const msg = db.messages.find((m) => m.id === req.params.id && m.channelId === req.channel.id);
+    if (!msg) return res.status(404).json({ error: 'Mensaje no encontrado' });
+
+    const existingIdx = db.messageReactions.findIndex((r) => r.messageId === msg.id && r.userId === req.user.id);
+    const existing = existingIdx >= 0 ? db.messageReactions[existingIdx] : null;
+
+    if (existing && (!emoji || existing.emoji === emoji)) {
+      // sin emoji nuevo, o el mismo que ya tenía puesto -> se saca (toggle)
+      db.messageReactions.splice(existingIdx, 1);
+    } else if (existing) {
+      existing.emoji = emoji; // cambia de una reacción a otra
+    } else if (emoji) {
+      db.messageReactions.push({ id: nanoid(), messageId: msg.id, channelId: req.channel.id, userId: req.user.id, emoji, createdAt: Date.now() });
+    }
+    await commit();
+
+    const summary = reactionsSummary(db, msg.id, req.user.id);
+    io.to(req.channel.code).emit('reaction:update', { messageId: msg.id, counts: summary.counts });
+    res.json(summary);
   });
 
   // ---------- reportar un mensaje ----------

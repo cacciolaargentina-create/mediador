@@ -27,7 +27,8 @@ const EMPTY_DB = {
   users: [],       // { id, googleId, email, name, avatar, phone, guest, createdAt }
   channels: [],    // { id, code, guestToken, calendarToken, professionalInvites, status:'abierto'|'en_proceso'|'cerrado', createdAt }
   members: [],     // { id, channelId, userId, role, label, webAccessToken, assignedByAdmin, lastSeenAt, joinedAt }
-  messages: [],    // { id, channelId, senderId|null, text, flagged, reason, pattern, eventId, readAt, createdAt, replyToId } — replyToId: id de otro mensaje del mismo canal al que este responde (hilo estilo WhatsApp), null si no es una respuesta
+  messages: [],    // { id, channelId, senderId|null, text, flagged, reason, pattern, eventId, readAt, createdAt, replyToId, deliverAt } — replyToId: id de otro mensaje del mismo canal al que este responde (hilo estilo WhatsApp), null si no es una respuesta. deliverAt: cuándo se transmite/notifica de verdad — igual a createdAt salvo durante la ventana de "deshacer envío" (ver messaging.js), mientras está en el futuro el mensaje solo lo ve quien lo escribió
+  messageReactions: [], // { id, messageId, channelId, userId, emoji, createdAt } — una reacción activa por usuario por mensaje; reaccionar de nuevo con otro emoji reemplaza la anterior, reaccionar con el mismo la saca
   events: [],      // { id, channelId, date, detail, requestedBy(userId), status, seriesId, swapId, respondedAt, reminderSentAt, createdAt, kind:'entrega'|'vencimiento' } — kind default 'entrega' (coparentalidad, ver requireParty) en eventos viejos; 'vencimiento' es un plazo procesal (ver POST .../events/vencimiento), se crea directo en 'confirmado', sin flujo de propuesta/rechazo
   caseNotes: [],   // { id, channelId, authorId, text, createdAt } — solo visibles para mediador/a, estudio jurídico o admin del canal, nunca para las partes A/B
   expenses: [],    // { id, channelId, amount, description, requestedBy(userId), status:'pendiente'|'confirmado'|'rechazado', respondedAt, eventId, createdAt }
@@ -62,7 +63,10 @@ CREATE TABLE IF NOT EXISTS members (
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY, channelId TEXT, senderId TEXT, text TEXT,
   flagged INTEGER DEFAULT 0, reason TEXT, pattern INTEGER DEFAULT 0,
-  eventId TEXT, readAt INTEGER, createdAt INTEGER, replyToId TEXT
+  eventId TEXT, readAt INTEGER, createdAt INTEGER, replyToId TEXT, deliverAt INTEGER
+);
+CREATE TABLE IF NOT EXISTS message_reactions (
+  id TEXT PRIMARY KEY, messageId TEXT, channelId TEXT, userId TEXT, emoji TEXT, createdAt INTEGER
 );
 CREATE TABLE IF NOT EXISTS events (
   id TEXT PRIMARY KEY, channelId TEXT, date TEXT, detail TEXT, requestedBy TEXT,
@@ -114,6 +118,7 @@ CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(use
 CREATE INDEX IF NOT EXISTS idx_members_channel ON members(channelId);
 CREATE INDEX IF NOT EXISTS idx_members_user ON members(userId);
 CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channelId);
+CREATE INDEX IF NOT EXISTS idx_message_reactions_message ON message_reactions(messageId);
 CREATE INDEX IF NOT EXISTS idx_events_channel ON events(channelId);
 CREATE INDEX IF NOT EXISTS idx_case_notes_channel ON case_notes(channelId);
 CREATE INDEX IF NOT EXISTS idx_expenses_channel ON expenses(channelId);
@@ -143,7 +148,7 @@ const TABLE_NAMES = {
   whatsappLog: 'whatsapp_log', whatsappWebhookRaw: 'whatsapp_webhook_raw',
   certifiedExports: 'certified_exports', professionalApplications: 'professional_applications',
   moderationStats: 'moderation_stats', pushSubscriptions: 'push_subscriptions',
-  reports: 'reports',
+  reports: 'reports', messageReactions: 'message_reactions',
 };
 
 function rowToRecord(collectionKey, row) {
@@ -192,7 +197,7 @@ function openDb() {
   ensureColumns(sqlite, 'events', { swapId: 'TEXT', kind: "TEXT DEFAULT 'entrega'" });
   ensureColumns(sqlite, 'expenses', { eventId: 'TEXT' });
   ensureColumns(sqlite, 'certified_exports', { signature: 'TEXT' });
-  ensureColumns(sqlite, 'messages', { replyToId: 'TEXT' });
+  ensureColumns(sqlite, 'messages', { replyToId: 'TEXT', deliverAt: 'INTEGER' });
   if (isNew && fs.existsSync(LEGACY_JSON_PATH)) {
     migrateFromJson(sqlite, LEGACY_JSON_PATH);
   }

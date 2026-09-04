@@ -692,12 +692,13 @@ async function renderProSignup(){
   const rejected = status.application && status.application.status === 'rejected';
 
   el.innerHTML = `
-    ${rejected ? `<p class="screen-sub" style="color:var(--warn)">Tu solicitud anterior no fue aprobada. Podés volver a intentarlo o escribirnos por WhatsApp.</p>` : `<p class="screen-sub">Registrate como mediador/a o estudio jurídico. Un administrador revisa la solicitud antes de habilitarla.</p>`}
+    ${rejected ? `<p class="screen-sub" style="color:var(--warn)">Tu solicitud anterior no fue aprobada. Podés volver a intentarlo o escribirnos por WhatsApp.</p>` : `<p class="screen-sub">Registrate como mediador/a, estudio jurídico o psicólogo/a. Un administrador revisa la solicitud antes de habilitarla.</p>`}
     <div class="card" style="text-align:left; margin-top:10px;">
       <label class="field-label">Rol</label>
       <select id="pro-signup-role" style="margin-bottom:10px;">
         <option value="mediador">Mediador/a</option>
         <option value="estudio">Estudio jurídico</option>
+        <option value="psicologo">Psicólogo/a o terapeuta</option>
       </select>
       <label class="field-label">Nombre del estudio u organización</label>
       <input type="text" id="pro-signup-org" placeholder="Ej: Estudio Pérez &amp; Asoc." style="margin-bottom:12px;">
@@ -1233,7 +1234,14 @@ function connectSocket(){
   });
   socket.on('disconnect', ()=> showConnectionBanner());
   socket.on('message:new', (m)=>{
-    if(!messages.find(x=>x.id===m.id)) messages.push(m);
+    // si ya lo teníamos (el remitente lo ve optimista desde que lo mandó,
+    // con deliverAt en el futuro mientras dura la ventana de "deshacer"),
+    // se actualiza en el lugar en vez de duplicarlo — esto es lo que hace
+    // que la barra de "deshacer" desaparezca sola apenas se confirma el
+    // envío, sin esperar al repintado de respaldo (ver paintMessages).
+    const existing = messages.find(x=>x.id===m.id);
+    if(existing) Object.assign(existing, m);
+    else messages.push(m);
     // si Historial ya cargó su registro completo, se mantiene al día en
     // vivo también — si todavía no se cargó ni hace falta tocarlo acá,
     // se carga fresco (con este mensaje ya incluido) la próxima vez que se abra.
@@ -1242,6 +1250,10 @@ function connectSocket(){
     if(currentScreen === 'historial') renderHistorial();
     updateNavBadges();
     notifyIncoming(m);
+  });
+  socket.on('reaction:update', ({messageId, counts})=>{
+    const m = messages.find(x=>x.id===messageId);
+    if(m){ m.reactions = { counts, mine: (m.reactions && m.reactions.mine) || null }; if(currentScreen==='chat') paintMessages(); }
   });
   socket.on('event:new', (e)=>{ upsertEvent(e); if(currentScreen==='calendario') renderCalendario(); if(currentScreen==='chat') paintMessages(); updateNavBadges(); });
   socket.on('event:update', (e)=>{ upsertEvent(e); if(currentScreen==='calendario') renderCalendario(); if(currentScreen==='chat') paintMessages(); updateNavBadges(); });
@@ -1712,12 +1724,13 @@ function renderConfig(){
     ${guestCard}
     ${membersCard}
     <div class="card">
-      <div class="eyebrow">Invitar a un mediador/a o estudio jurídico</div>
+      <div class="eyebrow">Invitar a un mediador/a, estudio jurídico o psicólogo/a</div>
       <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:12px;">Va a poder ver mensajes, calendario e historial, pero no escribir en tu nombre ni de la otra parte. Su ingreso nunca queda oculto — siempre va a estar en "Integrantes del canal" acá abajo y en el estado de arriba del chat — pero podés elegir si además se anuncia con un mensaje en medio de la conversación.</p>
       <label class="field-label">Rol</label>
       <select id="pro-invite-role" style="margin-bottom:6px;" onchange="document.getElementById('pro-invite-role-hint').style.display = this.value==='estudio' ? 'block' : 'none';">
         <option value="mediador">Mediador/a</option>
         <option value="estudio">Estudio jurídico</option>
+        <option value="psicologo">Psicólogo/a o terapeuta</option>
       </select>
       <p class="field-hint" id="pro-invite-role-hint" style="display:none; margin-bottom:10px;">Este link se puede compartir con más de un abogado/a del estudio — cada uno se suma con su propia cuenta de Google, no hace falta generar una invitación por persona.</p>
       <label class="field-label">Nombre o estudio</label>
@@ -2233,9 +2246,27 @@ function paintMessages(){
       }
     } else {
       const mine = m.sender.id === me.id;
+      const pending = mine && m.deliverAt > Date.now(); // todavía dentro de la ventana de "deshacer envío"
       const div = document.createElement('div');
-      div.className = 'msg ' + (mine ? 'me' : 'them');
+      div.className = 'msg ' + (mine ? 'me' : 'them') + (pending ? ' pending-send' : '');
       div.dataset.msgId = m.id; // usado por scrollToMessage() al tocar una cita
+
+      if(pending){
+        const remainingMs = m.deliverAt - Date.now();
+        div.innerHTML = `
+          <div class="msg-text">${escapeHtml(m.text)}</div>
+          <div class="undo-bar-track"><div class="undo-bar-fill" style="animation-duration:${remainingMs}ms"></div></div>
+          <button class="undo-send-btn" onclick="undoSend('${m.id}', this)">Deshacer envío</button>
+        `;
+        log.appendChild(div);
+        // por si el socket de finalización no llega o tarda — a los pocos
+        // instantes de que venza la ventana, se repinta igual y pasa a
+        // verse como un mensaje normal (message:new ya lo actualiza en el
+        // lugar apenas llega, esto es solo la red de seguridad).
+        setTimeout(() => { if(currentScreen === 'chat') paintMessages(); }, remainingMs + 150);
+        return; // el resto del bloque (meta, reacciones, etc.) no aplica mientras está pendiente
+      }
+
       let inner = '';
       // el nombre de quien escribió va siempre en los mensajes que no son
       // míos — antes solo se mostraba para mediador/a o estudio, y las
@@ -2262,6 +2293,7 @@ function paintMessages(){
       // hora + tildes de leído, siempre pegadas abajo a la derecha de la
       // burbuja — el patrón visual más reconocible de WhatsApp.
       inner += '<div class="msg-meta"><span class="msg-time">' + fmtTimeOnly(m.createdAt) + (m.flagged ? ' · marcado' : '') + '</span>' + msgTicksHtml(mine, m.readAt) + '</div>';
+      inner += renderReactionsRow(m);
       const actionLinks = [];
       if(!mine && !isProfessional()){
         actionLinks.push('<button class="neutral-btn" onclick="requestNeutralReading(' + idx + ', this)">Ver lectura neutral</button>');
@@ -2291,18 +2323,87 @@ function paintMessages(){
   markVisibleMessagesRead();
 }
 
+// ==================================================================
+// REACCIONES RÁPIDAS — un emoji sobre un mensaje, sin pasar por
+// moderación (no es texto libre). Como máximo una reacción activa por
+// persona por mensaje del lado del server (ver .../messages/:id/react);
+// acá solo se pinta lo que ya viene resuelto en m.reactions.
+// ==================================================================
+const QUICK_REACTIONS = ['👍', '✅', '🙏', '❤️'];
+
+function renderReactionsRow(m){
+  const counts = (m.reactions && m.reactions.counts) || {};
+  const mine = m.reactions ? m.reactions.mine : null;
+  const pills = Object.entries(counts).map(([emoji, n]) => `
+    <button class="reaction-pill ${emoji === mine ? 'mine' : ''}" onclick="toggleReaction('${m.id}','${emoji}')">${emoji} ${n}</button>
+  `).join('');
+  // un profesional mira reacciones, no las agrega — mismo criterio que ya
+  // se usa para el resto de las acciones que solo son de las partes.
+  const addBtn = isProfessional() ? '' : `<button class="reaction-add-btn" onclick="toggleReactionPicker('${m.id}', this)" aria-label="Agregar reacción">+</button>`;
+  const picker = isProfessional() ? '' : `
+    <div class="reaction-picker" id="picker-${m.id}" style="display:none">
+      ${QUICK_REACTIONS.map(e => `<button onclick="toggleReaction('${m.id}','${e}'); closeReactionPickers();">${e}</button>`).join('')}
+    </div>`;
+  if(!pills && !addBtn) return '';
+  return `<div class="reactions-row">${pills}${addBtn}${picker}</div>`;
+}
+function closeReactionPickers(){
+  document.querySelectorAll('.reaction-picker').forEach(p => p.style.display = 'none');
+}
+function toggleReactionPicker(messageId, btn){
+  const picker = document.getElementById('picker-' + messageId);
+  const wasOpen = picker && picker.style.display !== 'none';
+  closeReactionPickers();
+  if(picker) picker.style.display = wasOpen ? 'none' : 'flex';
+}
+async function toggleReaction(messageId, emoji){
+  closeReactionPickers();
+  try{
+    const summary = await api(`/api/channels/${channelCode}/messages/${messageId}/react`, { method:'POST', body: JSON.stringify({ emoji }) });
+    const m = messages.find(x => x.id === messageId);
+    if(m){ m.reactions = summary; paintMessages(); }
+  }catch(e){ /* sin feedback especial — no es una acción crítica, se puede reintentar tocando de nuevo */ }
+}
+document.addEventListener('click', (e) => {
+  if(!e.target.closest('.reaction-picker') && !e.target.closest('.reaction-add-btn')) closeReactionPickers();
+});
+
+// ==================================================================
+// DESHACER ENVÍO — ventana de 8s (ver UNDO_SEND_WINDOW_MS en
+// routes/channels.js) durante la que un mensaje mío está guardado pero
+// todavía no se transmitió a nadie más. undoMessage lo borra del todo
+// server-side; si ya venció la ventana, el POST devuelve 409 y acá se
+// repinta sin más — deja de verse "pendiente" y pasa a ser un mensaje
+// entregado normal, no es un error que haga falta explicarle a nadie.
+// ==================================================================
+async function undoSend(id, btn){
+  if(btn) btn.disabled = true;
+  try{
+    await api(`/api/channels/${channelCode}/messages/${id}/undo`, { method:'POST' });
+    messages = messages.filter(m => m.id !== id);
+    paintMessages();
+  }catch(e){
+    paintMessages();
+  }
+}
+
 // marca como "visto" los mensajes ajenos que todavía no lo tenían — solo
 // entre las partes (A/B); un mediador/a o estudio que mira el canal no
 // genera un "visto" en nombre de nadie.
 function markVisibleMessagesRead(){
   if(isProfessional()) return;
-  messages
-    .filter(m => m.sender && m.sender.id !== me.id && !m.readAt)
-    .forEach(m => {
-      api(`/api/channels/${channelCode}/messages/${m.id}/read`, { method:'POST' })
-        .then(res => { m.readAt = res.readAt; })
-        .catch(()=>{ /* si falla, se reintenta la próxima vez que se pinte el chat */ });
-    });
+  const pending = messages.filter(m => m.sender && m.sender.id !== me.id && !m.readAt);
+  if(!pending.length) return;
+  // un solo POST para todos los pendientes en vez de uno por mensaje —
+  // con historial largo, abrir el chat antes disparaba una llamada por
+  // cada mensaje sin leer. El readAt exacto de cada uno igual le llega al
+  // remitente por el socket 'message:read'; acá al lector no se le
+  // muestra ese timestamp (msgTicksHtml solo lo usa en los mensajes
+  // propios), así que un optimista Date.now() local alcanza.
+  const now = Date.now();
+  api(`/api/channels/${channelCode}/messages/read-all`, { method:'POST' })
+    .then(() => { pending.forEach(m => { m.readAt = now; }); })
+    .catch(()=>{ /* si falla, se reintenta la próxima vez que se pinte el chat */ });
 }
 
 async function requestNeutralReading(idx, btn){

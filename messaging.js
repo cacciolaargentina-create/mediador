@@ -13,12 +13,28 @@ const { sendPushToUser } = require('./push');
 const PATTERN_THRESHOLD = 3;
 const NOTIFY_DEBOUNCE_MS = Number(process.env.WHATSAPP_NOTIFY_DEBOUNCE_MS) || 2 * 60 * 1000;
 
+// timers de mensajes en la ventana de "deshacer envío" — si se cancela a
+// tiempo, se borra el timer y el mensaje nunca se llega a transmitir. En
+// memoria nomás: la ventana es de segundos, no vale la pena persistirlo —
+// si el server se reinicia justo en ese margen, en el peor caso el mensaje
+// queda pendiente de transmitir un poco más tarde de lo ideal, nunca se
+// pierde (deliverAt ya quedó guardado en la fila).
+const pendingDeliveries = new Map(); // messageId -> timeout handle
+
 // guarda el mensaje final (original o reformulado, ya decidido) de una
 // parte del canal — reemplaza la lógica que antes vivía inline en
 // POST /:code/messages de routes/channels.js.
-async function postMessage(io, channel, { senderId, text, flagged, reason, replyToId }) {
+//
+// deliverDelayMs > 0 habilita "deshacer envío": el mensaje se guarda ya
+// mismo (así el propio remitente lo puede ver optimista en su pantalla),
+// pero no se transmite al resto del canal ni dispara notificación hasta
+// que pase la ventana — tiempo durante el cual se puede cancelar con
+// undoMessage() y nunca le llega nada a nadie más (ver el filtro en
+// GET /:code/messages, que oculta estos mensajes a cualquiera que no sea
+// el propio remitente mientras deliverAt siga en el futuro).
+async function postMessage(io, channel, { senderId, text, flagged, reason, replyToId, deliverDelayMs = 0 }) {
   const db = getDB();
-  const sender = db.users.find((u) => u.id === senderId);
+  const now = Date.now();
   // el mensaje citado tiene que ser del MISMO canal — si no, alguien podría
   // mandar el id de un mensaje de otro canal (uno en el que ni siquiera es
   // miembro) y colar su contenido como cita acá.
@@ -27,41 +43,83 @@ async function postMessage(io, channel, { senderId, text, flagged, reason, reply
     : null;
   const msg = {
     id: nanoid(), channelId: channel.id, senderId,
-    text, flagged: !!flagged, reason: reason || null, pattern: false, readAt: null, createdAt: Date.now(),
-    replyToId: validReplyToId,
+    text, flagged: !!flagged, reason: reason || null, pattern: false, readAt: null, createdAt: now,
+    replyToId: validReplyToId, deliverAt: deliverDelayMs > 0 ? now + deliverDelayMs : now,
   };
   db.messages.push(msg);
+  await commit();
+
+  if (deliverDelayMs > 0) {
+    const timer = setTimeout(() => {
+      pendingDeliveries.delete(msg.id);
+      finalizeMessage(io, channel, msg.id).catch((err) => console.error('Error finalizando mensaje con demora:', err));
+    }, deliverDelayMs);
+    pendingDeliveries.set(msg.id, timer);
+    return serializeMessage(msg); // el remitente lo recibe igual, para mostrarlo optimista con el botón de deshacer
+  }
+
+  await finalizeMessage(io, channel, msg.id);
+  return serializeMessage(msg);
+}
+
+// hace lo que antes hacía postMessage de una — transmitir por socket,
+// disparar la alerta de patrón si corresponde, y notificar a la otra
+// parte. Separado en su propia función porque ahora puede pasar en el
+// momento de guardar (sin demora) o más tarde (con demora, al vencer la
+// ventana de deshacer).
+async function finalizeMessage(io, channel, messageId) {
+  const db = getDB();
+  const msg = db.messages.find((m) => m.id === messageId);
+  if (!msg) return; // se deshizo antes de que venciera la ventana — nunca se transmite nada
+  const sender = db.users.find((u) => u.id === msg.senderId);
 
   let patternMsg = null;
-  if (flagged) {
+  if (msg.flagged) {
     const flaggedCount = db.messages.filter(
-      (m) => m.channelId === channel.id && m.senderId === senderId && m.flagged
+      (m) => m.channelId === channel.id && m.senderId === msg.senderId && m.flagged
     ).length;
     if (flaggedCount > 0 && flaggedCount % PATTERN_THRESHOLD === 0) {
       patternMsg = {
         id: nanoid(), channelId: channel.id, senderId: null,
         text: `Se detectaron ${flaggedCount} mensajes marcados por el sistema enviados por ${sender ? sender.name : 'un miembro'} en este canal.`,
-        flagged: false, reason: null, pattern: true, createdAt: Date.now(),
+        flagged: false, reason: null, pattern: true, deliverAt: Date.now(), createdAt: Date.now(),
       };
       db.messages.push(patternMsg);
+      await commit();
     }
   }
-  await commit();
 
-  const out = serializeMessage(msg);
-  io.to(channel.code).emit('message:new', out);
+  io.to(channel.code).emit('message:new', serializeMessage(msg));
   if (patternMsg) io.to(channel.code).emit('message:new', serializeMessage(patternMsg));
 
   // avisar a la OTRA parte del canal, sin importar si este mensaje vino de
   // la web o de WhatsApp — la notificación es para quien no lo escribió.
   const otherMember = db.members.find(
-    (m) => m.channelId === channel.id && m.userId && m.userId !== senderId && (m.role === 'A' || m.role === 'B')
+    (m) => m.channelId === channel.id && m.userId && m.userId !== msg.senderId && (m.role === 'A' || m.role === 'B')
   );
   if (otherMember && sender) {
     scheduleNotification(io, channel, { toUserId: otherMember.userId, fromName: sender.name });
   }
+}
 
-  return out;
+// cancela un mensaje todavía dentro de su ventana de "deshacer" — solo
+// quien lo escribió puede deshacerlo, y solo mientras no se haya
+// transmitido todavía (deliverAt en el futuro). Devuelve false sin tirar
+// error si ya es tarde — no es un caso de uso incorrecto, solo perdió la
+// ventana, y el frontend ya debería haber ocultado el botón para ese caso.
+async function undoMessage(channel, messageId, requesterId) {
+  const db = getDB();
+  const idx = db.messages.findIndex((m) => m.id === messageId && m.channelId === channel.id);
+  if (idx === -1) return false;
+  const msg = db.messages[idx];
+  if (msg.senderId !== requesterId) return false;
+  if (msg.deliverAt <= Date.now()) return false; // ya se transmitió, es tarde para deshacer
+
+  const timer = pendingDeliveries.get(messageId);
+  if (timer) { clearTimeout(timer); pendingDeliveries.delete(messageId); }
+  db.messages.splice(idx, 1);
+  await commit();
+  return true;
 }
 
 // mensaje de sistema (sender: null) — join de canal, confirmaciones de
@@ -69,9 +127,10 @@ async function postMessage(io, channel, { senderId, text, flagged, reason, reply
 // de una parte, es un aviso administrativo que ya se ve por socket).
 async function postSystemMessage(io, channel, text) {
   const db = getDB();
+  const now = Date.now();
   const msg = {
     id: nanoid(), channelId: channel.id, senderId: null,
-    text, flagged: false, reason: null, pattern: false, createdAt: Date.now(),
+    text, flagged: false, reason: null, pattern: false, deliverAt: now, createdAt: now,
   };
   db.messages.push(msg);
   await commit();
@@ -175,4 +234,4 @@ function getPendingNotificationsCount() {
   return pendingNotifications.size;
 }
 
-module.exports = { postMessage, postSystemMessage, scheduleNotification, accessLinkFor, getPendingNotificationsCount };
+module.exports = { postMessage, postSystemMessage, undoMessage, scheduleNotification, accessLinkFor, getPendingNotificationsCount };
