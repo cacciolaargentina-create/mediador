@@ -2352,15 +2352,6 @@ function renderAttachPreview(){
 // HTML del adjunto YA enviado, dentro de una burbuja — foto (miniatura
 // clickeable, abre el tamaño real en otra pestaña) o tarjeta de archivo
 // para el resto (hoy solo PDF). La URL la arma el frontend con
-// colita de la burbuja, estilo WhatsApp — un <svg> real (viewBox +
-// width + height propios, sin ambigüedad de escala) en vez de un mask de
-// CSS, que dependía de que el navegador adivinara bien un tamaño "auto"
-// y en la práctica se veía mal. El color lo pone currentColor + la clase
-// .me/.them (ver CSS), así no hay que repetir el valor acá.
-function msgTailSvg(mine){
-  return `<svg class="msg-tail ${mine ? 'me' : 'them'}" viewBox="0 0 8 13" width="8" height="13" aria-hidden="true"><path fill="currentColor" d="M1.533,3.568L8,12.193V1H2.812C1.042,1,0.474,2.156,1.533,3.568z"/></svg>`;
-}
-
 // channelCode + filename — el server no la manda armada (ver
 // serializeMessage en serializers.js).
 function attachmentHtml(att){
@@ -2949,7 +2940,6 @@ function paintMessages(){
       if(pending){
         const remainingMs = m.deliverAt - Date.now();
         div.innerHTML = `
-          ${msgTailSvg(mine)}
           ${attachmentHtml(m.attachment)}
           ${m.text ? '<div class="msg-text">' + escapeHtml(m.text) + '</div>' : ''}
           <div class="undo-bar-track"><div class="undo-bar-fill" style="animation-duration:${remainingMs}ms"></div></div>
@@ -2964,7 +2954,7 @@ function paintMessages(){
         return; // el resto del bloque (meta, reacciones, etc.) no aplica mientras está pendiente
       }
 
-      let inner = msgTailSvg(mine);
+      let inner = '';
       // el nombre de quien escribió va siempre en los mensajes que no son
       // míos — antes solo se mostraba para mediador/a o estudio, y las
       // partes tenían que adivinar por "no es mío = es de la otra
