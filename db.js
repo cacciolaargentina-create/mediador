@@ -64,7 +64,8 @@ CREATE TABLE IF NOT EXISTS members (
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY, channelId TEXT, senderId TEXT, text TEXT,
   flagged INTEGER DEFAULT 0, reason TEXT, pattern INTEGER DEFAULT 0,
-  eventId TEXT, readAt INTEGER, createdAt INTEGER, replyToId TEXT, deliverAt INTEGER
+  eventId TEXT, readAt INTEGER, createdAt INTEGER, replyToId TEXT, deliverAt INTEGER,
+  attachment TEXT
 );
 CREATE TABLE IF NOT EXISTS message_reactions (
   id TEXT PRIMARY KEY, messageId TEXT, channelId TEXT, userId TEXT, emoji TEXT, createdAt INTEGER
@@ -141,6 +142,7 @@ const JSON_COLUMNS = {
   auditLog: ['meta'],
   users: ['aiUsage'],
   pushSubscriptions: ['keys'],
+  messages: ['attachment'],
 };
 const TABLE_NAMES = {
   users: 'users', channels: 'channels', members: 'members', messages: 'messages',
@@ -198,7 +200,7 @@ function openDb() {
   ensureColumns(sqlite, 'events', { swapId: 'TEXT', kind: "TEXT DEFAULT 'entrega'" });
   ensureColumns(sqlite, 'expenses', { eventId: 'TEXT' });
   ensureColumns(sqlite, 'certified_exports', { signature: 'TEXT' });
-  ensureColumns(sqlite, 'messages', { replyToId: 'TEXT', deliverAt: 'INTEGER' });
+  ensureColumns(sqlite, 'messages', { replyToId: 'TEXT', deliverAt: 'INTEGER', attachment: 'TEXT' });
   if (isNew && fs.existsSync(LEGACY_JSON_PATH)) {
     migrateFromJson(sqlite, LEGACY_JSON_PATH);
   }

@@ -1,6 +1,9 @@
 // routes/channels.js
+const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const multer = require('multer');
 const { nanoid, customAlphabet } = require('nanoid');
 const { getDB, commit } = require('../db');
 const { analyzeMessage } = require('../moderation');
@@ -62,6 +65,38 @@ const assistantLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Demasiadas preguntas al asistente — esperá unos minutos.' },
 });
+
+// ---------- adjuntos (fotos y PDF) en el chat ----------
+// Guardados en disco, fuera del repo (ver .gitignore) — el nombre en disco
+// es un id random + la extensión real, nunca el nombre que subió la
+// persona (ese se guarda aparte como metadata, ver ATTACHMENT_MIME_EXT):
+// así dos adjuntos no pueden pisarse entre sí ni el nombre original queda
+// expuesto en la URL.
+const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
+fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+const ATTACHMENT_MIME_EXT = {
+  'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif',
+  'application/pdf': '.pdf',
+};
+const attachmentUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+    filename: (req, file, cb) => cb(null, nanoid() + (ATTACHMENT_MIME_EXT[file.mimetype] || '')),
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB — generoso para una foto de celular, corta algo pensado para floodear el disco
+  // cb(new Error(...)) en vez de cb(null, false) — así el rechazo llega
+  // como un `err` real a la ruta de abajo y se le puede devolver un
+  // mensaje claro ("tiene que ser foto o PDF"), no el genérico "falta el
+  // archivo" que multer deja cuando lo descarta en silencio.
+  fileFilter: (req, file, cb) => {
+    if (!ATTACHMENT_MIME_EXT[file.mimetype]) return cb(new Error('Tipo de archivo no permitido'));
+    cb(null, true);
+  },
+}).single('file');
+// nombre en disco: siempre <nanoid><.ext de la lista de arriba> — nunca
+// puede traer "/" ni "..", pero igual se valida antes de tocar el
+// filesystem por si algún día cambia cómo se generan.
+const ATTACHMENT_FILENAME_RE = /^[A-Za-z0-9_-]+\.(jpg|png|webp|gif|pdf)$/;
 
 module.exports = function (io, presence) {
   const router = express.Router();
@@ -200,7 +235,11 @@ module.exports = function (io, presence) {
           .reduce((latest, x) => (!latest || x.createdAt > latest.createdAt ? x : latest), null);
         const lastMessagePreview = lastRealMessage
           ? {
-              text: lastRealMessage.text.length > 60 ? lastRealMessage.text.slice(0, 60) + '…' : lastRealMessage.text,
+              // texto vacío + adjunto = mensaje solo-foto/PDF, sin epígrafe.
+              text: (() => {
+                const label = lastRealMessage.text || (lastRealMessage.attachment ? '📎 Archivo adjunto' : '');
+                return label.length > 60 ? label.slice(0, 60) + '…' : label;
+              })(),
               isMine: lastRealMessage.senderId === req.user.id,
             }
           : null;
@@ -480,6 +519,68 @@ module.exports = function (io, presence) {
       replyToId: replyToId || null, deliverDelayMs: UNDO_SEND_WINDOW_MS,
     });
     res.json(out);
+  });
+
+  // ---------- adjuntar foto o PDF ----------
+  // Mismo flujo de "deshacer envío" que un mensaje de texto (ver arriba) —
+  // el archivo ya queda guardado en disco apenas se sube (no hay forma
+  // barata de "deshacer" un multipart a mitad de camino), pero el MENSAJE
+  // que lo referencia respeta la misma ventana de 8s, así que para el resto
+  // del canal el adjunto es igual de invisible que un texto pendiente
+  // mientras no se confirme (ver el filtro de GET /:code/messages y el de
+  // GET /:code/attachments/:filename más abajo). A propósito NO pasa por
+  // moderación de IA — esa análisis es sobre texto libre, no sobre el
+  // contenido de una imagen o PDF; el texto opcional que va como epígrafe
+  // tampoco se modera hoy (limitación conocida, no un descuido).
+  router.post('/:code/messages/attachment', messageLimiter, requireAuth, requireMembership, requireParty, (req, res) => {
+    attachmentUpload(req, res, async (err) => {
+      if (err) {
+        return res.status(400).json({
+          error: err.code === 'LIMIT_FILE_SIZE'
+            ? 'El archivo pesa más de 10MB.'
+            : 'No se pudo subir el archivo — tiene que ser una foto (jpg, png, webp, gif) o un PDF.',
+        });
+      }
+      if (!req.file) return res.status(400).json({ error: 'Falta el archivo' });
+      const text = (req.body.text || '').trim();
+      const replyToId = req.body.replyToId || null;
+      try {
+        const out = await postMessage(io, req.channel, {
+          senderId: req.user.id, text, flagged: false, reason: null,
+          replyToId, deliverDelayMs: UNDO_SEND_WINDOW_MS,
+          attachment: {
+            filename: req.file.filename,
+            originalName: req.file.originalname,
+            mimetype: req.file.mimetype,
+            size: req.file.size,
+          },
+        });
+        res.json(out);
+      } catch (e) {
+        fs.unlink(req.file.path, () => {}); // no dejar el archivo huérfano si falló guardar el mensaje
+        console.error('Error guardando mensaje con adjunto:', e);
+        res.status(500).json({ error: 'No se pudo enviar el archivo.' });
+      }
+    });
+  });
+
+  // sirve el archivo de un adjunto — solo a miembros del canal, y con el
+  // mismo criterio de privacidad que GET /:code/messages: mientras el
+  // mensaje que lo trae siga dentro de su ventana de "deshacer envío", nadie
+  // más que quien lo mandó puede verlo (ni pedirlo por la URL directo).
+  router.get('/:code/attachments/:filename', requireAuth, requireMembership, (req, res) => {
+    const { filename } = req.params;
+    if (!ATTACHMENT_FILENAME_RE.test(filename)) return res.status(400).json({ error: 'Nombre de archivo inválido' });
+    const db = getDB();
+    const msg = db.messages.find((m) => m.channelId === req.channel.id && m.attachment && m.attachment.filename === filename);
+    if (!msg) return res.status(404).json({ error: 'Archivo no encontrado' });
+    if (msg.senderId && msg.senderId !== req.user.id && (msg.deliverAt || 0) > Date.now()) {
+      return res.status(404).json({ error: 'Archivo no encontrado' });
+    }
+    res.setHeader('Content-Type', msg.attachment.mimetype || 'application/octet-stream');
+    res.sendFile(path.join(UPLOADS_DIR, filename), (err) => {
+      if (err && !res.headersSent) res.status(404).json({ error: 'Archivo no encontrado' });
+    });
   });
 
   // cancela un mensaje todavía dentro de su ventana de deshacer — si ya se

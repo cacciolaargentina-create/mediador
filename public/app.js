@@ -23,6 +23,7 @@ let peerPresence = {};   // userId -> { online: bool, lastSeenAt: ms|null } — 
 let peerTyping = {};     // userId -> bool
 let typingActive = false; // si ya avisé "estoy escribiendo" en esta tanda, para no emitir en cada tecla
 let replyingTo = null;   // { id, senderName, text } del mensaje al que se está por responder, o null — se limpia al enviar o cancelar
+let pendingAttachmentFile = null; // File elegido para adjuntar, esperando que se confirme el envío (o se cancele)
 
 // Ejemplos de mensajes centrados en hechos para situaciones típicas de
 // coparentalidad — un empujón hacia comunicación estructurada en vez de
@@ -106,6 +107,20 @@ async function api(path, opts={}){
   const resp = await fetch(path, { ...opts, headers, credentials: 'same-origin' });
   let data = null;
   try{ data = await resp.json(); }catch(e){ /* respuestas de export son texto plano */ }
+  if(!resp.ok) throw { status: resp.status, ...( data || {} ) };
+  return data;
+}
+
+// como api(), pero para subir un archivo (multipart) — sin fijar
+// Content-Type a mano: el navegador arma el boundary del multipart solo
+// cuando el body es un FormData, y si lo pisamos acá se rompe el parseo
+// del lado del server.
+async function apiUpload(path, formData){
+  const headers = {};
+  if(isGuest && guestToken) headers['X-Guest-Token'] = guestToken;
+  const resp = await fetch(path, { method:'POST', body: formData, headers, credentials: 'same-origin' });
+  let data = null;
+  try{ data = await resp.json(); }catch(e){ /* sin body de respuesta */ }
   if(!resp.ok) throw { status: resp.status, ...( data || {} ) };
   return data;
 }
@@ -1173,8 +1188,11 @@ function notifyIncoming(m){
   if(shouldPopup && Notification.permission === 'granted'){
     try{
       const senderName = m.sender ? m.sender.name : 'Puente Digital';
+      const body = m.text
+        ? (m.text.length > 120 ? m.text.slice(0, 120) + '…' : m.text)
+        : (m.attachment ? '📎 Envió un archivo' : '');
       const n = new Notification(senderName + ' · Puente Digital', {
-        body: m.text.length > 120 ? m.text.slice(0, 120) + '…' : m.text,
+        body,
         tag: 'puente-digital-chat',
       });
       n.onclick = () => { window.focus(); goTo('chat'); n.close(); };
@@ -2195,7 +2213,12 @@ function renderChatScreen(){
       </div>
       <div id="propose-form-slot"></div>
       <div id="reply-preview-slot"></div>
+      <div id="attach-preview-slot"></div>
       <div class="composer">
+        <input type="file" id="attach-input" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" style="display:none" onchange="onAttachFileChosen(event)">
+        <button class="attach-circle" id="attach-btn" onclick="document.getElementById('attach-input').click()" title="Adjuntar foto o PDF" aria-label="Adjuntar foto o PDF">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a5.5 5.5 0 0 1-7.78-7.78l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a1.5 1.5 0 0 1-2.12-2.12l8.49-8.48"/></svg>
+        </button>
         <textarea id="chat-input" placeholder="Escribí tu mensaje..." rows="1"></textarea>
         <button class="send-circle" id="send-btn" onclick="handleSend()" title="Enviar" aria-label="Enviar">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
@@ -2215,6 +2238,7 @@ function renderChatScreen(){
     </div>
   `;
   replyingTo = null; // pantalla de chat recién montada — no arrastrar una respuesta pendiente de antes
+  pendingAttachmentFile = null;
   renderReplyPreview();
   const chatInput = document.getElementById('chat-input');
   if(chatInput){
@@ -2245,10 +2269,13 @@ function renderChatScreen(){
 function startReply(msgId){
   const m = messages.find(x => x.id === msgId);
   if(!m || !m.sender) return; // no se responde a mensajes de sistema
+  // un mensaje solo-adjunto (sin epígrafe) tiene text: '' — la franja de
+  // "Respondiendo a…" necesita mostrar algo igual, no una línea vacía.
+  const label = m.text || (m.attachment ? '📎 Archivo adjunto' : '');
   replyingTo = {
     id: m.id,
     senderName: m.sender.id === me.id ? 'Vos' : m.sender.name,
-    text: m.text.length > 140 ? m.text.slice(0, 140) + '…' : m.text,
+    text: label.length > 140 ? label.slice(0, 140) + '…' : label,
   };
   renderReplyPreview();
   const input = document.getElementById('chat-input');
@@ -2270,6 +2297,61 @@ function renderReplyPreview(){
       <button class="rp-close" onclick="cancelReply()" aria-label="Cancelar respuesta">✕</button>
     </div>
   ` : '';
+}
+
+// ==================================================================
+// ADJUNTAR FOTO O PDF — el archivo elegido queda "en espera" (igual que
+// replyingTo) hasta que se manda; el texto de la caja pasa a ser el
+// epígrafe opcional. A propósito NO pasa por moderación de IA (ver el
+// comentario en routes/channels.js) — límite conocido, no hay hoy forma
+// barata de "leer" el contenido de una foto o PDF antes de mandarlo.
+// ==================================================================
+const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
+const ATTACHMENT_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'];
+function formatFileSize(bytes){
+  if(bytes < 1024) return bytes + ' B';
+  if(bytes < 1024*1024) return Math.round(bytes/1024) + ' KB';
+  return (bytes/(1024*1024)).toFixed(1) + ' MB';
+}
+function onAttachFileChosen(event){
+  const file = event.target.files[0];
+  event.target.value = ''; // permite elegir el mismo archivo dos veces seguidas sin que 'change' deje de disparar
+  if(!file) return;
+  if(file.size > ATTACHMENT_MAX_BYTES){ alert('El archivo pesa más de 10MB — elegí uno más chico.'); return; }
+  if(!ATTACHMENT_ALLOWED_TYPES.includes(file.type)){ alert('Solo se pueden adjuntar fotos (jpg, png, webp, gif) o un PDF.'); return; }
+  pendingAttachmentFile = file;
+  renderAttachPreview();
+  document.getElementById('chat-input')?.focus();
+}
+function cancelAttachment(){
+  pendingAttachmentFile = null;
+  renderAttachPreview();
+}
+function renderAttachPreview(){
+  const slot = document.getElementById('attach-preview-slot');
+  if(!slot) return;
+  slot.innerHTML = pendingAttachmentFile ? `
+    <div class="reply-preview-bar">
+      <div class="rp-body">
+        <div class="rp-name">📎 Adjuntar archivo</div>
+        <div class="rp-text">${escapeHtml(pendingAttachmentFile.name)} · ${formatFileSize(pendingAttachmentFile.size)}</div>
+      </div>
+      <button class="rp-close" onclick="cancelAttachment()" aria-label="Cancelar adjunto">✕</button>
+    </div>
+  ` : '';
+}
+// HTML del adjunto YA enviado, dentro de una burbuja — foto (miniatura
+// clickeable, abre el tamaño real en otra pestaña) o tarjeta de archivo
+// para el resto (hoy solo PDF). La URL la arma el frontend con
+// channelCode + filename — el server no la manda armada (ver
+// serializeMessage en serializers.js).
+function attachmentHtml(att){
+  if(!att) return '';
+  const url = `/api/channels/${channelCode}/attachments/${att.filename}`;
+  if(att.mimetype && att.mimetype.startsWith('image/')){
+    return `<a href="${url}" target="_blank" rel="noopener" class="msg-attachment-img-link"><img src="${url}" alt="${escapeHtml(att.originalName || 'imagen adjunta')}" class="msg-attachment-img" loading="lazy"></a>`;
+  }
+  return `<a href="${url}" target="_blank" rel="noopener" class="msg-attachment-file">📄 <span class="fname">${escapeHtml(att.originalName || 'archivo')}</span><span class="fsize">${formatFileSize(att.size || 0)}</span></a>`;
 }
 // salto al mensaje original al tocar la cita — solo funciona si todavía
 // está en la ventana de mensajes ya cargada (el chat no trae todo el
@@ -2811,7 +2893,8 @@ function paintMessages(){
       if(pending){
         const remainingMs = m.deliverAt - Date.now();
         div.innerHTML = `
-          <div class="msg-text">${escapeHtml(m.text)}</div>
+          ${attachmentHtml(m.attachment)}
+          ${m.text ? '<div class="msg-text">' + escapeHtml(m.text) + '</div>' : ''}
           <div class="undo-bar-track"><div class="undo-bar-fill" style="animation-duration:${remainingMs}ms"></div></div>
           <button class="undo-send-btn" onclick="undoSend('${m.id}', this)">Deshacer envío</button>
         `;
@@ -2843,7 +2926,10 @@ function paintMessages(){
           + '<span class="qtext">' + escapeHtml(m.replyTo.text) + '</span>'
           + '</button>';
       }
-      inner += '<div class="msg-text">' + escapeHtml(m.text) + '</div>';
+      inner += attachmentHtml(m.attachment);
+      if(m.text){
+        inner += '<div class="msg-text">' + escapeHtml(m.text) + '</div>';
+      }
       if(m.flagged && m.reason && mine){
         inner += '<div class="flag-note">' + escapeHtml(m.reason) + '</div>';
       }
@@ -3062,6 +3148,7 @@ async function submitReport(msgId, idx){
 }
 
 async function handleSend(){
+  if(pendingAttachmentFile) return handleSendAttachment(); // el "enviar" es el mismo botón — la caja de texto pasa a ser el epígrafe
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
   if(!text) return;
@@ -3146,6 +3233,42 @@ async function commitMessage(text, flagged, reason){
     }
     alert('No se pudo enviar el mensaje — lo dejamos de nuevo en el cuadro de texto. Revisá tu conexión e intentá de nuevo.');
   }
+}
+
+// no pasa por /analyze — ver el comentario de más arriba (ADJUNTAR FOTO O
+// PDF) y el de la ruta en routes/channels.js sobre por qué el adjunto (y
+// su epígrafe) no se moderan hoy.
+async function handleSendAttachment(){
+  const input = document.getElementById('chat-input');
+  const file = pendingAttachmentFile;
+  const caption = input.value.trim();
+  const replyToId = replyingTo ? replyingTo.id : null;
+  const sendBtn = document.getElementById('send-btn');
+  sendBtn.disabled = true;
+  input.value = '';
+  autoGrowTextarea(input);
+  pendingAttachmentFile = null;
+  renderAttachPreview();
+  if(typingActive && socket){ typingActive = false; socket.emit('typing:stop', channelCode); }
+
+  const formData = new FormData();
+  formData.append('file', file);
+  if(caption) formData.append('text', caption);
+  if(replyToId) formData.append('replyToId', replyToId);
+
+  try{
+    const msg = await apiUpload(`/api/channels/${channelCode}/messages/attachment`, formData);
+    if(!messages.find(m=>m.id===msg.id)) messages.push(msg);
+    replyingTo = null; renderReplyPreview();
+    paintMessages();
+    seen.msgCount = messages.length;
+  }catch(e){
+    // a diferencia de commitMessage(), no hay forma barata de devolver el
+    // archivo elegido a la cajita de adjunto — se avisa y que la persona
+    // lo vuelva a elegir si quiere reintentar.
+    alert(e.error || 'No se pudo enviar el archivo. Probá de nuevo.');
+  }
+  sendBtn.disabled = false;
 }
 
 // ==================================================================

@@ -581,6 +581,25 @@
   }
   .composer button.send-circle:disabled{ opacity:0.4; cursor:not-allowed; }
   .composer button.send-circle svg{ width:18px; height:18px; }
+  .composer button.attach-circle{
+    flex-shrink:0; width:38px; height:38px; border-radius:50%; padding:0; margin-bottom:2px;
+    display:flex; align-items:center; justify-content:center;
+    background:none; border:1px solid var(--line); color:var(--text-dim); cursor:pointer;
+  }
+  .composer button.attach-circle:hover{ border-color:var(--calm-dim); color:var(--text); }
+  .composer button.attach-circle svg{ width:16px; height:16px; }
+
+  /* ===== adjuntos dentro de la burbuja — foto (miniatura clickeable) o
+     tarjeta de archivo para el resto (hoy solo PDF). ===== */
+  .msg-attachment-img-link{ display:block; margin-bottom:4px; }
+  .msg-attachment-img{ display:block; width:100%; max-width:230px; max-height:280px; object-fit:cover; border-radius:8px; cursor:pointer; }
+  .msg-attachment-file{
+    display:flex; align-items:center; gap:8px; background:rgba(0,0,0,0.15); border-radius:8px;
+    padding:8px 10px; margin-bottom:4px; text-decoration:none; color:inherit; max-width:230px;
+  }
+  :root[data-theme="light"] .msg-attachment-file{ background:rgba(0,0,0,0.06); }
+  .msg-attachment-file .fname{ font-size:13px; font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .msg-attachment-file .fsize{ font-size:11px; color:var(--text-faint); flex-shrink:0; }
 
   .quick-templates{ display:flex; flex-wrap:wrap; gap:6px; padding-top:10px; }
   .chip{ background:var(--surface-2); border:1px solid var(--line); color:var(--text-dim); font-size:11px; padding:6px 10px; border-radius:14px; cursor:pointer; font-family:var(--sans); white-space:nowrap; }

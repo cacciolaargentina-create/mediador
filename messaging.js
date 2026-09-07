@@ -3,12 +3,16 @@
 // WhatsApp (routes/whatsapp.js) — un mensaje se guarda y transmite igual
 // sin importar por dónde entró.
 
+const path = require('path');
+const fs = require('fs');
 const { nanoid } = require('nanoid');
 const { getDB, commit } = require('./db');
 const { serializeMessage } = require('./serializers');
 const { sendText } = require('./whatsapp');
 const { logWhatsappEvent } = require('./whatsappLog');
 const { sendPushToUser } = require('./push');
+
+const UPLOADS_DIR = path.join(__dirname, 'uploads'); // mismo directorio que usa routes/channels.js para guardar los adjuntos
 
 const PATTERN_THRESHOLD = 3;
 const NOTIFY_DEBOUNCE_MS = Number(process.env.WHATSAPP_NOTIFY_DEBOUNCE_MS) || 2 * 60 * 1000;
@@ -32,7 +36,7 @@ const pendingDeliveries = new Map(); // messageId -> timeout handle
 // undoMessage() y nunca le llega nada a nadie más (ver el filtro en
 // GET /:code/messages, que oculta estos mensajes a cualquiera que no sea
 // el propio remitente mientras deliverAt siga en el futuro).
-async function postMessage(io, channel, { senderId, text, flagged, reason, replyToId, deliverDelayMs = 0 }) {
+async function postMessage(io, channel, { senderId, text, flagged, reason, replyToId, deliverDelayMs = 0, attachment = null }) {
   const db = getDB();
   const now = Date.now();
   // el mensaje citado tiene que ser del MISMO canal — si no, alguien podría
@@ -45,6 +49,7 @@ async function postMessage(io, channel, { senderId, text, flagged, reason, reply
     id: nanoid(), channelId: channel.id, senderId,
     text, flagged: !!flagged, reason: reason || null, pattern: false, readAt: null, createdAt: now,
     replyToId: validReplyToId, deliverAt: deliverDelayMs > 0 ? now + deliverDelayMs : now,
+    attachment: attachment || null,
   };
   db.messages.push(msg);
   await commit();
@@ -117,6 +122,13 @@ async function undoMessage(channel, messageId, requesterId) {
 
   const timer = pendingDeliveries.get(messageId);
   if (timer) { clearTimeout(timer); pendingDeliveries.delete(messageId); }
+  // si tenía un adjunto, el archivo en disco ya se había guardado al subirlo
+  // (no hay forma de "deshacer" un multipart a mitad de camino) — al
+  // deshacer el mensaje que lo referencia, se borra también, si no queda
+  // huérfano para siempre.
+  if (msg.attachment && msg.attachment.filename) {
+    fs.unlink(path.join(UPLOADS_DIR, msg.attachment.filename), () => {}); // si ya no está, no importa
+  }
   db.messages.splice(idx, 1);
   await commit();
   return true;

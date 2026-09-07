@@ -45,10 +45,13 @@ function replyPreview(replyToId) {
   const db = getDB();
   const original = db.messages.find((m) => m.id === replyToId);
   if (!original) return null; // pudo haberse ido de la ventana cargada, o (raro) borrado — no rompe el mensaje que lo cita
+  // un mensaje solo-adjunto (sin epígrafe) tiene text: '' — la cita
+  // necesita mostrar algo igual, no una línea vacía.
+  const label = original.text || (original.attachment ? '📎 Archivo adjunto' : '');
   return {
     id: original.id,
     senderName: original.senderId ? (publicUser(original.senderId)?.name || null) : (original.pattern ? 'Alerta de patrón' : 'Sistema'),
-    text: original.text.length > 140 ? original.text.slice(0, 140) + '…' : original.text,
+    text: label.length > 140 ? label.slice(0, 140) + '…' : label,
   };
 }
 
@@ -68,6 +71,10 @@ function serializeMessage(m) {
     // se puede deshacer y para el conteo regresivo de la barra.
     deliverAt: m.deliverAt || m.createdAt,
     replyTo: replyPreview(m.replyToId),
+    // metadata del archivo — el frontend arma la URL con channelCode +
+    // filename (GET /:code/attachments/:filename), no se manda acá
+    // (evita tener que pasar el código del canal hasta este helper).
+    attachment: m.attachment || null,
   };
 }
 

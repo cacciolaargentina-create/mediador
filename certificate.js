@@ -14,6 +14,14 @@ function fmt(ts) {
   return new Date(ts).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
+// el informe deja constancia de que hubo un adjunto (nombre y tipo), pero
+// no incrusta la imagen/PDF en sí — este documento es un registro de TEXTO
+// de la conversación, no un contenedor de archivos.
+function attachmentNote(m) {
+  if (!m.attachment) return '';
+  return ` [Adjunto: ${m.attachment.originalName || 'archivo'}]`;
+}
+
 // mismo contenido plano que el .txt existente — es la base sobre la que se
 // calcula el hash de integridad, así el hash representa el contenido real
 // del informe y no detalles de maquetado del PDF.
@@ -26,7 +34,7 @@ function buildPlainContent({ channel, messages, events, nameOf, rangeLabel }) {
   lines.push('--- MENSAJES ---');
   messages.forEach((m) => {
     const who = m.senderId ? nameOf(m.senderId) : m.pattern ? 'ALERTA DE PATRON' : 'SISTEMA';
-    lines.push(`[${fmt(m.createdAt)}] ${who}: ${m.text}${m.flagged ? '  (marcado por IA)' : ''}`);
+    lines.push(`[${fmt(m.createdAt)}] ${who}: ${m.text}${attachmentNote(m)}${m.flagged ? '  (marcado por IA)' : ''}`);
   });
   lines.push('');
   lines.push('--- CALENDARIO / ACUERDOS ---');
@@ -156,7 +164,7 @@ async function buildCertifiedReport({ channel, messages, events, nameOf, generat
       const who = m.senderId ? nameOf(m.senderId) : m.pattern ? 'ALERTA DE PATRÓN' : 'SISTEMA';
       const tag = m.flagged ? '  [intervención de IA]' : '';
       doc.font('Helvetica-Bold').text(`[${fmt(m.createdAt)}] ${who}${tag}`, { continued: false });
-      doc.font('Helvetica').text(m.text);
+      doc.font('Helvetica').text(m.text + attachmentNote(m));
       doc.moveDown(0.4);
     });
 
