@@ -238,11 +238,18 @@ module.exports = function (io, presence) {
     const myChannelIds = new Set(
       db.members.filter((m) => m.userId === req.user.id).map((m) => m.channelId)
     );
+    // ?channel=CODE acota la búsqueda a un solo canal (usado por "Buscar en
+    // esta conversación" desde el chat) — si el código no es válido o no es
+    // un canal del que la persona es miembro, scopeChannelId queda null y
+    // el filtro de abajo (myChannelIds) ya deja el resultado vacío solo,
+    // sin necesidad de devolver un error distinto.
+    const scopeChannelId = req.query.channel ? getChannelByCode(req.query.channel)?.id || null : null;
     const MAX_RESULTS = 30;
     const results = [];
     for (const msg of db.messages) {
       if (results.length >= MAX_RESULTS) break;
       if (!msg.senderId || !myChannelIds.has(msg.channelId)) continue; // ni mensajes de sistema ni de canales ajenos
+      if (scopeChannelId && msg.channelId !== scopeChannelId) continue;
       if (msg.senderId !== req.user.id && (msg.deliverAt || 0) > now) continue; // todavía "deshacible" para quien lo mandó
       if (!msg.text.toLowerCase().includes(q)) continue;
       const channel = db.channels.find((c) => c.id === msg.channelId);
@@ -281,6 +288,22 @@ module.exports = function (io, presence) {
     await commit();
     io.to(channel.code).emit('channel:status', { code: channel.code, status });
     res.json({ code: channel.code, status });
+  });
+
+  // ---------- silenciar notificaciones de ESTE caso (WhatsApp + push,
+  // ver messaging.js) — por persona, no por canal entero: no afecta a la
+  // otra parte ni a un mediador/a que comparta el mismo canal. No toca
+  // los mensajes en sí ni el socket en vivo — si tenés el chat abierto lo
+  // seguís viendo igual, esto es solo para no recibir el aviso cuando no
+  // lo tenés abierto. Cualquier miembro (parte o profesional) puede
+  // silenciar su propia membresía.
+  router.post('/:code/mute', requireAuth, requireMembership, async (req, res) => {
+    const { muted } = req.body;
+    const db = getDB();
+    const membership = db.members.find((m) => m.id === req.membership.id);
+    membership.notificationsMuted = !!muted;
+    await commit();
+    res.json({ notificationsMuted: membership.notificationsMuted });
   });
 
   // ---------- acceso de mediador/a o estudio jurídico ----------

@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS channels (
 );
 CREATE TABLE IF NOT EXISTS members (
   id TEXT PRIMARY KEY, channelId TEXT, userId TEXT, role TEXT, label TEXT,
-  webAccessToken TEXT, assignedByAdmin INTEGER DEFAULT 0, lastSeenAt INTEGER, joinedAt INTEGER
+  webAccessToken TEXT, assignedByAdmin INTEGER DEFAULT 0, lastSeenAt INTEGER, joinedAt INTEGER,
+  notificationsMuted INTEGER DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY, channelId TEXT, senderId TEXT, text TEXT,
@@ -131,7 +132,7 @@ CREATE INDEX IF NOT EXISTS idx_reports_channel ON reports(channelId);
 // tener que acordarse a mano en cada función.
 const BOOL_COLUMNS = {
   users: ['guest', 'verifiedProfessional', 'readReceiptsEnabled'],
-  members: ['assignedByAdmin'],
+  members: ['assignedByAdmin', 'notificationsMuted'],
   messages: ['flagged', 'pattern'],
 };
 // columnas que viajan como objeto/array en JS pero se guardan como texto JSON
@@ -193,7 +194,7 @@ function openDb() {
     readReceiptsEnabled: 'INTEGER DEFAULT 1',
   });
   ensureColumns(sqlite, 'channels', { remindedAt: 'INTEGER', lastSummary: 'TEXT', status: "TEXT DEFAULT 'abierto'" });
-  ensureColumns(sqlite, 'members', { lastSeenAt: 'INTEGER' });
+  ensureColumns(sqlite, 'members', { lastSeenAt: 'INTEGER', notificationsMuted: 'INTEGER DEFAULT 0' });
   ensureColumns(sqlite, 'events', { swapId: 'TEXT', kind: "TEXT DEFAULT 'entrega'" });
   ensureColumns(sqlite, 'expenses', { eventId: 'TEXT' });
   ensureColumns(sqlite, 'certified_exports', { signature: 'TEXT' });

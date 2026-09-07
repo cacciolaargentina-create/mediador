@@ -195,6 +195,14 @@ async function fireNotification(key) {
   const toUser = db.users.find((u) => u.id === toUserId);
   if (!channel || !toUser) return;
 
+  // silenciado por esta persona para ESTE caso puntual (ver POST
+  // .../mute en routes/channels.js) — corta WhatsApp y push acá, en el
+  // único lugar por donde pasan las dos vías, sin tocar nada de lo que
+  // ya ve en vivo si tiene el chat abierto (eso sigue por socket, ajeno
+  // a este silenciado).
+  const membership = db.members.find((m) => m.channelId === channelId && m.userId === toUserId);
+  if (membership && membership.notificationsMuted) return;
+
   const link = accessLinkFor(channel, toUser);
   const plural = entry.count > 1 ? `${entry.count} mensajes nuevos` : 'un mensaje nuevo';
 

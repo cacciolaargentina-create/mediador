@@ -1756,8 +1756,79 @@ function renderCaseTabsInfo(){
     : (other && other.user) ? 'Con ' + escapeHtml(other.user.name) : 'Esperando a la otra parte';
   slot.innerHTML = `
     <button class="case-switch-btn" onclick="toggleCaseSwitcher()" title="Cambiar de caso">${withWhom} · ${escapeHtml(channelInfo.code)} <span class="caret">▾</span></button>
-    <button class="gear-btn" onclick="goTo('config')" title="Configurar este caso"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></button>
+    <div style="display:flex; gap:6px; flex-shrink:0;">
+      <button class="gear-btn" onclick="openCaseMenu(event)" title="Más opciones de este caso" aria-label="Más opciones de este caso">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
+      </button>
+      <button class="gear-btn" onclick="goTo('config')" title="Configurar este caso"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></button>
+    </div>
   `;
+}
+
+// ==================================================================
+// MENÚ RÁPIDO DEL CASO ("⋮") — acciones que hasta ahora exigían entrar a
+// Configurar caso (o no existían), disponibles desde cualquier pantalla
+// contextual sin salir de donde se está. Mismo menú "vidrio" que ya usa
+// el de acciones de un mensaje (ver showMessageActionMenu), pero
+// implementado aparte para no arriesgar esa lógica ya probada — acá no
+// hay swipe/long-press de por medio, solo un click.
+// ==================================================================
+function caseMenuItemsHtml(){
+  if(!channelInfo) return [];
+  const mine = channelInfo.members.find(m => m.user && m.user.id === me.id);
+  const muted = !!(mine && mine.notificationsMuted);
+  // buscar/calendario/gastos/informe son todas acciones de LECTURA — un
+  // mediador/a o estudio jurídico ya puede llegar a Gastos e Historial
+  // directo desde la barra de pestañas del caso, así que no hay motivo
+  // para escondérselas acá; solo enviar mensajes/gastos es lo que está
+  // restringido a las partes (ver requireParty del lado del server).
+  const items = [
+    { label: '🔍 Buscar en esta conversación', onclick: 'openChatSearch()' },
+    {
+      label: muted ? '🔔 Reactivar notificaciones de este caso' : '🔕 Silenciar notificaciones de este caso',
+      onclick: 'toggleCaseMute()',
+    },
+    { label: '📅 Ir al calendario de este caso', onclick: "goTo('calendario')" },
+    { label: '💰 Ir a gastos de este caso', onclick: "goTo('gastos')" },
+    { label: '📄 Descargar informe certificado (PDF)', onclick: 'exportCertifiedReport()' },
+  ];
+  return items;
+}
+function openCaseMenu(ev){
+  closeCaseMenu();
+  const items = caseMenuItemsHtml();
+  if(!items.length) return;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'case-menu-overlay';
+  overlay.onclick = closeCaseMenu;
+
+  const menu = document.createElement('div');
+  menu.className = 'case-menu-glass glass-panel';
+  menu.innerHTML = items.map(it => `<button class="msg-menu-item" onclick="${it.onclick}; closeCaseMenu();">${it.label}</button>`).join('');
+
+  document.body.appendChild(overlay);
+  document.body.appendChild(menu);
+
+  const rect = ev.currentTarget.getBoundingClientRect();
+  const menuWidth = 250;
+  const left = Math.min(Math.max(10, rect.right - menuWidth), window.innerWidth - menuWidth - 10);
+  menu.style.left = left + 'px';
+  menu.style.top = (rect.bottom + 6) + 'px';
+}
+function closeCaseMenu(){
+  document.querySelector('.case-menu-overlay')?.remove();
+  document.querySelector('.case-menu-glass')?.remove();
+}
+async function toggleCaseMute(){
+  const mine = channelInfo && channelInfo.members.find(m => m.user && m.user.id === me.id);
+  const nextMuted = !(mine && mine.notificationsMuted);
+  try{
+    await api(`/api/channels/${channelCode}/mute`, { method:'POST', body: JSON.stringify({ muted: nextMuted }) });
+    if(mine) mine.notificationsMuted = nextMuted;
+  }catch(e){
+    alert('No se pudo guardar. Probá de nuevo.');
+  }
 }
 
 // mismo criterio que jobs.js del lado del servidor (que arma el texto para
@@ -2209,6 +2280,95 @@ function scrollToMessage(msgId){
   el.scrollIntoView({ block:'center', behavior:'smooth' });
   el.classList.add('msg-highlight');
   setTimeout(() => el.classList.remove('msg-highlight'), 1200);
+}
+
+// a diferencia de scrollToMessage() (que asume que el mensaje ya está
+// pintado), esto lo busca aunque sea viejo y haya quedado fuera de la
+// ventana en vivo del chat (ver hasMoreHistory) — trae el historial
+// completo del canal, igual que hace Historial, y recién ahí scrollea.
+async function jumpToMessageInChat(msgId){
+  if(!document.querySelector(`[data-msg-id="${msgId}"]`)){
+    try{
+      const res = await api(`/api/channels/${channelCode}/messages?all=1`);
+      messages = res.messages;
+      hasMoreHistory = false;
+      paintMessages();
+    }catch(e){ return; }
+  }
+  scrollToMessage(msgId);
+}
+
+// ==================================================================
+// BUSCAR DENTRO DE ESTA CONVERSACIÓN — a diferencia del buscador global
+// de Mis Casos (que busca en TODOS los canales), esto acota el mismo
+// endpoint a channelCode vía ?channel=, y al elegir un resultado salta
+// directo al mensaje en este mismo chat (sin cambiar de caso).
+// ==================================================================
+let chatSearchTimer = null;
+let chatSearchSeq = 0;
+function openChatSearch(){
+  if(currentScreen !== 'chat') goTo('chat');
+  if(document.getElementById('chat-search-panel')) return; // ya está abierto
+  const area = document.querySelector('#screen-chat .chat-log-area');
+  if(!area) return;
+  const panel = document.createElement('div');
+  panel.id = 'chat-search-panel';
+  panel.className = 'chat-search-panel glass-panel';
+  panel.innerHTML = `
+    <div class="chat-search-row">
+      <input type="text" id="chat-search-input" placeholder="Buscar en esta conversación…">
+      <button class="modal-close" onclick="closeChatSearch()" aria-label="Cerrar búsqueda">✕</button>
+    </div>
+    <div id="chat-search-results"></div>
+  `;
+  area.appendChild(panel);
+  const input = document.getElementById('chat-search-input');
+  input.addEventListener('input', () => debouncedChatSearch(input.value));
+  input.focus();
+}
+function closeChatSearch(){
+  document.getElementById('chat-search-panel')?.remove();
+}
+function debouncedChatSearch(value){
+  clearTimeout(chatSearchTimer);
+  const q = value.trim();
+  const resultsEl = document.getElementById('chat-search-results');
+  if(!resultsEl) return;
+  if(q.length < 2){ resultsEl.innerHTML = ''; return; }
+  const mySeq = ++chatSearchSeq;
+  chatSearchTimer = setTimeout(async () => {
+    resultsEl.innerHTML = `<p class="empty-hint" style="padding:8px 0;">Buscando…</p>`;
+    let results;
+    try{ results = await api(`/api/channels/search?q=${encodeURIComponent(q)}&channel=${channelCode}`); }
+    catch(e){ if(mySeq === chatSearchSeq) resultsEl.innerHTML = ''; return; }
+    if(mySeq !== chatSearchSeq) return;
+    renderChatSearchResults(results, q);
+  }, 350);
+}
+function renderChatSearchResults(results, q){
+  const resultsEl = document.getElementById('chat-search-results');
+  if(!resultsEl) return;
+  if(!results.length){ resultsEl.innerHTML = `<p class="empty-hint" style="padding:8px 0;">Nada encontrado en esta conversación.</p>`; return; }
+  const qLower = q.toLowerCase();
+  const highlight = (text) => {
+    const idx = text.toLowerCase().indexOf(qLower);
+    if(idx === -1) return escapeHtml(text);
+    return escapeHtml(text.slice(0, idx)) + '<mark>' + escapeHtml(text.slice(idx, idx+q.length)) + '</mark>' + escapeHtml(text.slice(idx+q.length));
+  };
+  const snippetAround = (text) => {
+    const idx = text.toLowerCase().indexOf(qLower);
+    if(idx < 40) return text.slice(0, 100);
+    return '…' + text.slice(idx - 30, idx + 70);
+  };
+  resultsEl.innerHTML = results.map(r => `
+    <div class="search-result-row" onclick="jumpToMessageInChat('${r.messageId}'); closeChatSearch();">
+      <div class="search-result-top">
+        <span>${r.isMine ? 'Vos' : escapeHtml(r.senderName)}</span>
+        <span class="wa-time">${fmtTs(r.createdAt)}</span>
+      </div>
+      <div class="search-result-text">${highlight(snippetAround(r.text))}</div>
+    </div>
+  `).join('');
 }
 
 function applyTemplate(i){

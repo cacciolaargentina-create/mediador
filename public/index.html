@@ -357,12 +357,37 @@
     position:fixed; z-index:51; width:220px; border-radius:14px; padding:6px;
     display:flex; flex-direction:column; gap:2px; animation:msg-menu-pop .15s ease;
   }
-  .msg-menu-glass .msg-menu-item{
+  /* .msg-menu-item se reusa tal cual en el menú "⋮" del caso
+     (.case-menu-glass, ver más abajo) — mismo look de botón de menú de
+     vidrio en los dos lugares, sin duplicar la regla. */
+  .msg-menu-glass .msg-menu-item, .case-menu-glass .msg-menu-item{
     background:none; border:none; text-align:left; padding:11px 12px; border-radius:9px;
     font-size:13.5px; color:var(--text); font-family:var(--sans); cursor:pointer; width:100%;
   }
-  .msg-menu-glass .msg-menu-item:active{ background:rgba(128,128,128,0.18); }
+  .msg-menu-glass .msg-menu-item:active, .case-menu-glass .msg-menu-item:active{ background:rgba(128,128,128,0.18); }
   @keyframes msg-menu-pop{ from{ opacity:0; transform:scale(0.92); } to{ opacity:1; transform:scale(1); } }
+
+  /* ===== menú "⋮" del caso (Buscar en esta conversación, silenciar,
+     calendario/gastos, informe certificado) — mismo estilo "vidrio" que
+     el menú de acciones de un mensaje, implementado aparte (overlay/
+     panel propios) para no tocar esa lógica ya probada. ===== */
+  .case-menu-overlay{ position:fixed; inset:0; z-index:50; background:rgba(0,0,0,0.15); }
+  .case-menu-glass{
+    position:fixed; z-index:51; width:250px; border-radius:14px; padding:6px;
+    display:flex; flex-direction:column; gap:2px; animation:msg-menu-pop .15s ease;
+  }
+
+  /* ===== buscar dentro de la conversación abierta — panel flotante que
+     tapa el área de mensajes (no el composer, que sigue disponible
+     debajo) mientras se busca; se cierra con la ✕ o eligiendo un
+     resultado. ===== */
+  .chat-search-panel{
+    position:absolute; inset:0; z-index:6; border-radius:0;
+    display:flex; flex-direction:column; padding:10px 12px; overflow-y:auto;
+  }
+  .chat-search-row{ display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-shrink:0; }
+  .chat-search-row input{ flex:1; }
+  .chat-search-row .modal-close{ flex-shrink:0; }
 
   .msg.me{ background:var(--wa-me-bg); color:var(--text); align-self:flex-end; border-bottom-right-radius:2px; }
   .msg.them{ background:var(--wa-them-bg); color:var(--text); align-self:flex-start; border-bottom-left-radius:2px; }

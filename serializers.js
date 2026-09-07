@@ -25,6 +25,10 @@ function serializeChannel(channel) {
         // certificando que ESE mediador/a o estudio pasó la revisión
         // manual de un admin, no que la parte misma esté "verificada".
         verified: !!(rawUser && rawUser.verifiedProfessional && m.role !== 'A' && m.role !== 'B'),
+        // silenciado es por persona, no por canal — cada quien ve/lee esto
+        // solo de su propia membresía (ver toggleCaseMute en app.js), no
+        // hay nada sensible en que otro miembro también lo vea.
+        notificationsMuted: !!m.notificationsMuted,
       };
     });
   return {
