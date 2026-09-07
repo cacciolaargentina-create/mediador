@@ -404,14 +404,24 @@
   .msg.me::after{
     content:''; position:absolute; bottom:0; right:-6px; width:8px; height:13px;
     background:var(--wa-me-bg);
+    /* el SVG no trae width/height propios (solo viewBox) — sin mask-size
+       explícito, "auto" cae al tamaño por default del SVG (~300x150 según
+       el motor), y lo que queda visible es una esquina cualquiera de esa
+       imagen mucho más grande, no la curva entera. mask-size:100% 100%
+       fuerza a que el viewBox se estire exactamente al tamaño real del
+       elemento (8x13), que es lo que hace que se vea la forma completa. */
     -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath d='M1.533,3.568L8,12.193V1H2.812C1.042,1,0.474,2.156,1.533,3.568z'/%3E%3C/svg%3E") no-repeat;
+    -webkit-mask-size:100% 100%;
     mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath d='M1.533,3.568L8,12.193V1H2.812C1.042,1,0.474,2.156,1.533,3.568z'/%3E%3C/svg%3E") no-repeat;
+    mask-size:100% 100%;
   }
   .msg.them::after{
     content:''; position:absolute; bottom:0; left:-6px; width:8px; height:13px;
     background:var(--wa-them-bg); transform:scaleX(-1);
     -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath d='M1.533,3.568L8,12.193V1H2.812C1.042,1,0.474,2.156,1.533,3.568z'/%3E%3C/svg%3E") no-repeat;
+    -webkit-mask-size:100% 100%;
     mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath d='M1.533,3.568L8,12.193V1H2.812C1.042,1,0.474,2.156,1.533,3.568z'/%3E%3C/svg%3E") no-repeat;
+    mask-size:100% 100%;
   }
   .msg-sender{ font-size:12.5px; font-weight:600; color:var(--calm); margin-bottom:1px; }
   .msg-text{ white-space:pre-wrap; word-break:break-word; }
