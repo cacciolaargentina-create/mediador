@@ -277,7 +277,13 @@
      dejar overflow-x en su default "visible" no alcanza, porque fijar
      overflow-y a algo distinto de "visible" hace que overflow-x compute a
      "auto" solo, por spec de CSS. */
-  .chat-log{ flex:1; overflow-y:auto; overflow-x:hidden; padding:4px 0 12px; display:flex; flex-direction:column; gap:8px; }
+  /* padding lateral (8px) — sin esto las burbujas quedan pegadas al borde
+     del contenedor y el overflow-x:hidden de arriba corta la colita, que
+     sobresale 7px del costado de cada burbuja (ver .msg.me::after /
+     .msg.them::after) — se veía sin colita en vez de solo evitar la barra
+     de scroll fantasma que era lo único que ese overflow-x tenía que
+     arreglar. */
+  .chat-log{ flex:1; overflow-y:auto; overflow-x:hidden; padding:4px 8px 12px; display:flex; flex-direction:column; gap:8px; }
 
   /* botón flotante "ir abajo" — semitransparente, aparece solo cuando el
      scroll no está ya al final del chat (ver updateJumpButtonVisibility). */
