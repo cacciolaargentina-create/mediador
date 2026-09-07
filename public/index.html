@@ -393,13 +393,25 @@
   .msg.them{ background:var(--wa-them-bg); color:var(--text); align-self:flex-start; border-bottom-left-radius:2px; }
   /* colita del globo, estilo WhatsApp — un triángulo prolijo del mismo
      color de la burbuja, saliendo del costado donde el borde queda recto. */
+  /* la forma real del tail de WhatsApp (una curva, no un triángulo recto)
+     — el clip-path anterior técnicamente andaba, pero un triángulo liso
+     del mismo color de la burbuja se leía como un corte de esquina, no
+     como una "orejita" reconocible. Esta sí es la silueta curva de
+     verdad, vía mask (mismo truco que ya se usa para el ícono de
+     responder, ver .msg.me::before más arriba) — 6px hacia afuera del
+     borde de la burbuja, adentro del padding de 8px de .chat-log para no
+     volver a activar el overflow-x:hidden que la cortaba antes. */
   .msg.me::after{
-    content:''; position:absolute; bottom:0; right:-7px; width:9px; height:11px;
-    background:var(--wa-me-bg); clip-path: polygon(0 0, 100% 100%, 0 100%);
+    content:''; position:absolute; bottom:0; right:-6px; width:8px; height:13px;
+    background:var(--wa-me-bg);
+    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath d='M1.533,3.568L8,12.193V1H2.812C1.042,1,0.474,2.156,1.533,3.568z'/%3E%3C/svg%3E") no-repeat;
+    mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath d='M1.533,3.568L8,12.193V1H2.812C1.042,1,0.474,2.156,1.533,3.568z'/%3E%3C/svg%3E") no-repeat;
   }
   .msg.them::after{
-    content:''; position:absolute; bottom:0; left:-7px; width:9px; height:11px;
-    background:var(--wa-them-bg); clip-path: polygon(100% 0, 100% 100%, 0 100%);
+    content:''; position:absolute; bottom:0; left:-6px; width:8px; height:13px;
+    background:var(--wa-them-bg); transform:scaleX(-1);
+    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath d='M1.533,3.568L8,12.193V1H2.812C1.042,1,0.474,2.156,1.533,3.568z'/%3E%3C/svg%3E") no-repeat;
+    mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath d='M1.533,3.568L8,12.193V1H2.812C1.042,1,0.474,2.156,1.533,3.568z'/%3E%3C/svg%3E") no-repeat;
   }
   .msg-sender{ font-size:12.5px; font-weight:600; color:var(--calm); margin-bottom:1px; }
   .msg-text{ white-space:pre-wrap; word-break:break-word; }
