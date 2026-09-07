@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS channels (
   id TEXT PRIMARY KEY, code TEXT UNIQUE, guestToken TEXT, calendarToken TEXT,
   professionalInvites TEXT, remindedAt INTEGER, lastSummary TEXT,
-  status TEXT DEFAULT 'abierto', createdAt INTEGER
+  status TEXT DEFAULT 'abierto', createdAt INTEGER, pinnedMessageId TEXT
 );
 CREATE TABLE IF NOT EXISTS members (
   id TEXT PRIMARY KEY, channelId TEXT, userId TEXT, role TEXT, label TEXT,
@@ -195,7 +195,7 @@ function openDb() {
     verifiedProfessionalRole: 'TEXT', verifiedProfessionalOrg: 'TEXT',
     readReceiptsEnabled: 'INTEGER DEFAULT 1',
   });
-  ensureColumns(sqlite, 'channels', { remindedAt: 'INTEGER', lastSummary: 'TEXT', status: "TEXT DEFAULT 'abierto'" });
+  ensureColumns(sqlite, 'channels', { remindedAt: 'INTEGER', lastSummary: 'TEXT', status: "TEXT DEFAULT 'abierto'", pinnedMessageId: 'TEXT' });
   ensureColumns(sqlite, 'members', { lastSeenAt: 'INTEGER', notificationsMuted: 'INTEGER DEFAULT 0' });
   ensureColumns(sqlite, 'events', { swapId: 'TEXT', kind: "TEXT DEFAULT 'entrega'" });
   ensureColumns(sqlite, 'expenses', { eventId: 'TEXT' });

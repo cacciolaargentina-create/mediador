@@ -1320,6 +1320,11 @@ function connectSocket(){
     if(currentScreen === 'inicio') renderInicio();
     if(currentScreen === 'chat') renderCaseTabsInfo();
   });
+  socket.on('channel:pin', ({code, pinnedMessage})=>{
+    if(!channelInfo || channelInfo.code !== code) return;
+    channelInfo.pinnedMessage = pinnedMessage;
+    if(currentScreen === 'chat'){ renderPinnedBanner(); paintMessages(); } // repinta también los mensajes: la etiqueta del botón (Fijar/Quitar) cambia según cuál esté fijado
+  });
   socket.on('peer:presence', ({userId, online, lastSeenAt})=>{
     peerPresence[userId] = { online, lastSeenAt: lastSeenAt || (peerPresence[userId]?.lastSeenAt ?? null) };
     if(currentScreen === 'chat') updateChatPresenceLine();
@@ -2226,6 +2231,7 @@ function renderChatScreen(){
       </div>`;
   body.innerHTML = `
     <div class="chat-wrap">
+      <div id="pinned-banner"></div>
       <div class="chat-log-area">
         <div class="chat-log" id="chat-log"></div>
         <div class="float-date" id="float-date"></div>
@@ -2237,6 +2243,7 @@ function renderChatScreen(){
       ${composerHtml}
     </div>
   `;
+  renderPinnedBanner();
   replyingTo = null; // pantalla de chat recién montada — no arrastrar una respuesta pendiente de antes
   pendingAttachmentFile = null;
   renderReplyPreview();
@@ -2378,6 +2385,44 @@ async function jumpToMessageInChat(msgId){
     }catch(e){ return; }
   }
   scrollToMessage(msgId);
+}
+
+// ==================================================================
+// FIJAR MENSAJE — un solo mensaje anclado arriba del chat por canal (no
+// una lista), el acuerdo confirmado más reciente en vez del que quedó
+// perdido scrolleando para atrás. Cualquier parte puede fijar o quitar
+// (no hace falta ser quien lo escribió) — igual que archivar en
+// WhatsApp. Un mediador/a de solo lectura no ve la opción de tocarlo,
+// pero si ya hay uno fijado, lo ve igual (es información del caso).
+// ==================================================================
+function renderPinnedBanner(){
+  const slot = document.getElementById('pinned-banner');
+  if(!slot) return;
+  const pinned = channelInfo && channelInfo.pinnedMessage;
+  slot.innerHTML = pinned ? `
+    <div class="pinned-banner-bar" onclick="jumpToMessageInChat('${pinned.id}')">
+      <span class="pin-ic">📌</span>
+      <div class="pin-body">
+        <div class="pin-name">${escapeHtml(pinned.senderName || 'Sistema')}</div>
+        <div class="pin-text">${escapeHtml(pinned.text)}</div>
+      </div>
+      ${isProfessional() ? '' : `<button class="rp-close" onclick="event.stopPropagation(); togglePinMessage(null);" aria-label="Quitar de fijados">✕</button>`}
+    </div>
+  ` : '';
+}
+// msgId null = quitar lo que esté fijado; si no, fija ese mensaje (o lo
+// desfija si ya era el fijado — mismo botón del menú, toggle).
+async function togglePinMessage(msgId){
+  const alreadyPinned = channelInfo && channelInfo.pinnedMessage && channelInfo.pinnedMessage.id === msgId;
+  const nextId = (msgId === null || alreadyPinned) ? null : msgId;
+  try{
+    const res = await api(`/api/channels/${channelCode}/pin`, { method:'POST', body: JSON.stringify({ messageId: nextId }) });
+    channelInfo.pinnedMessage = res.pinnedMessage;
+    renderPinnedBanner();
+    paintMessages(); // la etiqueta del botón (Fijar/Quitar) del mensaje tocado cambia según quedó
+  }catch(e){
+    alert(e.error || 'No se pudo fijar el mensaje. Probá de nuevo.');
+  }
 }
 
 // ==================================================================
@@ -2943,6 +2988,10 @@ function paintMessages(){
       if(!isProfessional()){
         actionLinks.push('<button class="reply-btn" onclick="startReply(\'' + m.id + '\')">↩ Responder</button>');
         actionLinks.push('<button class="reply-btn" onclick="toggleReactionPicker(\'' + m.id + '\', this)">😀 Reaccionar</button>');
+        // togglePinMessage(id) desfija solo si ESTE ya era el fijado — no
+        // hace falta acordarse acá si es o no, el toggle lo resuelve solo.
+        const isPinned = channelInfo && channelInfo.pinnedMessage && channelInfo.pinnedMessage.id === m.id;
+        actionLinks.push('<button class="reply-btn" onclick="togglePinMessage(\'' + m.id + '\')">' + (isPinned ? '📌 Quitar de fijados' : '📌 Fijar mensaje') + '</button>');
       }
       // reportar: solo tiene sentido en un mensaje ajeno — la moderación
       // de IA ya filtra lo que uno mismo manda, esto es para lo que

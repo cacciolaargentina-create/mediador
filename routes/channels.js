@@ -329,6 +329,35 @@ module.exports = function (io, presence) {
     res.json({ code: channel.code, status });
   });
 
+  // ---------- fijar/quitar el mensaje anclado arriba del chat ----------
+  // Uno solo por canal — el acuerdo confirmado más reciente, no una lista.
+  // Cualquier parte puede fijar o quitar (no hace falta ser quien lo
+  // escribió), igual que archivar en WhatsApp. Solo se puede fijar un
+  // mensaje que YA se transmitió a todo el canal (deliverAt ya pasado) —
+  // si no, alguien podría fijar su propio mensaje todavía en la ventana de
+  // "deshacer envío" y filtrarle el contenido a la otra parte por esta vía
+  // (serializeChannel no tiene forma de saber "para quién" está sirviendo
+  // el pinnedMessage, a diferencia de GET /:code/messages).
+  router.post('/:code/pin', requireAuth, requireMembership, requireParty, async (req, res) => {
+    const { messageId } = req.body;
+    const db = getDB();
+    const channel = db.channels.find((c) => c.id === req.channel.id);
+    if (messageId) {
+      const msg = db.messages.find((m) => m.id === messageId && m.channelId === channel.id);
+      if (!msg) return res.status(404).json({ error: 'Mensaje no encontrado' });
+      if ((msg.deliverAt || 0) > Date.now()) {
+        return res.status(409).json({ error: 'Todavía se puede deshacer este mensaje — esperá a que se confirme para fijarlo.' });
+      }
+      channel.pinnedMessageId = messageId;
+    } else {
+      channel.pinnedMessageId = null;
+    }
+    await commit();
+    const pinnedMessage = serializeChannel(channel).pinnedMessage;
+    io.to(channel.code).emit('channel:pin', { code: channel.code, pinnedMessage });
+    res.json({ pinnedMessage });
+  });
+
   // ---------- silenciar notificaciones de ESTE caso (WhatsApp + push,
   // ver messaging.js) — por persona, no por canal entero: no afecta a la
   // otra parte ni a un mediador/a que comparta el mismo canal. No toca

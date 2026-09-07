@@ -520,6 +520,20 @@
   .reply-preview-bar .rp-text{ font-size:12px; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .reply-preview-bar .rp-close{ background:none; border:none; color:var(--text-faint); font-size:16px; cursor:pointer; padding:2px 4px; flex-shrink:0; line-height:1; }
   .reply-preview-bar .rp-close:hover{ color:var(--text); }
+
+  /* ---- mensaje fijado — banner en el tope del chat, con acento cálido
+     (var(--warn), no --calm como "responder") para distinguirse a
+     simple vista de la franja de responder/citar. Toca para saltar al
+     mensaje; la ✕ (reusa .rp-close) solo aparece para las partes. ---- */
+  .pinned-banner-bar{
+    display:flex; align-items:center; gap:8px; background:var(--surface-2);
+    border:1px solid var(--warn-dim); border-left:3px solid var(--warn);
+    border-radius:7px; padding:7px 9px; margin-bottom:8px; cursor:pointer; flex-shrink:0;
+  }
+  .pinned-banner-bar .pin-ic{ flex-shrink:0; font-size:14px; }
+  .pinned-banner-bar .pin-body{ flex:1; min-width:0; }
+  .pinned-banner-bar .pin-name{ font-size:11px; font-weight:600; color:var(--warn); }
+  .pinned-banner-bar .pin-text{ font-size:12.5px; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   /* flash breve al saltar a un mensaje citado (scrollToMessage) — para
      que quede claro cuál es el que se estaba citando, no solo que la
      pantalla se movió. */

@@ -34,6 +34,11 @@ function serializeChannel(channel) {
   return {
     code: channel.code, status: channel.status || 'abierto', createdAt: channel.createdAt, guestToken: channel.guestToken || null, members,
     lastSummary: channel.lastSummary || null,
+    // mismo formato chico que ya arma replyPreview() para la cita de
+    // "responder" — le sirve igual acá: quién, un fragmento del texto (con
+    // el mismo fallback a "📎 Archivo adjunto" si es solo-adjunto), y el id
+    // para poder saltar al mensaje original si sigue cargado.
+    pinnedMessage: replyPreview(channel.pinnedMessageId),
   };
 }
 
