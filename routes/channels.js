@@ -173,6 +173,7 @@ module.exports = function (io, presence) {
             if (!u) return null;
             return {
               name: u.name,
+              avatar: u.avatar || null,
               role: x.role,
               roleLabel: x.role === 'A' || x.role === 'B' ? null : PROFESSIONAL_ROLE_LABELS[x.role] || x.role,
               online: !!(channelPresence && channelPresence.has(x.userId)),
@@ -190,6 +191,19 @@ module.exports = function (io, presence) {
         const lastOwnMessage = myMessages.length
           ? myMessages.reduce((latest, x) => (x.createdAt > latest.createdAt ? x : latest))
           : null;
+        // vista previa estilo WhatsApp: el último mensaje real (no de sistema,
+        // y no un mensaje ajeno todavía dentro de su ventana de "deshacer
+        // envío" — ver GET /:code/messages) de la conversación, truncado.
+        const now2 = Date.now();
+        const lastRealMessage = msgs
+          .filter((x) => x.senderId && (x.senderId === req.user.id || (x.deliverAt || 0) <= now2))
+          .reduce((latest, x) => (!latest || x.createdAt > latest.createdAt ? x : latest), null);
+        const lastMessagePreview = lastRealMessage
+          ? {
+              text: lastRealMessage.text.length > 60 ? lastRealMessage.text.slice(0, 60) + '…' : lastRealMessage.text,
+              isMine: lastRealMessage.senderId === req.user.id,
+            }
+          : null;
         return {
           code: channel.code,
           status: channel.status || 'abierto',
@@ -198,6 +212,7 @@ module.exports = function (io, presence) {
           others,
           otherOnline,
           messageCount: msgs.length,
+          lastMessagePreview,
           lastActivity,
           lastOwnMessageStatus: lastOwnMessage ? (lastOwnMessage.readAt ? 'leido' : 'enviado') : null,
           inactiveDays: Math.floor((now - lastActivity) / 86400000),
@@ -208,6 +223,42 @@ module.exports = function (io, presence) {
       .filter(Boolean)
       .sort((a, b) => b.lastActivity - a.lastActivity);
     res.json(mine);
+  });
+
+  // ---------- buscador global — dentro del CONTENIDO de los mensajes, en
+  // todas las conversaciones donde la persona es miembro de verdad (nunca
+  // se filtra primero y se valida después). Un mensaje ajeno todavía
+  // dentro de su ventana de "deshacer envío" se salta igual que en
+  // GET /:code/messages — buscar no es una forma de saltarse esa ventana. ----------
+  router.get('/search', requireAuth, (req, res) => {
+    const q = (req.query.q || '').trim().toLowerCase();
+    if (q.length < 2) return res.json([]);
+    const db = getDB();
+    const now = Date.now();
+    const myChannelIds = new Set(
+      db.members.filter((m) => m.userId === req.user.id).map((m) => m.channelId)
+    );
+    const MAX_RESULTS = 30;
+    const results = [];
+    for (const msg of db.messages) {
+      if (results.length >= MAX_RESULTS) break;
+      if (!msg.senderId || !myChannelIds.has(msg.channelId)) continue; // ni mensajes de sistema ni de canales ajenos
+      if (msg.senderId !== req.user.id && (msg.deliverAt || 0) > now) continue; // todavía "deshacible" para quien lo mandó
+      if (!msg.text.toLowerCase().includes(q)) continue;
+      const channel = db.channels.find((c) => c.id === msg.channelId);
+      if (!channel) continue;
+      const sender = publicUser(msg.senderId);
+      results.push({
+        channelCode: channel.code,
+        messageId: msg.id,
+        senderName: sender ? sender.name : '—',
+        isMine: msg.senderId === req.user.id,
+        text: msg.text,
+        createdAt: msg.createdAt,
+      });
+    }
+    results.sort((a, b) => b.createdAt - a.createdAt);
+    res.json(results);
   });
 
   // ---------- info del canal ----------

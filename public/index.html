@@ -65,10 +65,23 @@
   .bridge-logo{ position:relative; display:inline-block; }
   .bridge-logo .bridge-arc{ position:absolute; left:0; top:100%; width:100%; height:0.5em; pointer-events:none; overflow:visible; }
 
-  header.topbar{ padding:16px 20px 12px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; gap:10px; background:var(--header-bg); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); }
+  header.topbar{
+    margin:10px 12px 0; padding:12px 18px; border-radius:22px; display:flex; align-items:center;
+    justify-content:space-between; flex-shrink:0; gap:10px; position:relative; z-index:20;
+    background:var(--header-bg); -webkit-backdrop-filter:blur(14px) saturate(1.4); backdrop-filter:blur(14px) saturate(1.4);
+    border:1px solid var(--line); box-shadow:0 4px 16px rgba(0,0,0,0.14);
+    transition:box-shadow .25s ease, backdrop-filter .25s ease;
+  }
+  /* al scrollear el contenido detrás, se intensifica el vidrio (más blur,
+     más sombra) — mismo efecto que las barras de navegación translúcidas
+     de iOS. Usa --header-bg (ya semitransparente y theme-aware) en vez de
+     un color fijo, para que se vea bien en claro y en oscuro por igual. */
+  header.topbar.scrolled{
+    -webkit-backdrop-filter:blur(22px) saturate(1.6); backdrop-filter:blur(22px) saturate(1.6);
+    box-shadow:0 6px 22px rgba(0,0,0,0.24);
+  }
   header.topbar .brand{ font-family:var(--serif); font-weight:600; font-size:18px; }
   header.topbar .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
-  header.topbar .tagline{ font-size:10.5px; color:var(--text-faint); font-family:var(--mono); text-transform:uppercase; letter-spacing:0.07em; }
   header.topbar .user-chip{ display:flex; align-items:center; gap:8px; }
   header.topbar .user-chip img{ width:24px; height:24px; border-radius:50%; }
   header.topbar .user-chip .name{ font-size:12px; color:var(--text-dim); }
@@ -98,7 +111,11 @@
      va arriba, entre el topbar y el contenido — dos barras separadas, cada
      una con su función (ver NAV-RESTRUCTURE): la de abajo nunca cambia, la
      de arriba aparece/desaparece según haya o no un caso activo. */
-  nav.case-tabs{ display:none; flex-direction:column; background:var(--surface); border-bottom:1px solid var(--line); flex-shrink:0; position:relative; }
+  nav.case-tabs{
+    display:none; flex-direction:column; flex-shrink:0; position:relative;
+    background:var(--header-bg); -webkit-backdrop-filter:blur(14px) saturate(1.4); backdrop-filter:blur(14px) saturate(1.4);
+    border-bottom:1px solid var(--line);
+  }
   .case-tabs-info{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 14px 2px; font-size:12px; color:var(--text-dim); }
   .case-tabs-info .gear-btn{ background:none; border:1px solid var(--line); color:var(--text-dim); width:26px; height:26px; border-radius:7px; font-size:13px; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
   .case-switch-btn{ background:none; border:none; color:var(--text-dim); font-size:12px; cursor:pointer; padding:0; text-align:left; font-family:var(--sans); display:flex; align-items:center; gap:4px; }
@@ -170,6 +187,23 @@
   .split-card{ max-width:480px; margin:0 auto 24px; }
   .eyebrow{ font-family:var(--mono); font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-faint); margin-bottom:8px; }
   button.primary, a.primary{ background:var(--calm); color:#0E1A19; border:none; font-weight:600; font-size:14px; padding:12px 18px; border-radius:8px; cursor:pointer; font-family:var(--sans); }
+
+  /* botones 3D/interactivos del home — a propósito acotado a la landing,
+     no se aplica al resto de la app (los botones del chat, formularios,
+     etc. se quedan con su estilo plano de siempre, que ahí es lo correcto). */
+  .cta-3d{
+    transition:transform .15s ease, box-shadow .15s ease;
+    box-shadow:0 4px 0 rgba(0,0,0,0.22), 0 8px 18px rgba(0,0,0,0.28);
+  }
+  .cta-3d:active{ transform:translateY(3px); box-shadow:0 1px 0 rgba(0,0,0,0.22), 0 3px 8px rgba(0,0,0,0.22); }
+  @media (hover:hover){
+    .cta-3d:hover{ transform:translateY(-2px); box-shadow:0 6px 0 rgba(0,0,0,0.22), 0 12px 22px rgba(0,0,0,0.3); }
+  }
+  .cta-3d-glow{ animation:cta-glow-pulse 2.6s ease-in-out infinite; }
+  @keyframes cta-glow-pulse{
+    0%, 100%{ box-shadow:0 4px 0 rgba(0,0,0,0.22), 0 8px 18px rgba(0,0,0,0.28), 0 0 0 rgba(95,168,160,0); }
+    50%{ box-shadow:0 4px 0 rgba(0,0,0,0.22), 0 8px 18px rgba(0,0,0,0.28), 0 0 18px rgba(95,168,160,0.45); }
+  }
   button.primary:disabled{ opacity:0.4; cursor:not-allowed; }
   button.ghost, a.ghost{ background:none; border:1px solid var(--line); color:var(--text); font-size:13px; padding:10px 14px; border-radius:8px; cursor:pointer; font-family:var(--sans); }
   button.ghost.small{ padding:6px 10px; font-size:11.5px; }
@@ -225,16 +259,110 @@
      para la barra inferior fija (nav.tabs, ~56px) que si no queda tapando
      el composer — medido a mano, no es un número al azar. */
   .chat-wrap{ display:flex; flex-direction:column; height:calc(100vh - 300px); min-height:320px; }
-  .chat-log{ flex:1; overflow-y:auto; padding:4px 0 12px; display:flex; flex-direction:column; gap:8px; }
+  /* envoltorio del área de mensajes (sin el composer) — position:relative
+     acá, no en .chat-wrap entero, para que el botón "ir abajo" y la fecha
+     flotante queden ancladas justo arriba del composer sin importar cuánto
+     crezca este (ver .composer textarea, auto-crecimiento). */
+  .chat-log-area{ position:relative; flex:1; min-height:0; display:flex; flex-direction:column; }
+  /* overflow-x:hidden explícito — si no, la cola del globo y el ícono de
+     "responder" (::before/::after con offsets negativos, ver más abajo)
+     empujan el ancho de scroll y aparece una barra horizontal fantasma:
+     dejar overflow-x en su default "visible" no alcanza, porque fijar
+     overflow-y a algo distinto de "visible" hace que overflow-x compute a
+     "auto" solo, por spec de CSS. */
+  .chat-log{ flex:1; overflow-y:auto; overflow-x:hidden; padding:4px 0 12px; display:flex; flex-direction:column; gap:8px; }
+
+  /* botón flotante "ir abajo" — semitransparente, aparece solo cuando el
+     scroll no está ya al final del chat (ver updateJumpButtonVisibility). */
+  .jump-bottom-btn{
+    position:absolute; left:50%; bottom:12px; transform:translateX(-50%) translateY(8px);
+    width:38px; height:38px; border-radius:50%; border:1px solid var(--line);
+    background:var(--header-bg); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
+    color:var(--text-dim); display:flex; align-items:center; justify-content:center;
+    cursor:pointer; opacity:0; pointer-events:none; transition:opacity .18s ease, transform .18s ease;
+    z-index:5;
+  }
+  .jump-bottom-btn.show{ opacity:1; pointer-events:auto; transform:translateX(-50%) translateY(0); }
+  .jump-bottom-btn svg{ width:16px; height:16px; }
+  .jump-bottom-btn .unread-dot{
+    position:absolute; top:-3px; right:-3px; background:var(--calm); color:#0E1A19;
+    font-family:var(--mono); font-size:9px; font-weight:700; min-width:15px; height:15px;
+    border-radius:8px; display:flex; align-items:center; justify-content:center; padding:0 3px;
+  }
+
+  /* fecha flotante al scrollear, estilo WhatsApp — aparece mientras se
+     scrollea, se desvanece sola al soltar. */
+  .float-date{
+    position:absolute; top:8px; left:50%; transform:translateX(-50%);
+    background:var(--header-bg); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
+    color:var(--text-dim); font-size:10.5px; font-family:var(--mono); text-transform:uppercase;
+    letter-spacing:0.05em; padding:5px 14px; border-radius:10px; border:1px solid var(--line);
+    opacity:0; transition:opacity .3s ease; pointer-events:none; z-index:5;
+  }
+  .float-date.show{ opacity:1; }
   /* ---- burbujas estilo WhatsApp: menos redondeadas que antes (7.5px, no
      14px), sin borde (una sombra chica hace ese trabajo), esquina inferior
      casi recta del lado de la "cola" — mismo truco liviano que ya usaba
      esta hoja de estilos (border-radius en vez de un SVG de cola de
      verdad), solo que ahora más marcado para leerse como WhatsApp a
      primera vista. ---- */
-  .msg{ max-width:78%; padding:6px 9px; border-radius:7.5px; font-size:14.5px; line-height:1.4; box-shadow:0 1px 0.5px rgba(0,0,0,0.13); }
+  .msg{ position:relative; max-width:78%; padding:6px 9px; border-radius:7.5px; font-size:14.5px; line-height:1.4; box-shadow:0 1px 0.5px rgba(0,0,0,0.13); }
+  /* ícono de "responder" que se revela al arrastrar el mensaje hacia la
+     derecha (ver setupMessageSwipeReply/--reply-progress) — invisible
+     hasta que el swipe avanza, sin fallback a "1" si el navegador no
+     conoce la variable (por eso el ", 0" en el var()). */
+  .msg.me::before, .msg.them::before{
+    content:''; position:absolute; top:50%; left:-30px; width:20px; height:20px; margin-top:-10px;
+    background:var(--calm); border-radius:50%; opacity:var(--reply-progress, 0);
+    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='9 14 4 9 9 4'%3E%3C/polyline%3E%3Cpath d='M20 20v-7a4 4 0 0 0-4-4H4'%3E%3C/path%3E%3C/svg%3E") center/60% no-repeat;
+    mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='9 14 4 9 9 4'%3E%3C/polyline%3E%3Cpath d='M20 20v-7a4 4 0 0 0-4-4H4'%3E%3C/path%3E%3C/svg%3E") center/60% no-repeat;
+    pointer-events:none;
+  }
+  .msg-pressed{ filter:brightness(0.85); transition:filter .15s ease; }
+
+  /* mensajes ajenos: avatar chico pegado abajo a la izquierda del grupo,
+     igual que WhatsApp — el nombre en sí sigue viviendo dentro de la
+     burbuja (.msg-sender), acá solo el avatar. */
+  .msg-row-them{ display:flex; gap:7px; align-items:flex-end; align-self:flex-start; max-width:88%; }
+  .msg-avatar{
+    width:24px; height:24px; border-radius:50%; flex-shrink:0; overflow:hidden;
+    display:flex; align-items:center; justify-content:center; margin-bottom:2px;
+    color:#fff; font-weight:700; font-size:10px; font-family:var(--sans);
+  }
+  .msg-avatar img{ width:100%; height:100%; object-fit:cover; }
+  .msg-them-col{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .msg-them-col .msg{ max-width:100%; } /* el límite real ya lo pone .msg-row-them */
+
+  /* ===== "vidrio líquido" — superficies flotantes: el menú de acciones
+     del mensaje. Blur real + semi-transparencia, no un panel opaco más. ===== */
+  .glass-panel{
+    background:var(--header-bg); -webkit-backdrop-filter:blur(18px) saturate(1.5); backdrop-filter:blur(18px) saturate(1.5);
+    border:1px solid var(--line); box-shadow:0 8px 28px rgba(0,0,0,0.3);
+  }
+  .msg-menu-overlay{ position:fixed; inset:0; z-index:50; background:rgba(0,0,0,0.15); }
+  .msg-menu-glass{
+    position:fixed; z-index:51; width:220px; border-radius:14px; padding:6px;
+    display:flex; flex-direction:column; gap:2px; animation:msg-menu-pop .15s ease;
+  }
+  .msg-menu-glass .msg-menu-item{
+    background:none; border:none; text-align:left; padding:11px 12px; border-radius:9px;
+    font-size:13.5px; color:var(--text); font-family:var(--sans); cursor:pointer; width:100%;
+  }
+  .msg-menu-glass .msg-menu-item:active{ background:rgba(128,128,128,0.18); }
+  @keyframes msg-menu-pop{ from{ opacity:0; transform:scale(0.92); } to{ opacity:1; transform:scale(1); } }
+
   .msg.me{ background:var(--wa-me-bg); color:var(--text); align-self:flex-end; border-bottom-right-radius:2px; }
   .msg.them{ background:var(--wa-them-bg); color:var(--text); align-self:flex-start; border-bottom-left-radius:2px; }
+  /* colita del globo, estilo WhatsApp — un triángulo prolijo del mismo
+     color de la burbuja, saliendo del costado donde el borde queda recto. */
+  .msg.me::after{
+    content:''; position:absolute; bottom:0; right:-7px; width:9px; height:11px;
+    background:var(--wa-me-bg); clip-path: polygon(0 0, 100% 100%, 0 100%);
+  }
+  .msg.them::after{
+    content:''; position:absolute; bottom:0; left:-7px; width:9px; height:11px;
+    background:var(--wa-them-bg); clip-path: polygon(100% 0, 100% 100%, 0 100%);
+  }
   .msg-sender{ font-size:12.5px; font-weight:600; color:var(--calm); margin-bottom:1px; }
   .msg-text{ white-space:pre-wrap; word-break:break-word; }
   /* fila de hora + tildes, siempre pegada abajo a la derecha de la
@@ -244,6 +372,11 @@
      que no se inventa uno — se muestra lo que realmente se sabe. */
   .msg-meta{ display:flex; align-items:center; justify-content:flex-end; gap:3px; margin-top:2px; }
   .msg-time{ font-size:10.5px; color:var(--text-faint); }
+  /* "⋯" — abre el menú de acciones del mensaje con un click normal, en
+     cualquier dispositivo (el long-press/swipe en mobile es un atajo,
+     nunca la única forma de llegar a Responder/Reaccionar/Reportar). */
+  .msg-more-btn{ background:none; border:none; color:var(--text-faint); font-size:13px; line-height:1; padding:0 0 0 4px; cursor:pointer; }
+  .msg-more-btn:hover{ color:var(--text); }
   .ticks{ display:inline-flex; color:var(--text-faint); }
   .ticks.read{ color:var(--wa-tick-read); }
   .verified-badge{ color:var(--wa-tick-read); vertical-align:middle; margin-left:3px; flex-shrink:0; }
@@ -260,6 +393,55 @@
   .presence-dot.online{ background:var(--calm); box-shadow:0 0 0 2px var(--calm-dim); }
   .presence-dot.typing{ background:var(--warn); box-shadow:0 0 0 2px var(--warn-dim); animation:presence-pulse 1s ease-in-out infinite; }
   @keyframes presence-pulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.35; } }
+
+  /* ===== lista de casos, estilo WhatsApp (reemplaza a .case-card) ===== */
+  .wa-row-wrap{ position:relative; overflow:hidden; border-bottom:1px solid var(--line); }
+  .wa-row{ display:flex; gap:12px; padding:10px 6px; cursor:pointer; background:var(--surface); position:relative; z-index:1; }
+  .wa-row:active{ background:var(--surface-2); }
+  .wa-row-avatar-col{ position:relative; flex-shrink:0; }
+  .wa-avatar{
+    width:48px; height:48px; border-radius:50%; flex-shrink:0; overflow:hidden;
+    display:flex; align-items:center; justify-content:center; position:relative;
+    color:#fff; font-weight:700; font-size:16px; font-family:var(--sans);
+  }
+  .wa-avatar img{ width:100%; height:100%; object-fit:cover; }
+  .wa-online-dot{
+    position:absolute; bottom:0; right:0; width:12px; height:12px; border-radius:50%;
+    background:var(--calm); border:2.5px solid var(--surface);
+  }
+  .wa-extra-badge{
+    position:absolute; top:-3px; right:-3px; background:var(--surface-2); border:1px solid var(--line);
+    color:var(--text-dim); font-family:var(--mono); font-size:9px; font-weight:700;
+    min-width:16px; height:16px; border-radius:8px; display:flex; align-items:center; justify-content:center;
+  }
+  .wa-row-body{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+  .wa-row-top{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  .wa-name{ font-weight:600; font-size:14.5px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .wa-time{ flex-shrink:0; font-size:11px; color:var(--text-faint); font-family:var(--mono); }
+  .wa-row-bottom{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .wa-preview{ font-size:12.5px; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .wa-row-meta{ display:flex; gap:6px; margin-top:4px; flex-wrap:wrap; align-items:center; }
+  .wa-code-tag{ font-family:var(--mono); font-size:9px; color:var(--text-faint); background:var(--surface-2); padding:2px 7px; border-radius:8px; }
+
+  .search-result-row{ padding:9px 6px; border-bottom:1px solid var(--line); cursor:pointer; }
+  .search-result-row:active{ background:var(--surface); }
+  .search-result-top{ display:flex; justify-content:space-between; align-items:center; margin-bottom:3px; }
+  .search-result-text{ font-size:12.5px; color:var(--text-dim); line-height:1.4; }
+  .search-result-text mark{ background:var(--calm-dim); color:var(--calm); border-radius:3px; padding:0 2px; }
+
+  /* swipe hacia la izquierda para revelar cambio de estado, estilo
+     WhatsApp — o el "‹" con click, para quien no tiene touch (ver
+     toggleRowSwipe en app.js). */
+  .wa-row-actions{ position:absolute; top:0; right:0; bottom:0; display:flex; z-index:0; }
+  .swipe-action{
+    width:56px; border:none; color:#fff; font-size:10px; font-family:var(--sans); font-weight:600;
+    display:flex; align-items:center; justify-content:center; text-align:center; padding:4px; cursor:pointer;
+  }
+  .swipe-action.abierto{ background:var(--calm-dim); color:var(--calm); }
+  .swipe-action.en_proceso{ background:var(--warn-dim); color:var(--warn); }
+  .swipe-action.cerrado{ background:var(--danger-dim); color:var(--danger); }
+  .swipe-action.is-current{ opacity:0.45; } /* el estado en el que ya está el caso, atenuado */
+  .wa-swipe-hint{ align-self:center; color:var(--text-faint); font-size:16px; flex-shrink:0; padding:0 4px; cursor:pointer; }
   /* resumen semanal + próximos eventos: colapsados por default para no
      comerle lugar al chat — quien los quiera los despliega. */
   .case-summary-toggle{ margin-bottom:6px; }
@@ -320,12 +502,14 @@
 
   /* ---- reacciones rápidas: solo pastillas con conteo — nada de fila
      permanente si el mensaje no tiene ninguna todavía (el disparador
-     "😀 Reaccionar" vive en .msg-actions, junto a Responder/Reportar). ---- */
+     "😀 Reaccionar" vive en el menú de acciones, ver showMessageActionMenu
+     en app.js). ---- */
   .reactions-row{ display:flex; gap:5px; flex-wrap:wrap; align-items:center; margin-top:6px; }
   .reaction-pill{ background:var(--surface-2); border:1px solid var(--line); border-radius:11px; padding:2px 8px; font-size:11.5px; color:var(--text-dim); cursor:pointer; line-height:1.4; }
   .reaction-pill.mine{ background:var(--calm-dim); border-color:var(--calm); color:var(--calm); }
-  /* .msg-actions ya lleva position:relative inline (ver paintMessages) —
-     el picker cuelga de ahí, arriba del propio botón "Reaccionar". */
+  /* .msg ya lleva position:relative (ver arriba) — el picker cuelga de
+     ahí, arriba del todo de la burbuja, se abra desde el menú de
+     acciones (toggleReactionPicker) o directo. */
   .reaction-picker{ display:flex; position:absolute; bottom:100%; left:0; margin-bottom:4px; background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:6px 8px; gap:6px; box-shadow:0 6px 16px rgba(0,0,0,0.35); z-index:5; }
   .reaction-picker button{ background:none; border:none; font-size:17px; cursor:pointer; padding:2px; line-height:1; }
 
@@ -344,9 +528,21 @@
   .reform-card .actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
   .reform-card .actions button{ flex:1; font-size:12.5px; padding:9px 8px; }
 
-  .composer{ display:flex; gap:8px; padding-top:10px; border-top:1px solid var(--line); }
-  .composer textarea{ resize:none; height:44px; padding-top:11px; }
+  .composer{ display:flex; align-items:flex-end; gap:8px; padding-top:10px; border-top:1px solid var(--line); }
+  .composer textarea{
+    resize:none; min-height:42px; max-height:120px; padding:11px 16px;
+    border-radius:21px; overflow-y:auto; line-height:1.35;
+    transition:border-color .15s ease;
+  }
+  .composer textarea:focus{ border-color:var(--calm-dim); }
   .composer button{ flex-shrink:0; }
+  .composer button.send-circle{
+    width:42px; height:42px; border-radius:50%; padding:0;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--calm); border:none; color:#0E1A19; cursor:pointer;
+  }
+  .composer button.send-circle:disabled{ opacity:0.4; cursor:not-allowed; }
+  .composer button.send-circle svg{ width:18px; height:18px; }
 
   .quick-templates{ display:flex; flex-wrap:wrap; gap:6px; padding-top:10px; }
   .chip{ background:var(--surface-2); border:1px solid var(--line); color:var(--text-dim); font-size:11px; padding:6px 10px; border-radius:14px; cursor:pointer; font-family:var(--sans); white-space:nowrap; }
@@ -746,7 +942,6 @@
 <header class="topbar" id="topbar" style="display:none">
   <div>
     <div class="brand bridge-logo">Puente<em>digital</em></div>
-    <div class="tagline">Comunicación mediada</div>
   </div>
   <div style="display:flex; align-items:center; gap:8px;">
     <button class="icon-btn install-btn" id="install-btn-app" onclick="promptInstall()" style="display:none" title="Instalar app" aria-label="Instalar app">📲</button>
@@ -915,7 +1110,7 @@
       </div>
 
       <div class="cta-block">
-        <button class="ghost" style="width:fit-content; max-width:260px; margin:0 auto; display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 18px; background:#fff; color:#1F1F1F; border:none;" onclick="location.href='/auth/google'">
+        <button class="ghost cta-3d" style="width:fit-content; max-width:260px; margin:0 auto; display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 18px; background:#fff; color:#1F1F1F; border:none;" onclick="location.href='/auth/google'">
           <svg width="16" height="16" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
           Comenzar con Google
         </button>
@@ -931,7 +1126,7 @@
     <div class="hero-demo" id="hero-demo">
       <div class="eyebrow">Probalo vos mismo — sin registrarte</div>
       <textarea id="demo-input" placeholder="Escribí un mensaje como el que le mandarías a la otra persona…" style="min-height:70px; margin-bottom:10px;"></textarea>
-      <button class="ghost" style="width:100%;" onclick="runDemo()" id="demo-btn">Revisar mensaje</button>
+      <button class="ghost cta-3d cta-3d-glow" style="width:100%;" onclick="runDemo()" id="demo-btn">Revisar mensaje</button>
       <div id="demo-result" style="margin-top:12px;"></div>
     </div>
 

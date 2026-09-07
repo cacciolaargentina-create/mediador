@@ -600,8 +600,21 @@ function closeInstallModal(){ document.getElementById('install-modal')?.classLis
 // ==================================================================
 // BOOT
 // ==================================================================
+// El header flotante se intensifica (más blur, más sombra) apenas el
+// contenido de atrás empieza a scrollear — mismo efecto que las barras de
+// navegación translúcidas de iOS, en vez de quedar siempre igual.
+function setupTopbarScrollGlass(){
+  const topbar = document.getElementById('topbar');
+  const main = document.getElementById('main');
+  if(!topbar || !main) return;
+  main.addEventListener('scroll', () => {
+    topbar.classList.toggle('scrolled', main.scrollTop > 8);
+  }, { passive:true });
+}
+
 (async function boot(){
   checkLockOnBoot(); // tapa la pantalla ANTES de que se llegue a pintar nada, si el bloqueo está activo en este dispositivo
+  setupTopbarScrollGlass();
   const params = new URLSearchParams(location.search);
   const guestParam = params.get('guest');
   if(guestParam){
@@ -1000,6 +1013,15 @@ async function checkAdminLink(){
 // ==================================================================
 // SONIDO + NOTIFICACIONES DE MENSAJES NUEVOS
 // ==================================================================
+// Auto-crecimiento del composer — empieza compacto (una línea) y crece con
+// el texto hasta un máximo, en vez del alto fijo que obligaba a hacer
+// scroll interno para ver lo que se estaba escribiendo.
+function autoGrowTextarea(el){
+  if(!el) return;
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
 function isIOS(){ return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream; }
 function isStandalone(){ return window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches; }
 
@@ -1469,37 +1491,190 @@ function othersLineHtml(others){
   return 'Con ' + others.map(o => escapeHtml(o.name) + (o.verified ? verifiedBadgeHtml() : '') + (o.roleLabel ? ` (${escapeHtml(o.roleLabel)})` : '')).join(', ');
 }
 
-// showStatusButtons: Inicio deja cambiar el estado directo desde la
-// tarjeta, sin entrar al caso — el selector rápido (más compacto, ya con
-// bastante info) se queda sin esto para no recargarlo.
+// ------------------------------------------------------------------
+// Avatares — foto real si la persona tiene una (Google), si no iniciales
+// sobre un color elegido por hash del nombre (a propósito desaturado,
+// dentro de la misma familia que el resto de la marca — nada de colores
+// saturados tipo redes sociales). El hash hace que la misma persona
+// siempre caiga en el mismo color entre pantallas distintas.
+// ------------------------------------------------------------------
+const AVATAR_PALETTE = ['#5FA8A0', '#D98C4A', '#7A8FA6', '#B87A8C', '#8AA66B'];
+function avatarColorFor(name){
+  let hash = 0;
+  for(let i=0; i<(name||'').length; i++) hash = (hash*31 + name.charCodeAt(i)) >>> 0;
+  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
+}
+function initialsOf(name){
+  if(!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || name[0].toUpperCase();
+}
+// avatar chico, para al costado de cada burbuja del chat (mensajes ajenos)
+function msgAvatarHtml(person){
+  const inner = person?.avatar
+    ? `<img src="${escapeHtml(person.avatar)}" alt="">`
+    : `<span>${initialsOf(person?.name)}</span>`;
+  const bg = person?.avatar ? '' : `background:${avatarColorFor(person?.name || '?')};`;
+  return `<div class="msg-avatar" style="${bg}">${inner}</div>`;
+}
+// avatar grande, para la lista de "Mis casos" — con puntito de "en línea"
+// opcional, mismo criterio que ya usaba .presence-dot en el resto de la app.
+function avatarHtml(person, online){
+  const inner = person?.avatar
+    ? `<img src="${escapeHtml(person.avatar)}" alt="">`
+    : `<span>${initialsOf(person?.name)}</span>`;
+  const bg = person?.avatar ? '' : `background:${avatarColorFor(person?.name || '?')};`;
+  return `
+    <div class="wa-avatar" style="${bg}">
+      ${inner}
+      ${online ? '<span class="wa-online-dot" title="En línea ahora"></span>' : ''}
+    </div>
+  `;
+}
+
+// ------------------------------------------------------------------
+// Swipe hacia la izquierda en cada fila de caso, estilo WhatsApp, para
+// revelar los botones de cambiar estado sin tenerlos siempre visibles
+// ocupando espacio. Gesto táctil real: se distingue de un scroll vertical
+// normal comparando cuánto se mueve el dedo en X vs. en Y antes de decidir
+// qué gesto es. Para mouse/desktop (sin touch), el "‹" de la fila hace el
+// mismo toggle con un click (ver toggleRowSwipe) — el gesto no es la única
+// forma de llegar a estos botones.
+// ------------------------------------------------------------------
+const SWIPE_OPEN_PX = 168; // ancho total de los 3 botones revelados
+const SWIPE_THRESHOLD = 60; // a partir de acá, al soltar, se queda abierto en vez de volver
+let openSwipeRow = null; // code del caso con el swipe abierto ahora mismo, si hay alguno
+
+function closeSwipedRow(code){
+  const wrap = document.querySelector(`.wa-row-wrap[data-code="${code}"]`);
+  if(!wrap) return;
+  const row = wrap.querySelector('.wa-row');
+  if(row){ row.style.transition = 'transform .2s ease'; row.style.transform = 'translateX(0)'; }
+  if(openSwipeRow === code) openSwipeRow = null;
+}
+function toggleRowSwipe(code, ev){
+  if(ev) ev.stopPropagation();
+  if(openSwipeRow === code){ closeSwipedRow(code); return; }
+  if(openSwipeRow) closeSwipedRow(openSwipeRow);
+  const wrap = document.querySelector(`.wa-row-wrap[data-code="${code}"]`);
+  const row = wrap && wrap.querySelector('.wa-row');
+  if(row){ row.style.transition = 'transform .2s ease'; row.style.transform = `translateX(-${SWIPE_OPEN_PX}px)`; openSwipeRow = code; }
+}
+
+function setupSwipeRows(){
+  document.querySelectorAll('.wa-row-wrap').forEach(wrap => {
+    const actions = wrap.querySelector('.wa-row-actions');
+    const row = wrap.querySelector('.wa-row');
+    if(!actions || !row || row.dataset.swipeReady) return; // sin acciones detrás, no hace falta nada de esto
+    row.dataset.swipeReady = '1';
+
+    let startX = 0, startY = 0, currentX = 0, dragging = null; // dragging: null=todavía no se sabe, true=horizontal, false=vertical
+
+    row.addEventListener('touchstart', (e) => {
+      const code = wrap.dataset.code;
+      if(openSwipeRow && openSwipeRow !== code) closeSwipedRow(openSwipeRow);
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      currentX = row.style.transform === `translateX(-${SWIPE_OPEN_PX}px)` ? -SWIPE_OPEN_PX : 0;
+      dragging = null;
+      row.style.transition = 'none';
+    }, { passive:true });
+
+    row.addEventListener('touchmove', (e) => {
+      const dx = e.touches[0].clientX - startX;
+      const dy = e.touches[0].clientY - startY;
+      if(dragging === null){
+        if(Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+        dragging = Math.abs(dx) > Math.abs(dy);
+      }
+      if(!dragging) return; // es scroll vertical — lo maneja el navegador normalmente
+      e.preventDefault();
+      const next = Math.min(0, Math.max(-SWIPE_OPEN_PX, currentX + dx));
+      row.style.transform = `translateX(${next}px)`;
+    }, { passive:false });
+
+    row.addEventListener('touchend', () => {
+      row.style.transition = 'transform .2s ease';
+      if(!dragging){ dragging = null; return; } // fue un tap normal, no un swipe — que abra el caso como siempre
+      const match = /translateX\((-?\d+)px\)/.exec(row.style.transform);
+      const finalX = match ? parseInt(match[1], 10) : 0;
+      const code = wrap.dataset.code;
+      if(finalX < -SWIPE_THRESHOLD){
+        row.style.transform = `translateX(-${SWIPE_OPEN_PX}px)`;
+        openSwipeRow = code;
+      } else {
+        row.style.transform = 'translateX(0)';
+        if(openSwipeRow === code) openSwipeRow = null;
+      }
+      dragging = null;
+    });
+  });
+}
+// click afuera de una fila abierta la cierra — mismo patrón que ya usa
+// closeReactionPickers() para no dejar UI flotante abierta sin querer.
+document.addEventListener('click', (e) => {
+  if(openSwipeRow && !e.target.closest('.wa-row-wrap')) closeSwipedRow(openSwipeRow);
+});
+
+// showStatusButtons: si la persona puede cambiar el estado del caso (las
+// partes, no un profesional de solo lectura) — quedan ocultos detrás de un
+// swipe hacia la izquierda (o el "‹", con click, en desktop), en vez de 3
+// botones siempre visibles ocupando lugar en cada fila.
 function caseCardHtml(c, onclickExpr, { showStatusButtons } = {}){
-  const statusButtonsHtml = showStatusButtons ? `
-    <div class="status-select-row" style="margin-top:10px;" onclick="event.stopPropagation()">
-      <button class="status-opt ${c.status === 'abierto' ? 'active' : ''}" onclick="setCaseStatusFromList('${c.code}','abierto',event)">Abierto</button>
-      <button class="status-opt ${c.status === 'en_proceso' ? 'active' : ''}" onclick="setCaseStatusFromList('${c.code}','en_proceso',event)">En proceso</button>
-      <button class="status-opt ${c.status === 'cerrado' ? 'active' : ''}" onclick="setCaseStatusFromList('${c.code}','cerrado',event)">Cerrado</button>
+  const swipeActionsHtml = showStatusButtons ? `
+    <div class="wa-row-actions">
+      <button class="swipe-action abierto ${c.status === 'abierto' ? 'is-current' : ''}" onclick="setCaseStatusFromList('${c.code}','abierto',event)">Abierto</button>
+      <button class="swipe-action en_proceso ${c.status === 'en_proceso' ? 'is-current' : ''}" onclick="setCaseStatusFromList('${c.code}','en_proceso',event)">En proceso</button>
+      <button class="swipe-action cerrado ${c.status === 'cerrado' ? 'is-current' : ''}" onclick="setCaseStatusFromList('${c.code}','cerrado',event)">Cerrado</button>
     </div>
   ` : '';
-  // mismo cálculo que ya mueve el puntito de "Inicio" del nav de abajo y
-  // el número del ícono de la app (ver updateInicioDot) — hasta ahora esa
-  // señal solo existía agregada (¿algún caso tiene novedades?), acá se
-  // aplica CASO POR CASO para saber cuál. markVisited(code) se llama al
-  // entrar a un caso, así que mandar un mensaje propio y volver a Inicio
-  // no lo marca como "nuevo" a uno mismo.
+
+  const primary = (c.others && c.others[0]) || null;
+  const extraOthers = (c.others || []).length - 1;
+
+  const previewText = c.lastMessagePreview
+    ? (c.lastMessagePreview.isMine ? 'Vos: ' : '') + escapeHtml(c.lastMessagePreview.text)
+    : othersLineHtml(c.others);
+
+  const readTick = (c.lastMessagePreview?.isMine && c.lastOwnMessageStatus)
+    ? `<span style="margin-right:3px; display:inline-flex; vertical-align:-2px;">${READ_RECEIPT[c.lastOwnMessageStatus]}</span> `
+    : '';
+
+  // "nuevo": mismo cálculo que ya mueve el puntito de "Inicio" del nav de
+  // abajo y el número del ícono de la app (ver updateInicioDot), acá
+  // aplicado CASO POR CASO. A propósito NO es un contador numérico de no
+  // leídos basado en readAt: eso rompería con las confirmaciones de
+  // lectura recíprocas (si YO las tengo apagadas, mi propio readAt nunca
+  // se setea — ver POST .../read — y ese contador quedaría marcando "no
+  // leído" para siempre aunque ya lo haya leído).
   const hasNews = c.lastActivity > getLastVisited(c.code);
+  const metaPills = `
+    <span class="ev-pill ${STATUS_PILL_CLASS[c.status] || 'confirmado'}">${STATUS_LABELS[c.status] || 'Abierto'}</span>
+    ${hasNews ? '<span class="ev-pill pendiente">nuevo</span>' : ''}
+    ${c.inactiveDays > 3 ? `<span class="ev-pill pendiente">sin actividad ${c.inactiveDays}d</span>` : ''}
+    <span class="wa-code-tag">${escapeHtml(c.code)}</span>
+  `;
+
   return `
-    <div class="card case-card" style="margin-bottom:10px; cursor:pointer;" onclick="${onclickExpr}">
-      <div class="row1">
-        <div class="what" style="font-weight:600; display:flex; align-items:center; gap:6px;">${escapeHtml(c.code)}${hasNews ? '<span class="ev-pill pendiente">nuevo</span>' : ''}</div>
-        <div style="display:flex; gap:6px; flex-wrap:wrap;">
-          <span class="ev-pill ${STATUS_PILL_CLASS[c.status] || 'confirmado'}">${STATUS_LABELS[c.status] || 'Abierto'}</span>
-          ${c.inactiveDays > 3 ? `<span class="ev-pill pendiente">sin actividad hace ${c.inactiveDays}d</span>` : ''}
-          <span class="ev-pill confirmado">${escapeHtml(c.myRoleLabel)}</span>
+    <div class="wa-row-wrap" data-code="${c.code}">
+      ${swipeActionsHtml}
+      <div class="wa-row" onclick="${onclickExpr}">
+        <div class="wa-row-avatar-col">
+          ${avatarHtml(primary, c.otherOnline)}
+          ${extraOthers > 0 ? `<span class="wa-extra-badge">+${extraOthers}</span>` : ''}
         </div>
+        <div class="wa-row-body">
+          <div class="wa-row-top">
+            <span class="wa-name">${escapeHtml(primary?.name || 'Esperando a la otra parte')}${primary?.verified ? verifiedBadgeHtml() : ''}</span>
+            <span class="wa-time">${fmtTs(c.lastActivity)}</span>
+          </div>
+          <div class="wa-row-bottom">
+            <span class="wa-preview">${readTick}${previewText}</span>
+          </div>
+          <div class="wa-row-meta">${metaPills}</div>
+        </div>
+        ${showStatusButtons ? `<span class="wa-swipe-hint" onclick="toggleRowSwipe('${c.code}', event)">‹</span>` : ''}
       </div>
-      <div class="who">${othersLineHtml(c.others)}${c.otherOnline ? ' <span class="presence-dot online" title="Hay alguien conectado ahora"></span> en línea ahora' : ''}</div>
-      <div class="ts" style="margin-top:6px;">${c.messageCount} mensajes · última actividad ${fmtTs(c.lastActivity)}${c.lastOwnMessageStatus ? ' · ' + READ_RECEIPT[c.lastOwnMessageStatus] : ''}</div>
-      ${statusButtonsHtml}
     </div>
   `;
 }
@@ -1702,7 +1877,7 @@ function renderConfig(){
       <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:10px;">Este enlace no requiere cuenta de Google ni instalar nada — quien lo abre puede leer y responder directo desde el navegador:</p>
       <div class="row-copy">
         <input type="text" readonly value="${guestShareUrl}" id="guest-share-url">
-        <button class="ghost small" onclick="copyGuestShareUrl()">Copiar</button>
+        <button class="ghost small" onclick="shareGuestLink(this)">Compartir</button>
       </div>
     </div>
   ` : '';
@@ -1721,7 +1896,7 @@ function renderConfig(){
       <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:10px;">Compartí este enlace, quien lo abra se une con su propia cuenta de Google:</p>
       <div class="row-copy" style="margin-bottom:12px;">
         <input type="text" readonly value="${shareUrl}" id="share-url">
-        <button class="ghost small" onclick="copyShareUrl()">Copiar</button>
+        <button class="ghost small" onclick="shareChannelLink(this)">Compartir</button>
       </div>
       <div class="status-banner ${other && other.user ? 'ok' : 'warn'}"><span class="dot"></span>${other && other.user ? escapeHtml(other.user.name) + ' está en el canal' : 'Esperando a que se una'}</div>
       ${(!other?.user && (Date.now() - channelInfo.createdAt > 3*24*60*60*1000)) ? `
@@ -1803,7 +1978,7 @@ async function inviteProfessional(){
     resultEl.innerHTML = `
       <div class="row-copy" style="margin-top:12px;">
         <input type="text" readonly value="${res.url}" id="pro-invite-url">
-        <button class="ghost small" onclick="copyProInviteUrl()">Copiar</button>
+        <button class="ghost small" onclick="shareProInviteLink(this)">Compartir</button>
       </div>
       <p class="field-hint">Compartíselo — va a tener que iniciar sesión con su propia cuenta de Google para entrar.</p>
     `;
@@ -1811,20 +1986,35 @@ async function inviteProfessional(){
     resultEl.innerHTML = `<p style="color:var(--danger); font-size:12px; margin-top:8px;">${e.error || 'No se pudo generar la invitación.'}</p>`;
   }
 }
-function copyProInviteUrl(){
-  const el = document.getElementById('pro-invite-url');
-  el.select();
-  document.execCommand('copy');
+// Compartir nativo (hoja de compartir de iOS/Android) cuando el navegador
+// lo soporta — Mensajes, Mail, WhatsApp, lo que sea, sin el paso
+// intermedio de copiar y después pegar en otro lado. Si no está disponible
+// (la mayoría de los navegadores de escritorio) o cancela el panel nativo,
+// cae solo al mismo "copiar" de siempre — nunca deja a alguien sin ninguna
+// forma de compartir el link.
+async function shareOrCopy({ url, title, text }, btn){
+  if(navigator.share){
+    try{
+      await navigator.share({ title, text, url });
+      return; // ya lo mandó por donde eligió — no hace falta feedback extra acá
+    }catch(e){
+      if(e.name === 'AbortError') return; // canceló el panel nativo a propósito, no es un error
+      // cualquier otro error (raro) -> sigue de largo al fallback de copiar
+    }
+  }
+  await copyText(url, btn);
 }
-function copyShareUrl(){
-  const el = document.getElementById('share-url');
-  el.select();
-  document.execCommand('copy');
+function shareChannelLink(btn){
+  const url = document.getElementById('share-url').value;
+  shareOrCopy({ url, title: 'Puente Digital', text: 'Te invito a coordinar por Puente Digital:' }, btn);
 }
-function copyGuestShareUrl(){
-  const el = document.getElementById('guest-share-url');
-  el.select();
-  document.execCommand('copy');
+function shareGuestLink(btn){
+  const url = document.getElementById('guest-share-url').value;
+  shareOrCopy({ url, title: 'Puente Digital', text: 'Te invito a ver este canal en Puente Digital:' }, btn);
+}
+function shareProInviteLink(btn){
+  const url = document.getElementById('pro-invite-url').value;
+  shareOrCopy({ url, title: 'Puente Digital', text: 'Te invito como profesional a este caso en Puente Digital:' }, btn);
 }
 async function createChannel(){
   try{
@@ -1935,12 +2125,21 @@ function renderChatScreen(){
       <div id="propose-form-slot"></div>
       <div id="reply-preview-slot"></div>
       <div class="composer">
-        <textarea id="chat-input" placeholder="Escribí tu mensaje..."></textarea>
-        <button class="primary" id="send-btn" onclick="handleSend()">Enviar</button>
+        <textarea id="chat-input" placeholder="Escribí tu mensaje..." rows="1"></textarea>
+        <button class="send-circle" id="send-btn" onclick="handleSend()" title="Enviar" aria-label="Enviar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+        </button>
       </div>`;
   body.innerHTML = `
     <div class="chat-wrap">
-      <div class="chat-log" id="chat-log"></div>
+      <div class="chat-log-area">
+        <div class="chat-log" id="chat-log"></div>
+        <div class="float-date" id="float-date"></div>
+        <button class="jump-bottom-btn" id="jump-bottom-btn" onclick="jumpToBottom()" title="Ir al final" aria-label="Ir al final">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+          <span class="unread-dot" id="jump-bottom-dot" style="display:none;"></span>
+        </button>
+      </div>
       ${composerHtml}
     </div>
   `;
@@ -1952,6 +2151,7 @@ function renderChatScreen(){
       if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); handleSend(); }
     });
     chatInput.addEventListener('input', ()=>{
+      autoGrowTextarea(chatInput);
       if(!socket || isProfessional()) return;
       if(chatInput.value.trim()){
         if(!typingActive){ typingActive = true; socket.emit('typing:start', channelCode); }
@@ -1960,6 +2160,7 @@ function renderChatScreen(){
       }
     });
   }
+  setupChatScrollListener();
   paintMessages();
 }
 
@@ -2014,6 +2215,7 @@ function applyTemplate(i){
   const ta = document.getElementById('chat-input');
   if(!ta) return;
   ta.value = CHAT_TEMPLATES[i].text;
+  autoGrowTextarea(ta);
   ta.focus();
   ta.setSelectionRange(ta.value.length, ta.value.length);
 }
@@ -2204,9 +2406,197 @@ async function proposeSwap(){
   }catch(e){ alert(e.error || 'No se pudo proponer el intercambio.'); }
 }
 
+// ------------------------------------------------------------------
+// Botón flotante "ir abajo" + fecha flotante al scrollear, estilo
+// WhatsApp/Claude — si alguien se fue para arriba a leer historial, un
+// mensaje nuevo no debería arrastrarlo de vuelta abajo sin avisar (ver
+// wasNearBottom en paintMessages); este botón es la forma de volver.
+// ------------------------------------------------------------------
+let jumpButtonUnreadCount = 0;
+function setJumpButtonUnread(n){
+  jumpButtonUnreadCount = n;
+  const dot = document.getElementById('jump-bottom-dot');
+  if(!dot) return;
+  if(n > 0){ dot.style.display = 'flex'; dot.textContent = n > 9 ? '9+' : n; }
+  else { dot.style.display = 'none'; }
+}
+function bumpJumpButtonUnread(){ setJumpButtonUnread(jumpButtonUnreadCount + 1); }
+
+let suppressJumpVisibility = false;
+function updateJumpButtonVisibility(){
+  if(suppressJumpVisibility) return;
+  const log = document.getElementById('chat-log');
+  const btn = document.getElementById('jump-bottom-btn');
+  if(!log || !btn) return;
+  const distanceFromBottom = log.scrollHeight - log.scrollTop - log.clientHeight;
+  btn.classList.toggle('show', distanceFromBottom > 120);
+}
+function jumpToBottom(){
+  const log = document.getElementById('chat-log');
+  if(!log) return;
+  suppressJumpVisibility = true; // los eventos de scroll intermedios del scroll suave no deberían parpadear el botón
+  log.scrollTo({ top: log.scrollHeight, behavior:'smooth' });
+  setJumpButtonUnread(0);
+  document.getElementById('jump-bottom-btn')?.classList.remove('show');
+  setTimeout(() => { suppressJumpVisibility = false; }, 500);
+}
+
+// fecha flotante al scrollear, estilo WhatsApp: mientras se scrollea, se
+// fija arriba la fecha del separador que está pasando en ese momento por
+// el tope de la pantalla; al soltar, se desvanece sola después de un momento.
+let floatDateHideTimer = null;
+function updateFloatingDate(){
+  const log = document.getElementById('chat-log');
+  const pill = document.getElementById('float-date');
+  if(!log || !pill) return;
+  // en scrollTop 0 el separador real ya está a la vista, arriba de todo —
+  // mostrar la píldora flotante ahí encima solo lo duplicaría (las dos
+  // dicen lo mismo, superpuestas en el mismo lugar).
+  if(log.scrollTop < 4){ pill.classList.remove('show'); return; }
+  const seps = log.querySelectorAll('.date-sep');
+  let current = null;
+  const logTop = log.getBoundingClientRect().top;
+  seps.forEach(sep => {
+    if(sep.getBoundingClientRect().top - logTop <= 40) current = sep; // el último separador que ya pasó el tope
+  });
+  if(!current){ pill.classList.remove('show'); return; }
+  pill.textContent = current.textContent;
+  pill.classList.add('show');
+  clearTimeout(floatDateHideTimer);
+  floatDateHideTimer = setTimeout(() => pill.classList.remove('show'), 1100);
+}
+function setupChatScrollListener(){
+  const log = document.getElementById('chat-log');
+  if(!log) return;
+  log.addEventListener('scroll', () => {
+    updateJumpButtonVisibility();
+    updateFloatingDate();
+    const distanceFromBottom = log.scrollHeight - log.scrollTop - log.clientHeight;
+    if(distanceFromBottom < 40) setJumpButtonUnread(0);
+  }, { passive:true });
+}
+
+// ------------------------------------------------------------------
+// Swipe hacia la derecha sobre un mensaje para responderle, estilo
+// WhatsApp — momentáneo: se arrastra, se suelta, y si pasó el umbral
+// dispara startReply() y la burbuja vuelve sola a su lugar. Un
+// "mantener presionado" (480ms sin moverse) abre en cambio el menú de
+// acciones (ver showMessageActionMenu) — se distinguen por cuánto se
+// movió el dedo antes de que venza el timer de long-press.
+// ------------------------------------------------------------------
+const REPLY_SWIPE_MAX = 46;
+const REPLY_SWIPE_THRESHOLD = 34;
+
+function setupMessageSwipeReply(){
+  document.querySelectorAll('#chat-log .msg.me, #chat-log .msg.them').forEach(msg => {
+    if(msg.dataset.swipeReplyReady) return;
+    msg.dataset.swipeReplyReady = '1';
+
+    let startX = 0, startY = 0, dragging = null, lastDx = 0, longPressTimer = null, menuShown = false;
+
+    msg.addEventListener('touchstart', (e) => {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      dragging = null;
+      lastDx = 0;
+      menuShown = false;
+      msg.style.transition = 'none';
+      longPressTimer = setTimeout(() => {
+        menuShown = true;
+        showMessageActionMenu(msg.dataset.msgId, msg, startX, startY);
+      }, 480);
+    }, { passive:true });
+
+    msg.addEventListener('touchmove', (e) => {
+      const dx = e.touches[0].clientX - startX;
+      const dy = e.touches[0].clientY - startY;
+      if(dragging === null){
+        if(Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+        clearTimeout(longPressTimer); // se movió de verdad -> ya no puede ser un "mantener presionado"
+        dragging = dx > 0 && Math.abs(dx) > Math.abs(dy); // solo hacia la derecha cuenta como swipe-responder
+      }
+      if(!dragging || menuShown) return;
+      e.preventDefault();
+      lastDx = Math.min(dx, REPLY_SWIPE_MAX);
+      const progress = lastDx / REPLY_SWIPE_MAX;
+      msg.style.transform = `translateX(${lastDx}px)`;
+      msg.style.setProperty('--reply-progress', progress);
+    }, { passive:false });
+
+    msg.addEventListener('touchend', () => {
+      clearTimeout(longPressTimer);
+      msg.style.transition = 'transform .18s ease';
+      msg.style.transform = 'translateX(0)';
+      msg.style.setProperty('--reply-progress', 0);
+      if(dragging && lastDx >= REPLY_SWIPE_THRESHOLD && !menuShown){
+        startReply(msg.dataset.msgId);
+      }
+      dragging = null;
+    });
+  });
+}
+
+// ------------------------------------------------------------------
+// Menú de acciones del mensaje (Responder, Reaccionar, Reportar, Ver
+// lectura neutral) — reemplaza la fila de botones que antes estaba
+// siempre visible debajo de cada mensaje (la misma razón por la que las
+// reacciones se sacaron de ahí antes: cada fila fija hace más grande la
+// burbuja tenga o no algo para mostrar). En mobile se abre con
+// "mantener presionado" (ver setupMessageSwipeReply); en cualquier
+// dispositivo (incluido desktop con mouse, que no tiene long-press) se
+// abre también con un click en el botón "⋯" de la propia burbuja — el
+// gesto es un atajo, nunca la única forma de llegar a estas acciones.
+// ------------------------------------------------------------------
+let messageActionsCache = {}; // id de mensaje -> array de botones de acción, para armar el menú sin recalcular nada
+
+function showMessageActionMenu(msgId, msgEl, touchX, touchY){
+  closeMessageActionMenu();
+  const actions = messageActionsCache[msgId];
+  if(!actions || !actions.length) return;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'msg-menu-overlay';
+  overlay.onclick = closeMessageActionMenu;
+
+  const menu = document.createElement('div');
+  menu.className = 'msg-menu-glass glass-panel';
+  menu.innerHTML = actions.map(a => a.replace('class="neutral-btn"', 'class="msg-menu-item"').replace('class="reply-btn"', 'class="msg-menu-item"')).join('');
+  // cerrar el menú al elegir cualquier acción, sin tocar el resto de cada
+  // handler (siguen siendo los mismos onclick de siempre, solo se agrega el cierre)
+  menu.querySelectorAll('button').forEach(btn => {
+    const original = btn.getAttribute('onclick');
+    btn.setAttribute('onclick', original + '; closeMessageActionMenu();');
+  });
+
+  document.body.appendChild(overlay);
+  document.body.appendChild(menu);
+
+  // posicionado cerca de donde se tocó/clickeó, sin salirse de la pantalla
+  const menuWidth = 220;
+  const left = Math.min(Math.max(10, touchX - menuWidth/2), window.innerWidth - menuWidth - 10);
+  const top = Math.min(touchY + 10, window.innerHeight - 220);
+  menu.style.left = left + 'px';
+  menu.style.top = top + 'px';
+
+  msgEl.classList.add('msg-pressed');
+}
+function closeMessageActionMenu(){
+  document.querySelector('.msg-menu-overlay')?.remove();
+  document.querySelector('.msg-menu-glass')?.remove();
+  document.querySelectorAll('.msg-pressed').forEach(el => el.classList.remove('msg-pressed'));
+}
+
 function paintMessages(){
   const log = document.getElementById('chat-log');
   if(!log) return;
+
+  // si ya estaba cerca del final, seguimos "pegados" al final como
+  // cualquier chat — pero si la persona se fue para arriba a leer
+  // historial, un mensaje nuevo no debería arrastrarla de vuelta abajo
+  // sin avisar (ver jumpToBottom / bumpJumpButtonUnread).
+  const distanceFromBottom = log.scrollHeight - log.scrollTop - log.clientHeight;
+  const wasNearBottom = distanceFromBottom < 120;
+
   log.innerHTML = '';
 
   // el orden de llegada (socket vs. respuesta REST de tu propio envío) no
@@ -2282,7 +2672,7 @@ function paintMessages(){
       // participantes viendo el canal (invitado/a, mediador/a).
       if(!mine){
         const senderMember = channelInfo && channelInfo.members && channelInfo.members.find(mem => mem.user && mem.user.id === m.sender.id);
-        inner += '<div class="msg-sender">' + escapeHtml(m.sender.name) + (senderMember && senderMember.verified ? verifiedBadgeHtml() : '') + '</div>';
+        inner += '<div class="msg-sender" style="color:' + avatarColorFor(m.sender.name) + '">' + escapeHtml(m.sender.name) + (senderMember && senderMember.verified ? verifiedBadgeHtml() : '') + '</div>';
       }
       // cita del mensaje al que responde, si corresponde — replyTo llega
       // armado del server (serializeMessage); si el original ya no está
@@ -2297,14 +2687,8 @@ function paintMessages(){
       if(m.flagged && m.reason && mine){
         inner += '<div class="flag-note">' + escapeHtml(m.reason) + '</div>';
       }
-      // hora + tildes de leído, siempre pegadas abajo a la derecha de la
-      // burbuja — el patrón visual más reconocible de WhatsApp.
-      inner += '<div class="msg-meta"><span class="msg-time">' + fmtTimeOnly(m.createdAt) + (m.flagged ? ' · marcado' : '') + '</span>' + msgTicksHtml(mine, m.readAt) + '</div>';
-      // solo ocupa lugar si YA hay alguna reacción puesta — el botón para
-      // agregar una vive en la fila de acciones de abajo, no acá arriba
-      // (antes estaba siempre visible en TODOS los mensajes, y esa fila
-      // extra permanente era justamente lo que hacía sentir las burbujas
-      // más grandes de lo que deberían, tengan o no reacciones).
+      // solo ocupa lugar si YA hay alguna reacción puesta — el disparador
+      // para agregar una vive en el menú de acciones (ver abajo), no acá.
       inner += renderReactionsRow(m);
       const actionLinks = [];
       if(!mine && !isProfessional()){
@@ -2321,11 +2705,23 @@ function paintMessages(){
       if(!mine){
         actionLinks.push('<button class="reply-btn" onclick="toggleReportBox(\'' + m.id + '\', ' + idx + ')">🚩 Reportar</button>');
       }
-      if(actionLinks.length){
-        inner += '<div class="msg-actions" style="display:flex; gap:12px; flex-wrap:wrap; position:relative;">' + actionLinks.join('')
-          + (isProfessional() ? '' : '<div class="reaction-picker" id="picker-' + m.id + '" style="display:none">'
-              + QUICK_REACTIONS.map(e => '<button onclick="toggleReaction(\'' + m.id + '\',\'' + e + '\'); closeReactionPickers();">' + e + '</button>').join('')
-              + '</div>')
+      // Las acciones (Responder, Reaccionar, Reportar, Ver lectura neutral)
+      // ya NO van en una fila siempre visible debajo de cada mensaje — esa
+      // fila fija es justo lo que hacía sentir las burbujas más grandes de
+      // lo que deberían (misma razón por la que las reacciones se sacaron
+      // de ahí antes). Ahora viven en el menú de mantener presionado (o
+      // click en "⋯", ver showMessageActionMenu) — acá solo se guardan
+      // para que ese menú las arme sin recalcular nada.
+      messageActionsCache[m.id] = actionLinks;
+      // hora + tildes de leído + "⋯" (abre el menú de acciones con un
+      // click normal — el long-press/swipe es un atajo táctil, nunca la
+      // única forma de llegar a estas acciones, por ejemplo en desktop).
+      inner += '<div class="msg-meta"><span class="msg-time">' + fmtTimeOnly(m.createdAt) + (m.flagged ? ' · marcado' : '') + '</span>' + msgTicksHtml(mine, m.readAt)
+        + (actionLinks.length ? '<button class="msg-more-btn" onclick="event.stopPropagation(); showMessageActionMenu(\'' + m.id + '\', this.closest(\'.msg\'), event.clientX, event.clientY)" aria-label="Más acciones">⋯</button>' : '')
+        + '</div>';
+      if(!isProfessional()){
+        inner += '<div class="reaction-picker" id="picker-' + m.id + '" style="display:none">'
+          + QUICK_REACTIONS.map(e => '<button onclick="toggleReaction(\'' + m.id + '\',\'' + e + '\'); closeReactionPickers();">' + e + '</button>').join('')
           + '</div>';
       }
       if(!mine && !isProfessional()){
@@ -2335,11 +2731,32 @@ function paintMessages(){
         inner += '<div class="neutral-box" id="report-box-' + idx + '" style="display:none"></div>';
       }
       div.innerHTML = inner;
-      log.appendChild(div);
+
+      if(mine){
+        log.appendChild(div);
+      } else {
+        // avatar chico al costado, mismo criterio de color/iniciales que ya
+        // usamos en Mis Casos (foto real si existe, si no iniciales sobre
+        // un color consistente por persona) — el nombre en sí ya vive
+        // adentro de la burbuja (.msg-sender, ver arriba), acá solo el avatar.
+        const row = document.createElement('div');
+        row.className = 'msg-row-them';
+        row.innerHTML = msgAvatarHtml(m.sender) + '<div class="msg-them-col"></div>';
+        row.querySelector('.msg-them-col').appendChild(div);
+        log.appendChild(row);
+      }
     }
   });
-  log.scrollTop = log.scrollHeight;
+  if(wasNearBottom){
+    log.scrollTop = log.scrollHeight;
+    setJumpButtonUnread(0);
+  } else {
+    log.scrollTop = log.scrollHeight - log.clientHeight - distanceFromBottom;
+    bumpJumpButtonUnread();
+  }
+  updateJumpButtonVisibility();
   markVisibleMessagesRead();
+  setupMessageSwipeReply();
 }
 
 // ==================================================================
@@ -2382,7 +2799,13 @@ async function toggleReaction(messageId, emoji){
   }catch(e){ /* sin feedback especial — no es una acción crítica, se puede reintentar tocando de nuevo */ }
 }
 document.addEventListener('click', (e) => {
-  if(!e.target.closest('.reaction-picker') && !e.target.closest('.reply-btn')) closeReactionPickers();
+  // .msg-menu-item también cuenta: es el mismo botón "😀 Reaccionar", solo
+  // que clonado dentro del menú de acciones (ver showMessageActionMenu) —
+  // sin esto, closeMessageActionMenu() (que corre en el mismo click, justo
+  // después de abrir el picker) dejaba el picker recién abierto sin ningún
+  // disparador "propio" cerca en el DOM, y este listener lo cerraba en el
+  // mismo tick en el que se acababa de abrir.
+  if(!e.target.closest('.reaction-picker') && !e.target.closest('.reply-btn') && !e.target.closest('.msg-menu-item')) closeReactionPickers();
 });
 
 // ==================================================================
@@ -2485,6 +2908,7 @@ async function handleSend(){
   const sendBtn = document.getElementById('send-btn');
   sendBtn.disabled = true;
   input.value = '';
+  autoGrowTextarea(input);
   if(typingActive && socket){ typingActive = false; socket.emit('typing:stop', channelCode); }
 
   const log = document.getElementById('chat-log');
@@ -3049,14 +3473,17 @@ function renderAsistenteScreen(){
         ${ASSISTANT_QUICK_QUESTIONS.map((q, i) => `<button class="chip" onclick="askAssistantQuick(${i})">${escapeHtml(q)}</button>`).join('')}
       </div>
       <div class="composer">
-        <textarea id="assistant-input" placeholder="Preguntá algo sobre este canal..."></textarea>
-        <button class="primary" id="assistant-send-btn" onclick="handleAskAssistant()">Preguntar</button>
+        <textarea id="assistant-input" placeholder="Preguntá algo sobre este canal..." rows="1"></textarea>
+        <button class="send-circle" id="assistant-send-btn" onclick="handleAskAssistant()" title="Preguntar" aria-label="Preguntar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+        </button>
       </div>
     </div>
   `;
   document.getElementById('assistant-input').addEventListener('keydown', (e)=>{
     if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); handleAskAssistant(); }
   });
+  document.getElementById('assistant-input').addEventListener('input', function(){ autoGrowTextarea(this); });
   paintAssistantLog();
 }
 
@@ -3098,6 +3525,7 @@ async function handleAskAssistant(){
   const question = input.value.trim();
   if(!question) return;
   input.value = '';
+  autoGrowTextarea(input);
   const sendBtn = document.getElementById('assistant-send-btn');
   sendBtn.disabled = true;
 
@@ -3180,6 +3608,74 @@ function setInicioFilter(filter){
 function filterInicioBySearch(value){
   inicioSearchQuery = value;
   renderInicioList();
+  debouncedGlobalSearch(value);
+}
+
+// ------------------------------------------------------------------
+// Buscador global: a diferencia del filtro de arriba (que solo mira
+// nombre/código sobre lo que ya está cargado), esto busca DENTRO del
+// contenido de los mensajes, en TODAS las conversaciones — necesita ir al
+// servidor. Con debounce para no mandar un pedido por cada tecla.
+// ------------------------------------------------------------------
+let globalSearchTimer = null;
+let globalSearchSeq = 0; // para descartar una respuesta vieja si llega después de una búsqueda más nueva
+function debouncedGlobalSearch(value){
+  clearTimeout(globalSearchTimer);
+  const q = value.trim();
+  const resultsEl = document.getElementById('inicio-search-results');
+  if(!resultsEl) return;
+  if(q.length < 2){ resultsEl.innerHTML = ''; return; }
+  const mySeq = ++globalSearchSeq;
+  globalSearchTimer = setTimeout(async () => {
+    resultsEl.innerHTML = `<p class="empty-hint" style="padding:8px 0;">Buscando en tus conversaciones…</p>`;
+    let results;
+    try{ results = await api('/api/channels/search?q=' + encodeURIComponent(q)); }
+    catch(e){ if(mySeq === globalSearchSeq) resultsEl.innerHTML = ''; return; }
+    if(mySeq !== globalSearchSeq) return; // llegó tarde, ya hay una búsqueda más nueva en curso
+    renderGlobalSearchResults(results, q);
+  }, 350);
+}
+
+function renderGlobalSearchResults(results, q){
+  const resultsEl = document.getElementById('inicio-search-results');
+  if(!resultsEl) return;
+  if(!results.length){ resultsEl.innerHTML = ''; return; }
+
+  const qLower = q.toLowerCase();
+  const highlight = (text) => {
+    const idx = text.toLowerCase().indexOf(qLower);
+    if(idx === -1) return escapeHtml(text);
+    return escapeHtml(text.slice(0, idx)) + '<mark>' + escapeHtml(text.slice(idx, idx+q.length)) + '</mark>' + escapeHtml(text.slice(idx+q.length));
+  };
+  // recorte alrededor de la coincidencia, no siempre desde el principio —
+  // si el mensaje es largo y lo buscado está en el medio, mostrar el
+  // arranque del mensaje no ayuda en nada a reconocerlo.
+  const snippetAround = (text) => {
+    const idx = text.toLowerCase().indexOf(qLower);
+    if(idx < 40) return text.slice(0, 100);
+    return '…' + text.slice(idx - 30, idx + 70);
+  };
+
+  resultsEl.innerHTML = `
+    <div class="eyebrow" style="margin:10px 0 6px;">En conversaciones (${results.length})</div>
+    ${results.map(r => `
+      <div class="search-result-row" onclick="openCaseAndScrollTo('${r.channelCode}','${r.messageId}')">
+        <div class="search-result-top">
+          <span class="wa-code-tag">${escapeHtml(r.channelCode)}</span>
+          <span class="wa-time">${fmtTs(r.createdAt)}</span>
+        </div>
+        <div class="search-result-text">${r.isMine ? '<strong>Vos:</strong> ' : `<strong>${escapeHtml(r.senderName)}:</strong> `}${highlight(snippetAround(r.text))}</div>
+      </div>
+    `).join('')}
+  `;
+}
+
+async function openCaseAndScrollTo(code, msgId){
+  await openCase(code);
+  // el chat recién se está pintando de forma asíncrona — un pequeño
+  // margen antes de buscar el mensaje en el DOM, en vez de una carrera
+  // exacta contra el render.
+  setTimeout(() => scrollToMessage(msgId), 400);
 }
 
 async function setCaseStatusFromList(code, status, ev){
@@ -3247,7 +3743,8 @@ async function renderInicio(){
   // buscador por nombre de cliente/parte o código — solo vale la pena
   // mostrarlo con unos pocos casos ya cargados; con 1-2 es ruido de más.
   const searchHtml = list.length > 3
-    ? `<input type="text" id="inicio-search-input" placeholder="Buscar por nombre o código de caso…" value="${escapeHtml(inicioSearchQuery)}" oninput="filterInicioBySearch(this.value)" style="margin-bottom:12px;">`
+    ? `<input type="text" id="inicio-search-input" placeholder="Buscar por nombre, código o dentro de un mensaje…" value="${escapeHtml(inicioSearchQuery)}" oninput="filterInicioBySearch(this.value)" style="margin-bottom:12px;">
+       <div id="inicio-search-results"></div>`
     : '';
 
   el.innerHTML = statsHtml + filterHtml + searchHtml + `<div id="inicio-list-wrap"></div>`;
@@ -3282,6 +3779,7 @@ function renderInicioList(){
   wrap.innerHTML = filtered.length
     ? filtered.map(c => caseCardHtml(c, `openCase('${c.code}')`, { showStatusButtons: c.myRole === 'A' || c.myRole === 'B' })).join('')
     : `<p class="empty-hint">${q ? 'Ningún caso coincide con la búsqueda.' : 'Ningún caso con este filtro.'}</p>`;
+  setupSwipeRows();
 }
 
 // extrae el token de invitación tanto si pegaron la URL completa
@@ -3324,9 +3822,10 @@ async function linkProfessionalToken(){
 }
 
 // ==================================================================
-// COPIAR TEXTO — clipboard API con fallback tipo el que ya usa
-// copyShareUrl() (execCommand sobre un elemento temporal), para navegadores
-// o contextos (ej. http sin TLS en dev) donde navigator.clipboard no está.
+// COPIAR TEXTO — clipboard API con fallback vía execCommand sobre un
+// elemento temporal, para navegadores o contextos (ej. http sin TLS en dev)
+// donde navigator.clipboard no está. Es también el fallback final de
+// shareOrCopy() cuando no hay Web Share API disponible.
 // ==================================================================
 async function copyText(text, btn){
   const original = btn ? btn.textContent : null;
