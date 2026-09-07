@@ -401,28 +401,15 @@
      responder, ver .msg.me::before más arriba) — 6px hacia afuera del
      borde de la burbuja, adentro del padding de 8px de .chat-log para no
      volver a activar el overflow-x:hidden que la cortaba antes. */
-  .msg.me::after{
-    content:''; position:absolute; bottom:0; right:-6px; width:8px; height:13px;
-    background:var(--wa-me-bg);
-    /* el SVG no trae width/height propios (solo viewBox) — sin mask-size
-       explícito, "auto" cae al tamaño por default del SVG (~300x150 según
-       el motor), y lo que queda visible es una esquina cualquiera de esa
-       imagen mucho más grande, no la curva entera. mask-size:100% 100%
-       fuerza a que el viewBox se estire exactamente al tamaño real del
-       elemento (8x13), que es lo que hace que se vea la forma completa. */
-    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath d='M1.533,3.568L8,12.193V1H2.812C1.042,1,0.474,2.156,1.533,3.568z'/%3E%3C/svg%3E") no-repeat;
-    -webkit-mask-size:100% 100%;
-    mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath d='M1.533,3.568L8,12.193V1H2.812C1.042,1,0.474,2.156,1.533,3.568z'/%3E%3C/svg%3E") no-repeat;
-    mask-size:100% 100%;
-  }
-  .msg.them::after{
-    content:''; position:absolute; bottom:0; left:-6px; width:8px; height:13px;
-    background:var(--wa-them-bg); transform:scaleX(-1);
-    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath d='M1.533,3.568L8,12.193V1H2.812C1.042,1,0.474,2.156,1.533,3.568z'/%3E%3C/svg%3E") no-repeat;
-    -webkit-mask-size:100% 100%;
-    mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath d='M1.533,3.568L8,12.193V1H2.812C1.042,1,0.474,2.156,1.533,3.568z'/%3E%3C/svg%3E") no-repeat;
-    mask-size:100% 100%;
-  }
+  /* la colita ahora es un <svg> real insertado en el HTML de cada
+     burbuja (ver msgTailSvg() en app.js), no un mask de CSS — el mask
+     dependía de que el motor resolviera bien un tamaño "auto" ambiguo
+     (ver el intento anterior) y en la práctica seguía sin verse bien.
+     Un SVG con su propio viewBox+width+height no tiene esa ambigüedad:
+     lo que se ve es exactamente el path, sin adivinar ninguna escala. */
+  .msg-tail{ position:absolute; bottom:-0.5px; width:8px; height:13px; pointer-events:none; }
+  .msg-tail.me{ right:-6px; color:var(--wa-me-bg); }
+  .msg-tail.them{ left:-6px; color:var(--wa-them-bg); transform:scaleX(-1); }
   .msg-sender{ font-size:12.5px; font-weight:600; color:var(--calm); margin-bottom:1px; }
   .msg-text{ white-space:pre-wrap; word-break:break-word; }
   /* fila de hora + tildes, siempre pegada abajo a la derecha de la
