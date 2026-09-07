@@ -48,6 +48,20 @@
   html,body{height:100%;}
   body{ background:var(--bg); color:var(--text); font-family:var(--sans); -webkit-font-smoothing:antialiased; display:flex; flex-direction:column; min-height:100vh; }
 
+  /* ---- scrollbar sutil en TODA la app (no solo el composer) — por
+     default el navegador dibuja una barra ancha con pista blanca/gris
+     clara, que se nota fuerte contra el fondo oscuro. Esto la angosta y
+     la pinta con los mismos tokens del tema (pista transparente, "dedo"
+     del color de línea, un toque más claro al pasar el mouse), así se
+     ve igual de discreta en cualquier contenedor con scroll — chat,
+     historial, el composer cuando le toca. scrollbar-color es la versión
+     Firefox; los ::-webkit-scrollbar-* son Chrome/Safari/Edge. ---- */
+  *{ scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
+  *::-webkit-scrollbar{ width:8px; height:8px; }
+  *::-webkit-scrollbar-track{ background:transparent; }
+  *::-webkit-scrollbar-thumb{ background:var(--line); border-radius:8px; }
+  *::-webkit-scrollbar-thumb:hover{ background:var(--text-faint); }
+
   /* ---- animación al cambiar de tema: la clase se agrega un instante desde
      JS (toggleTheme) y se saca sola — así el resto del tiempo los estados
      hover/focus no arrastran una transición de color que los haría sentir
@@ -591,7 +605,11 @@
 
   .composer{ display:flex; align-items:flex-end; gap:8px; padding-top:10px; border-top:1px solid var(--line); }
   .composer textarea{
-    resize:none; min-height:42px; max-height:120px; padding:11px 16px;
+    /* 240px ≈ 11-12 líneas antes de necesitar scroll interno — la idea
+       (como el composer de Claude o de Messenger) es que la caja CREZCA
+       para casi cualquier mensaje real, y el scroll quede como última
+       instancia para algo excepcionalmente largo, no como lo normal. */
+    resize:none; min-height:42px; max-height:240px; padding:11px 16px;
     border-radius:21px; overflow-y:auto; line-height:1.35;
     transition:border-color .15s ease;
   }

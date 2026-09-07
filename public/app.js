@@ -1034,7 +1034,9 @@ async function checkAdminLink(){
 function autoGrowTextarea(el){
   if(!el) return;
   el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  // 240px acá tiene que coincidir con max-height de .composer textarea en
+  // el CSS — si no, uno de los dos gana y el otro queda sin efecto.
+  el.style.height = Math.min(el.scrollHeight, 240) + 'px';
 }
 
 function isIOS(){ return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream; }
