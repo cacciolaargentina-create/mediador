@@ -111,8 +111,15 @@
      va arriba, entre el topbar y el contenido — dos barras separadas, cada
      una con su función (ver NAV-RESTRUCTURE): la de abajo nunca cambia, la
      de arriba aparece/desaparece según haya o no un caso activo. */
+  /* z-index acá es necesario, no cosmético: backdrop-filter hace que este
+     elemento arme su propio contexto de apilamiento (como un filter), así
+     que sin un z-index explícito el "Cambiar de caso" (.case-switcher,
+     que cuelga de acá con position:absolute) queda atrapado adentro de
+     ese contexto en vez de flotar sobre el resto de la página — #main
+     (el chat), al venir después en el HTML y no tener z-index propio,
+     terminaba pintándose encima de todo este bloque, tapando el selector. */
   nav.case-tabs{
-    display:none; flex-direction:column; flex-shrink:0; position:relative;
+    display:none; flex-direction:column; flex-shrink:0; position:relative; z-index:12;
     background:var(--header-bg); -webkit-backdrop-filter:blur(14px) saturate(1.4); backdrop-filter:blur(14px) saturate(1.4);
     border-bottom:1px solid var(--line);
   }
