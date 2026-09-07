@@ -1480,10 +1480,17 @@ function caseCardHtml(c, onclickExpr, { showStatusButtons } = {}){
       <button class="status-opt ${c.status === 'cerrado' ? 'active' : ''}" onclick="setCaseStatusFromList('${c.code}','cerrado',event)">Cerrado</button>
     </div>
   ` : '';
+  // mismo cálculo que ya mueve el puntito de "Inicio" del nav de abajo y
+  // el número del ícono de la app (ver updateInicioDot) — hasta ahora esa
+  // señal solo existía agregada (¿algún caso tiene novedades?), acá se
+  // aplica CASO POR CASO para saber cuál. markVisited(code) se llama al
+  // entrar a un caso, así que mandar un mensaje propio y volver a Inicio
+  // no lo marca como "nuevo" a uno mismo.
+  const hasNews = c.lastActivity > getLastVisited(c.code);
   return `
     <div class="card case-card" style="margin-bottom:10px; cursor:pointer;" onclick="${onclickExpr}">
       <div class="row1">
-        <div class="what" style="font-weight:600;">${escapeHtml(c.code)}</div>
+        <div class="what" style="font-weight:600; display:flex; align-items:center; gap:6px;">${escapeHtml(c.code)}${hasNews ? '<span class="ev-pill pendiente">nuevo</span>' : ''}</div>
         <div style="display:flex; gap:6px; flex-wrap:wrap;">
           <span class="ev-pill ${STATUS_PILL_CLASS[c.status] || 'confirmado'}">${STATUS_LABELS[c.status] || 'Abierto'}</span>
           ${c.inactiveDays > 3 ? `<span class="ev-pill pendiente">sin actividad hace ${c.inactiveDays}d</span>` : ''}
