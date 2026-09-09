@@ -121,6 +121,9 @@ const draftRoutes = require('./routes/draft')();
 const verifyRoutes = require('./routes/verify');
 const professionalsRoutes = require('./routes/professionals');
 const pushRoutes = require('./routes/push')();
+const mediationRoutes = require('./routes/mediations')(io, presence);
+const partyPortalRoutes = require('./routes/party-portal')(io);
+const lawyerPortalRoutes = require('./routes/lawyer-portal')();
 
 app.use('/auth', authRoutes);
 app.use('/api/channels', channelRoutes);
@@ -131,6 +134,9 @@ app.use('/api/draft', draftRoutes);
 app.use('/verificar', verifyRoutes);
 app.use('/api/professionals', professionalsRoutes);
 app.use('/api/push', pushRoutes);
+app.use('/api/mediations', mediationRoutes);
+app.use('/api/party-portal', partyPortalRoutes);
+app.use('/api/lawyer-portal', lawyerPortalRoutes);
 
 app.get('/api/health', (req, res) => res.json({ ok: true, users: getDB().users.length }));
 
@@ -239,8 +245,10 @@ setInterval(() => checkAndSendReminders().catch((e) => console.error('Error en r
 // canales sin unir (Tarea C) y resumen semanal (Tarea D) — corren cada
 // 2hs; cada función internamente decide si le toca actuar o no en esa
 // corrida, así que no hace falta un intervalo más fino que ese.
-const { checkUnjoinedChannels, generateWeeklySummaries } = require('./jobs');
+const { checkUnjoinedChannels, generateWeeklySummaries, checkMediationDeadlines } = require('./jobs');
 setTimeout(() => checkUnjoinedChannels().catch((e) => console.error('Error en job de canales sin unir:', e)), 15 * 1000);
 setInterval(() => checkUnjoinedChannels().catch((e) => console.error('Error en job de canales sin unir:', e)), 2 * 60 * 60 * 1000);
 setTimeout(() => generateWeeklySummaries().catch((e) => console.error('Error en job de resumen semanal:', e)), 20 * 1000);
 setInterval(() => generateWeeklySummaries().catch((e) => console.error('Error en job de resumen semanal:', e)), 2 * 60 * 60 * 1000);
+setTimeout(() => checkMediationDeadlines().catch((e) => console.error('Error en job de vencimientos de Mediador:', e)), 25 * 1000);
+setInterval(() => checkMediationDeadlines().catch((e) => console.error('Error en job de vencimientos de Mediador:', e)), 60 * 60 * 1000);

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mediador</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#12181A; --surface:#1B2326; --surface-2:#222C30; --line:#2E393D;
+    --text:#E7EDEC; --text-dim:#93A3A2; --text-faint:#5E6E6D;
+    --calm:#5FA8A0; --calm-dim:#3E6E69; --warn:#D98C4A; --warn-dim:#5A4327;
+    --danger:#C4614A; --danger-dim:#4A2C23;
+    --serif:'Fraunces',serif; --sans:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
+  }
+  *{box-sizing:border-box;}
+  body{ margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); -webkit-font-smoothing:antialiased; }
+  .brand{ font-family:var(--serif); font-weight:700; font-size:20px; }
+  .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
+  header{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--line); flex-wrap:wrap; gap:8px; }
+  header .brand{ font-size:17px; }
+  header nav{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  #user-name{ font-size:11.5px; color:var(--text-dim); white-space:nowrap; }
+  main{ max-width:720px; margin:0 auto; padding:20px; }
+  .card{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin-bottom:14px; }
+  .eyebrow{ font-family:var(--mono); font-size:10.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px; }
+  h1{ font-family:var(--serif); font-size:22px; margin:0 0 4px; }
+  h2{ font-family:var(--serif); font-size:16px; margin:0 0 10px; }
+  .stat-row{ display:flex; gap:18px; flex-wrap:wrap; }
+  .stat{ font-size:22px; font-weight:700; font-family:var(--serif); }
+  .stat-label{ font-size:11.5px; color:var(--text-dim); }
+  .alert-row{ display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--line); cursor:pointer; }
+  .alert-row:last-child{ border-bottom:none; }
+  .pill{ font-family:var(--mono); font-size:9.5px; padding:2px 8px; border-radius:8px; text-transform:uppercase; }
+  .pill.warn{ background:var(--warn-dim); color:var(--warn); }
+  .pill.danger{ background:var(--danger-dim); color:var(--danger); }
+  .pill.calm{ background:var(--calm-dim); color:var(--calm); }
+  .empty-hint{ color:var(--text-faint); font-size:12.5px; padding:6px 0; }
+  input, textarea, select{ width:100%; background:var(--surface-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:9px 11px; font-family:var(--sans); font-size:13.5px; margin-bottom:10px; }
+  label{ font-size:11.5px; color:var(--text-dim); display:block; margin-bottom:4px; }
+  button{ cursor:pointer; font-family:var(--sans); border:none; border-radius:8px; }
+  button.primary{ background:var(--calm); color:#0E1A19; font-weight:600; padding:10px 16px; font-size:13.5px; }
+  button.ghost{ background:none; border:1px solid var(--line); color:var(--text); padding:8px 14px; font-size:12.5px; }
+  .mediation-row{ padding:12px 0; border-bottom:1px solid var(--line); cursor:pointer; }
+  .mediation-row:last-child{ border-bottom:none; }
+  .mediation-row .top{ display:flex; justify-content:space-between; align-items:center; }
+  .mediation-row .code{ font-family:var(--mono); font-size:11px; color:var(--text-faint); }
+  .status-history-item{ font-size:12px; color:var(--text-dim); padding:6px 0; border-bottom:1px solid var(--line); }
+  .status-history-item:last-child{ border-bottom:none; }
+  .back-link{ font-size:12.5px; color:var(--calm); cursor:pointer; margin-bottom:14px; display:inline-block; }
+  #login-gate{ display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:16px; }
+</style>
+</head>
+<body>
+
+<div id="login-gate" style="display:none;">
+  <div class="brand">Mediador<em>digital</em></div>
+  <p style="color:var(--text-dim); font-size:13px;">Plataforma operativa para mediadores.</p>
+  <button class="primary" onclick="location.href='/auth/google?next=/mediador.html'">Continuar con Google</button>
+</div>
+
+<div id="app" style="display:none;">
+  <header>
+    <div class="brand">Mediador<em>digital</em></div>
+    <nav>
+      <span id="user-name"></span>
+      <button class="ghost" onclick="goTo('dashboard')">Dashboard</button>
+      <button class="ghost" onclick="goTo('list')">Mediaciones</button>
+      <button class="ghost" onclick="goTo('stats')">Estadísticas</button>
+    </nav>
+  </header>
+  <main id="main"></main>
+</div>
+
+<script src="/mediador.js"></script>
+</body>
+</html>

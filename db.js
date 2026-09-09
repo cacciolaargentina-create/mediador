@@ -41,6 +41,26 @@ const EMPTY_DB = {
   moderationStats: [], // { id, date:'YYYY-MM-DD', channelCode|null, successCount, failCount, flaggedCount } — UNA fila por día+canal (no una por llamada), para que el panel de Costos y Salud pueda sumar por período sin que la tabla crezca sin límite
   pushSubscriptions: [], // { id, userId, endpoint, keys:{p256dh,auth}, createdAt } — un dispositivo suscripto a notificaciones push del navegador; una persona puede tener varios (celu + compu)
   reports: [], // { id, channelId, messageId|null, reporterId, reason, createdAt, status:'pendiente'|'revisado', reviewedBy, reviewedAt } — "Reportar" desde el chat, para cuando lo que preocupa es un mensaje del OTRO lado (la moderación de IA solo filtra lo que uno mismo manda)
+
+  // ===== Mediador (B2B) — Bloque 1. Ver IMPLEMENTATION_PLAN.md §3 para el resto de las tablas (Bloques 4-6) =====
+  mediations: [], // { id, code, internalNumber, mediatorUserId, channelId, type, object, description, status:'borrador'|'iniciada'|'contactando_partes'|'notificaciones'|'audiencia_programada'|'en_mediacion'|'acuerdo'|'acuerdo_parcial'|'sin_acuerdo'|'incomparecencia'|'cerrada', nextActionText, nextActionResponsibleType:'mediador'|'party'|'lawyer', nextActionResponsibleId, nextActionDueDate, closedAt, closedResult, closedNotes, createdAt }
+  mediationStatusHistory: [], // { id, mediationId, fromStatus, toStatus, changedBy, note, createdAt } — nunca se borra una fila, solo se agregan
+  mediationAccess: [], // { id, mediationId, userId, role:'mediador'|'asistente'|'abogado'|'admin', partyId|null, grantedBy, grantedAt } — el mediador titular vive en mediations.mediatorUserId, esta tabla es para accesos ADICIONALES (ver §3.2b del plan)
+
+  // ===== Bloque 4. Ver IMPLEMENTATION_PLAN.md §3.3-3.6 =====
+  parties: [], // { id, mediationId, type:'persona'|'empresa', role:'requirente'|'requerido'|'otro', firstName, lastName, legalName, documentType, documentNumber, taxId, email, phone, address, status:'activa'|'inactiva', linkedUserId|null, notes, createdAt }
+  lawyers: [], // { id, mediationId, partyId, name, enrollmentNumber, barAssociation, email, phone, createdAt }
+  hearings: [], // { id, mediationId, date, startTime, endTime, type:'primera'|'continuacion'|'privada'|'otra', modality:'presencial'|'virtual'|'hibrida', location, meetingUrl, status:'programada'|'confirmada'|'realizada'|'cancelada'|'no_realizada', notes, createdAt }
+  hearingConfirmations: [], // { id, hearingId, partyId, response:'pendiente'|'confirma'|'no_puede'|'pide_cambio', respondedAt, createdAt } — una fila por parte por audiencia, se crea sola al crear la audiencia
+  hearingRescheduleRequests: [], // { id, hearingId, mediationId, requestedByPartyId, requestedByType:'party'|'lawyer', requestedByLawyerId|null, reason|null, proposedDate|null, proposedStartTime|null, status:'pendiente'|'aceptada'|'rechazada'|'reprogramada', mediatorNote|null, resolvedBy|null, resolvedAt|null, createdAt }
+
+  // ===== Bloque 5. Ver IMPLEMENTATION_PLAN.md §3.7 =====
+  documents: [], // { id, mediationId, uploadedBy, partyId|null, type, originalFilename (solo para mostrar), storagePath (nombre físico aleatorio en disco), mimeType, size, status:'pendiente_escaneo'|'recibido'|'pendiente_revision'|'revisado'|'observado'|'final', version, parentDocumentId|null (apunta a la RAÍZ del linaje de versiones, no a la anterior — null = documento independiente o es él mismo la raíz), createdAt }
+
+  // ===== Bloque 6. Ver IMPLEMENTATION_PLAN.md §3.10/3.11/3.8/3.9 =====
+  mediationEvents: [], // { id, mediationId, type, actorId|null, visibility:'public'|'mediator_only', entityType, entityId, title, description, metadata|null, causedByEventId|null, createdAt }
+  tasks: [], // { id, mediationId, assignedTo, title, description, dueDate, priority:'baja'|'media'|'alta'|'urgente', status:'pendiente'|'en_proceso'|'completada'|'cancelada', createdBy, completedAt, createdAt }
+  commitments: [], // { id, mediationId, partyId, description, dueDate, status:'pendiente'|'cumplido'|'vencido'|'cancelado', createdFromEventId|null, completedAt, createdAt }
 };
 
 const SCHEMA = `
@@ -54,7 +74,8 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS channels (
   id TEXT PRIMARY KEY, code TEXT UNIQUE, guestToken TEXT, calendarToken TEXT,
   professionalInvites TEXT, remindedAt INTEGER, lastSummary TEXT,
-  status TEXT DEFAULT 'abierto', createdAt INTEGER, pinnedMessageId TEXT
+  status TEXT DEFAULT 'abierto', createdAt INTEGER, pinnedMessageId TEXT,
+  mediationId TEXT, partyId TEXT
 );
 CREATE TABLE IF NOT EXISTS members (
   id TEXT PRIMARY KEY, channelId TEXT, userId TEXT, role TEXT, label TEXT,
@@ -113,6 +134,97 @@ CREATE TABLE IF NOT EXISTS reports (
   id TEXT PRIMARY KEY, channelId TEXT, messageId TEXT, reporterId TEXT, reason TEXT,
   status TEXT DEFAULT 'pendiente', reviewedBy TEXT, reviewedAt INTEGER, createdAt INTEGER
 );
+-- ===== Mediador (B2B) — Bloque 1, ver IMPLEMENTATION_PLAN.md §3.1/3.2/3.2b =====
+CREATE TABLE IF NOT EXISTS mediations (
+  id TEXT PRIMARY KEY, code TEXT UNIQUE, internalNumber TEXT,
+  mediatorUserId TEXT, channelId TEXT,
+  type TEXT, object TEXT, description TEXT,
+  status TEXT DEFAULT 'borrador',
+  nextActionText TEXT, nextActionResponsibleType TEXT, nextActionResponsibleId TEXT, nextActionDueDate TEXT,
+  closedAt INTEGER, closedResult TEXT, closedNotes TEXT,
+  createdAt INTEGER
+);
+-- historial de cambios de estado — nunca se borra una fila (spec §4:
+-- "no eliminar información histórica"), solo se agregan nuevas.
+CREATE TABLE IF NOT EXISTS mediation_status_history (
+  id TEXT PRIMARY KEY, mediationId TEXT, fromStatus TEXT, toStatus TEXT,
+  changedBy TEXT, note TEXT, createdAt INTEGER
+);
+-- quién más (además del mediador titular) tiene acceso a una mediación —
+-- ver IMPLEMENTATION_PLAN.md §3.2b para por qué esto es una tabla propia
+-- desde el día 1, en vez de agregarla recién cuando exista rol
+-- asistente/abogado.
+CREATE TABLE IF NOT EXISTS mediation_access (
+  id TEXT PRIMARY KEY, mediationId TEXT, userId TEXT, role TEXT, partyId TEXT,
+  grantedBy TEXT, grantedAt INTEGER
+);
+-- ===== Bloque 4 — ver IMPLEMENTATION_PLAN.md §3.3/3.4/3.5/3.6 =====
+-- las partes tienen sus propios datos legales completos, y existen
+-- independientemente de que la persona alguna vez inicie sesión — por eso
+-- linkedUserId es nullable: un mediador puede cargar "Juan Pérez, DNI
+-- 30.111.222" en el expediente sin que Juan haya hecho nada todavía.
+CREATE TABLE IF NOT EXISTS parties (
+  id TEXT PRIMARY KEY, mediationId TEXT, type TEXT, role TEXT,
+  firstName TEXT, lastName TEXT, legalName TEXT, documentType TEXT, documentNumber TEXT,
+  taxId TEXT, email TEXT, phone TEXT, address TEXT, status TEXT DEFAULT 'activa',
+  linkedUserId TEXT, notes TEXT, createdAt INTEGER
+);
+CREATE TABLE IF NOT EXISTS lawyers (
+  id TEXT PRIMARY KEY, mediationId TEXT, partyId TEXT, name TEXT,
+  enrollmentNumber TEXT, barAssociation TEXT, email TEXT, phone TEXT, createdAt INTEGER
+);
+CREATE TABLE IF NOT EXISTS hearings (
+  id TEXT PRIMARY KEY, mediationId TEXT, date TEXT, startTime TEXT, endTime TEXT,
+  type TEXT, modality TEXT, location TEXT, meetingUrl TEXT,
+  status TEXT DEFAULT 'programada', notes TEXT, createdAt INTEGER
+);
+-- una fila por parte por audiencia, así cada una confirma independiente
+-- (spec §20) — se crean automáticamente al crear la audiencia (§3.11 del
+-- plan, regla HEARING_SCHEDULED), nunca a mano.
+CREATE TABLE IF NOT EXISTS hearing_confirmations (
+  id TEXT PRIMARY KEY, hearingId TEXT, partyId TEXT, response TEXT DEFAULT 'pendiente',
+  respondedAt INTEGER, createdAt INTEGER
+);
+-- Hardening — reprogramación estructurada. "pide_cambio" en
+-- hearing_confirmations sigue existiendo como respuesta de esa parte
+-- puntual a ESA audiencia, pero la solicitud en sí (motivo, fecha
+-- propuesta, y la resolución del mediador) es un concepto distinto, con
+-- su propio ciclo de vida — por eso tabla aparte, no un campo más en
+-- hearing_confirmations.
+CREATE TABLE IF NOT EXISTS hearing_reschedule_requests (
+  id TEXT PRIMARY KEY, hearingId TEXT, mediationId TEXT,
+  requestedByPartyId TEXT, requestedByType TEXT, requestedByLawyerId TEXT,
+  reason TEXT, proposedDate TEXT, proposedStartTime TEXT,
+  status TEXT DEFAULT 'pendiente', mediatorNote TEXT,
+  resolvedBy TEXT, resolvedAt INTEGER, createdAt INTEGER
+);
+-- ===== Bloque 5 — ver IMPLEMENTATION_PLAN.md §3.7 y su checklist de
+-- seguridad. originalFilename es SOLO para mostrar — nunca se usa para
+-- construir un path físico; storagePath es el nombre aleatorio real en
+-- disco, generado por el server, nunca derivado de lo que mandó el cliente.
+CREATE TABLE IF NOT EXISTS documents (
+  id TEXT PRIMARY KEY, mediationId TEXT, uploadedBy TEXT, partyId TEXT,
+  type TEXT, originalFilename TEXT, storagePath TEXT, mimeType TEXT, size INTEGER,
+  status TEXT DEFAULT 'recibido', version INTEGER DEFAULT 1, createdAt INTEGER
+);
+-- ===== Bloque 6 — ver IMPLEMENTATION_PLAN.md §3.10/3.11/3.8/3.9 =====
+-- el timeline: "events" a secas ya es el calendario de coparentalidad (ver
+-- §1.4 del plan) — por eso este se llama distinto, para que nadie los
+-- confunda escribiendo rápido.
+CREATE TABLE IF NOT EXISTS mediation_events (
+  id TEXT PRIMARY KEY, mediationId TEXT, type TEXT, actorId TEXT,
+  visibility TEXT DEFAULT 'public', entityType TEXT, entityId TEXT,
+  title TEXT, description TEXT, metadata TEXT, causedByEventId TEXT, createdAt INTEGER
+);
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY, mediationId TEXT, assignedTo TEXT,
+  title TEXT, description TEXT, dueDate TEXT, priority TEXT DEFAULT 'media',
+  status TEXT DEFAULT 'pendiente', createdBy TEXT, completedAt INTEGER, createdAt INTEGER
+);
+CREATE TABLE IF NOT EXISTS commitments (
+  id TEXT PRIMARY KEY, mediationId TEXT, partyId TEXT, description TEXT, dueDate TEXT,
+  status TEXT DEFAULT 'pendiente', createdFromEventId TEXT, completedAt INTEGER, createdAt INTEGER
+);
 CREATE INDEX IF NOT EXISTS idx_certified_exports_hash ON certified_exports(hash);
 CREATE INDEX IF NOT EXISTS idx_professional_applications_user ON professional_applications(userId);
 CREATE INDEX IF NOT EXISTS idx_moderation_stats_date ON moderation_stats(date);
@@ -126,6 +238,26 @@ CREATE INDEX IF NOT EXISTS idx_case_notes_channel ON case_notes(channelId);
 CREATE INDEX IF NOT EXISTS idx_expenses_channel ON expenses(channelId);
 CREATE INDEX IF NOT EXISTS idx_checkins_channel ON checkins(channelId);
 CREATE INDEX IF NOT EXISTS idx_reports_channel ON reports(channelId);
+CREATE INDEX IF NOT EXISTS idx_mediations_mediator ON mediations(mediatorUserId);
+CREATE INDEX IF NOT EXISTS idx_mediations_status ON mediations(status);
+CREATE INDEX IF NOT EXISTS idx_mediations_channel ON mediations(channelId);
+CREATE INDEX IF NOT EXISTS idx_mediation_status_history_mediation ON mediation_status_history(mediationId);
+CREATE INDEX IF NOT EXISTS idx_mediation_access_mediation ON mediation_access(mediationId);
+CREATE INDEX IF NOT EXISTS idx_mediation_access_user ON mediation_access(userId);
+CREATE INDEX IF NOT EXISTS idx_parties_mediation ON parties(mediationId);
+CREATE INDEX IF NOT EXISTS idx_parties_document ON parties(documentNumber);
+CREATE INDEX IF NOT EXISTS idx_parties_email ON parties(email);
+CREATE INDEX IF NOT EXISTS idx_lawyers_party ON lawyers(partyId);
+CREATE INDEX IF NOT EXISTS idx_hearings_mediation ON hearings(mediationId);
+CREATE INDEX IF NOT EXISTS idx_hearing_confirmations_hearing ON hearing_confirmations(hearingId);
+CREATE INDEX IF NOT EXISTS idx_reschedule_requests_hearing ON hearing_reschedule_requests(hearingId);
+CREATE INDEX IF NOT EXISTS idx_reschedule_requests_mediation ON hearing_reschedule_requests(mediationId);
+CREATE INDEX IF NOT EXISTS idx_documents_mediation ON documents(mediationId);
+CREATE INDEX IF NOT EXISTS idx_mediation_events_mediation ON mediation_events(mediationId);
+CREATE INDEX IF NOT EXISTS idx_tasks_mediation ON tasks(mediationId);
+CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(dueDate);
+CREATE INDEX IF NOT EXISTS idx_commitments_mediation ON commitments(mediationId);
+CREATE INDEX IF NOT EXISTS idx_commitments_due ON commitments(dueDate);
 `;
 
 // columnas que se guardan como 0/1 en SQLite pero son boolean en JS —
@@ -135,6 +267,7 @@ const BOOL_COLUMNS = {
   users: ['guest', 'verifiedProfessional', 'readReceiptsEnabled'],
   members: ['assignedByAdmin', 'notificationsMuted'],
   messages: ['flagged', 'pattern'],
+  parties: ['allowDocumentUpload'],
 };
 // columnas que viajan como objeto/array en JS pero se guardan como texto JSON
 const JSON_COLUMNS = {
@@ -143,6 +276,7 @@ const JSON_COLUMNS = {
   users: ['aiUsage'],
   pushSubscriptions: ['keys'],
   messages: ['attachment'],
+  mediationEvents: ['metadata'],
 };
 const TABLE_NAMES = {
   users: 'users', channels: 'channels', members: 'members', messages: 'messages',
@@ -152,6 +286,13 @@ const TABLE_NAMES = {
   certifiedExports: 'certified_exports', professionalApplications: 'professional_applications',
   moderationStats: 'moderation_stats', pushSubscriptions: 'push_subscriptions',
   reports: 'reports', messageReactions: 'message_reactions',
+  // ===== Mediador (B2B) =====
+  mediations: 'mediations', mediationStatusHistory: 'mediation_status_history',
+  mediationAccess: 'mediation_access',
+  parties: 'parties', lawyers: 'lawyers', hearings: 'hearings', hearingConfirmations: 'hearing_confirmations',
+  hearingRescheduleRequests: 'hearing_reschedule_requests',
+  documents: 'documents',
+  mediationEvents: 'mediation_events', tasks: 'tasks', commitments: 'commitments',
 };
 
 function rowToRecord(collectionKey, row) {
@@ -195,12 +336,29 @@ function openDb() {
     verifiedProfessionalRole: 'TEXT', verifiedProfessionalOrg: 'TEXT',
     readReceiptsEnabled: 'INTEGER DEFAULT 1',
   });
-  ensureColumns(sqlite, 'channels', { remindedAt: 'INTEGER', lastSummary: 'TEXT', status: "TEXT DEFAULT 'abierto'", pinnedMessageId: 'TEXT' });
+  ensureColumns(sqlite, 'channels', { remindedAt: 'INTEGER', lastSummary: 'TEXT', status: "TEXT DEFAULT 'abierto'", pinnedMessageId: 'TEXT', mediationId: 'TEXT', partyId: 'TEXT' });
   ensureColumns(sqlite, 'members', { lastSeenAt: 'INTEGER', notificationsMuted: 'INTEGER DEFAULT 0' });
   ensureColumns(sqlite, 'events', { swapId: 'TEXT', kind: "TEXT DEFAULT 'entrega'" });
   ensureColumns(sqlite, 'expenses', { eventId: 'TEXT' });
-  ensureColumns(sqlite, 'certified_exports', { signature: 'TEXT' });
+  ensureColumns(sqlite, 'certified_exports', { signature: 'TEXT', mediationCode: 'TEXT' });
   ensureColumns(sqlite, 'messages', { replyToId: 'TEXT', deliverAt: 'INTEGER', attachment: 'TEXT' });
+  // ===== Mediador (B2B) =====
+  ensureColumns(sqlite, 'parties', { portalToken: 'TEXT', allowDocumentUpload: 'INTEGER DEFAULT 1' });
+  // Portal de Abogados — mismo patrón que parties: portalToken para
+  // acceso sin cuenta, linkedUserId para poder ver el hilo de mensajes de
+  // la parte que representa (nunca para escribir — ver diseño abajo).
+  ensureColumns(sqlite, 'lawyers', { portalToken: 'TEXT', linkedUserId: 'TEXT' });
+  // Hardening — versionado real de documentos. NULL para todo documento
+  // existente: eso ya representa correctamente "documento independiente,
+  // versión 1" sin necesitar ningún backfill — nada se rompe.
+  ensureColumns(sqlite, 'documents', { parentDocumentId: 'TEXT' });
+  // el índice va ACÁ, no adentro de SCHEMA — SCHEMA se ejecuta antes que
+  // esta migración, así que un índice sobre una columna que recién se
+  // crea acá arriba rompe en una base de datos nueva.
+  sqlite.exec('CREATE INDEX IF NOT EXISTS idx_documents_parent ON documents(parentDocumentId);');
+  // Bloque 11 — avisos configurables por mediación: con cuánta
+  // anticipación avisar de una audiencia próxima, y por qué canal(es).
+  ensureColumns(sqlite, 'mediations', { reminderHoursBefore: 'INTEGER DEFAULT 48', reminderChannels: "TEXT DEFAULT 'push,whatsapp'", nextActionSetBy: 'TEXT', upcomingDueWindowDays: 'INTEGER DEFAULT 7', closedBy: 'TEXT' });
   if (isNew && fs.existsSync(LEGACY_JSON_PATH)) {
     migrateFromJson(sqlite, LEGACY_JSON_PATH);
   }

@@ -99,7 +99,8 @@ router.get('/:hash', (req, res) => {
       <h1 class="ok">Documento auténtico</h1>
       <p>Este informe fue generado y certificado por Puente Digital.</p>
       <div class="details">
-        <div><b>Caso:</b> ${escapeHtml(record.channelCode)}</div>
+        <div><b>Caso:</b> ${escapeHtml(record.mediationCode || record.channelCode)}</div>
+        ${record.mediationCode ? '<div><b>Tipo:</b> Mediación</div>' : ''}
         <div><b>Generado el:</b> ${escapeHtml(fmt(record.createdAt))}</div>
         ${record.generatedByName ? `<div><b>Generado por:</b> ${escapeHtml(record.generatedByName)}${record.generatedByRole ? ' (' + escapeHtml(record.generatedByRole) + ')' : ''}</div>` : ''}
       </div>

@@ -218,4 +218,192 @@ async function buildCertifiedReport({ channel, messages, events, nameOf, generat
   });
 }
 
-module.exports = { buildCertifiedReport, integrityHash, buildPlainContent };
+module.exports = { buildCertifiedReport, integrityHash, buildPlainContent, buildMediationPlainContent, buildMediationCertifiedPDF, buildMediationConstanciaPDF };
+
+// ===== Bloque 8 de Mediador (B2B) — exportación certificada de una
+// mediación completa. Reusa integrityHash/signHash/verificación pública
+// tal cual (son genéricos) — lo que cambia es el CONTENIDO, porque una
+// mediación no es un chat de dos personas, es datos generales + partes +
+// abogados + audiencias + timeline + documentos + compromisos + resultado.
+
+const STATUS_LABELS_ES = {
+  borrador: 'Borrador', iniciada: 'Iniciada', contactando_partes: 'Contactando partes',
+  notificaciones: 'Notificaciones', audiencia_programada: 'Audiencia programada',
+  en_mediacion: 'En mediación', acuerdo: 'Acuerdo', acuerdo_parcial: 'Acuerdo parcial',
+  sin_acuerdo: 'Sin acuerdo', incomparecencia: 'Incomparecencia', cerrada: 'Cerrada',
+};
+
+function partyLabel(p) {
+  if (!p) return '—';
+  return p.legalName || `${p.firstName || ''} ${p.lastName || ''}`.trim() || '—';
+}
+
+function buildMediationPlainContent({ mediation, parties, lawyers, hearings, documents, commitments, timeline }) {
+  const lines = [];
+  lines.push('INFORME DE MEDIACIÓN — MEDIADOR (Puente Digital)');
+  lines.push(`Código: ${mediation.code}${mediation.internalNumber ? ' · N° interno: ' + mediation.internalNumber : ''}`);
+  lines.push(`Objeto: ${mediation.object}`);
+  lines.push(`Estado: ${STATUS_LABELS_ES[mediation.status] || mediation.status}`);
+  if (mediation.closedAt) {
+    lines.push(`Resultado de cierre: ${mediation.closedResult} — ${fmt(mediation.closedAt)}`);
+  }
+  lines.push('');
+  lines.push('--- PARTES ---');
+  parties.forEach((p) => {
+    lines.push(`${partyLabel(p)} (${p.role})${p.documentNumber ? ' — ' + (p.documentType || 'Doc.') + ' ' + p.documentNumber : ''}`);
+  });
+  lines.push('');
+  lines.push('--- ABOGADOS ---');
+  lawyers.forEach((l) => {
+    const party = parties.find((p) => p.id === l.partyId);
+    lines.push(`${l.name}${l.enrollmentNumber ? ' — Mat. ' + l.enrollmentNumber : ''}${party ? ' (representa a ' + partyLabel(party) + ')' : ''}`);
+  });
+  lines.push('');
+  lines.push('--- AUDIENCIAS ---');
+  hearings.forEach((h) => {
+    lines.push(`${h.date}${h.startTime ? ' ' + h.startTime : ''} — ${h.modality} — estado: ${h.status}`);
+  });
+  lines.push('');
+  lines.push('--- DOCUMENTOS ---');
+  documents.forEach((d) => {
+    lines.push(`${d.originalFilename} (${d.type}) — ${fmt(d.createdAt)}`);
+  });
+  lines.push('');
+  lines.push('--- COMPROMISOS ---');
+  commitments.forEach((c) => {
+    const party = parties.find((p) => p.id === c.partyId);
+    lines.push(`${partyLabel(party)}: ${c.description}${c.dueDate ? ' — vence ' + c.dueDate : ''} — estado: ${c.status}`);
+  });
+  lines.push('');
+  lines.push('--- TIMELINE ---');
+  timeline.forEach((e) => {
+    lines.push(`[${fmt(e.createdAt)}] ${e.type}${e.title ? ': ' + e.title : ''}`);
+  });
+  return lines.join('\n');
+}
+
+// PDF más simple que el del chat (sin carátula judicial ni foliado — eso
+// es específico del uso en un escrito, acá no aplica todavía) pero con el
+// mismo tratamiento de membrete + QR + firma electrónica, para que la
+// identidad visual sea consistente entre los dos productos.
+async function buildMediationCertifiedPDF({ mediation, parties, lawyers, hearings, documents, commitments, timeline, hash, signature, verifyUrl, generatedBy }) {
+  const now = new Date();
+  const qrBuffer = verifyUrl
+    ? await QRCode.toBuffer(verifyUrl, { type: 'png', width: 200, margin: 1, color: { dark: '#1a1a2e', light: '#ffffff' } })
+    : null;
+
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
+    const chunks = [];
+    doc.on('data', (c) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const qrSize = 68;
+    if (qrBuffer) {
+      doc.image(qrBuffer, 545 - qrSize, 50, { width: qrSize, height: qrSize });
+      doc.fontSize(6.5).fillColor('#777').font('Helvetica').text('Verificar autenticidad', 545 - qrSize - 8, 50 + qrSize + 2, { width: qrSize + 16, align: 'center' });
+      doc.x = 50; doc.y = 50;
+    }
+    doc.fontSize(20).fillColor('#1a1a2e').font('Helvetica-Bold').text('MEDIADOR', { align: 'left' });
+    doc.fontSize(11).fillColor('#555').font('Helvetica').text('Informe certificado de mediación', { align: 'left' });
+    doc.moveDown(0.3);
+    if (qrBuffer) { const qrBottomY = 50 + qrSize + 16; if (doc.y < qrBottomY) doc.y = qrBottomY; }
+    doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#1a1a2e').lineWidth(1.5).stroke();
+    doc.moveDown(1);
+
+    doc.fontSize(10).fillColor('#000');
+    doc.font('Helvetica-Bold').text('Mediación: ', { continued: true }).font('Helvetica').text(`${mediation.code} — ${mediation.object}`);
+    doc.font('Helvetica-Bold').text('Estado: ', { continued: true }).font('Helvetica').text(STATUS_LABELS_ES[mediation.status] || mediation.status);
+    doc.font('Helvetica-Bold').text('Generado: ', { continued: true }).font('Helvetica').text(now.toLocaleString('es-AR', { dateStyle: 'long', timeStyle: 'short' }));
+    if (generatedBy) doc.font('Helvetica-Bold').text('Generado por: ', { continued: true }).font('Helvetica').text(generatedBy.name);
+    doc.moveDown(1);
+
+    function section(title, rows) {
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('#1a1a2e').text(title);
+      doc.moveDown(0.2);
+      doc.fontSize(9).font('Helvetica').fillColor('#222');
+      if (!rows.length) { doc.fillColor('#888').text('— sin datos —'); }
+      rows.forEach((r) => doc.text(r));
+      doc.moveDown(0.8);
+    }
+
+    section('Partes', parties.map((p) => `${partyLabel(p)} (${p.role})${p.documentNumber ? ' — ' + (p.documentType || 'Doc.') + ' ' + p.documentNumber : ''}`));
+    section('Abogados', lawyers.map((l) => {
+      const party = parties.find((p) => p.id === l.partyId);
+      return `${l.name}${l.enrollmentNumber ? ' — Mat. ' + l.enrollmentNumber : ''}${party ? ' (representa a ' + partyLabel(party) + ')' : ''}`;
+    }));
+    section('Audiencias', hearings.map((h) => `${h.date}${h.startTime ? ' ' + h.startTime : ''} — ${h.modality} — ${h.status}`));
+    section('Documentos', documents.map((d) => `${d.originalFilename} (${d.type}) — ${fmt(d.createdAt)}`));
+    section('Compromisos', commitments.map((c) => {
+      const party = parties.find((p) => p.id === c.partyId);
+      return `${partyLabel(party)}: ${c.description}${c.dueDate ? ' — vence ' + c.dueDate : ''} — ${c.status}`;
+    }));
+    section('Timeline', timeline.map((e) => `[${fmt(e.createdAt)}] ${e.title || e.type}`));
+
+    if (mediation.closedAt) {
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('#1a1a2e').text('Cierre');
+      doc.fontSize(9).font('Helvetica').fillColor('#222').text(`Resultado: ${mediation.closedResult} — ${fmt(mediation.closedAt)}`);
+      if (mediation.closedNotes) doc.text(mediation.closedNotes);
+      doc.moveDown(0.8);
+    }
+
+    // ---- firma electrónica — mismo texto/criterio que el informe de chat ----
+    doc.fontSize(9).font('Helvetica-Bold').fillColor('#1a1a2e').text('Firma electrónica');
+    doc.font('Helvetica').fillColor('#555').fontSize(8).text(
+      signature
+        ? 'Este documento está firmado electrónicamente con la clave privada de Puente Digital sobre el hash de integridad de abajo. No es firma digital en el sentido de la Ley 25.506 (sin certificador licenciado ni presunción legal automática), pero permite verificar de forma independiente que el documento salió de acá y no fue alterado.'
+        : 'Este documento no incluye firma electrónica (clave de firma no configurada en el servidor) — el hash de integridad de abajo sigue siendo válido para detectar alteraciones.'
+    );
+    doc.moveDown(0.3);
+    doc.fontSize(7.5).font('Courier').fillColor('#333').text(`SHA-256: ${hash}`);
+    if (signature) doc.fontSize(7).font('Courier').fillColor('#555').text(`Firma: ${signature.slice(0, 60)}…`);
+
+    doc.end();
+  });
+}
+
+// Bloque 10 — constancia corta: una sola página, solo lo mínimo para
+// PROBAR que la mediación se cerró y con qué resultado, no el expediente
+// completo (eso sigue siendo buildMediationCertifiedPDF, sin tocar). Mismo
+// hash+firma+QR — la única diferencia real es cuánto contenido entra.
+async function buildMediationConstanciaPDF({ mediation, hash, signature, verifyUrl }) {
+  const qrBuffer = verifyUrl
+    ? await QRCode.toBuffer(verifyUrl, { type: 'png', width: 160, margin: 1, color: { dark: '#1a1a2e', light: '#ffffff' } })
+    : null;
+
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 60 });
+    const chunks = [];
+    doc.on('data', (c) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    doc.fontSize(18).fillColor('#1a1a2e').font('Helvetica-Bold').text('CONSTANCIA DE MEDIACIÓN', { align: 'center' });
+    doc.moveDown(2);
+
+    if (qrBuffer) {
+      doc.image(qrBuffer, doc.page.width / 2 - 80, doc.y, { width: 160, height: 160 });
+      doc.y += 170;
+    }
+
+    doc.fontSize(11).fillColor('#000').font('Helvetica');
+    doc.text(' ', { align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(13).text(mediation.code, { align: 'center' });
+    doc.moveDown(0.6);
+    doc.fontSize(10).font('Helvetica').fillColor('#333').text(mediation.object, { align: 'center' });
+    doc.moveDown(1);
+    if (mediation.closedAt) {
+      doc.font('Helvetica-Bold').text(`Resultado: ${mediation.closedResult}`, { align: 'center' });
+      doc.font('Helvetica').text(`Cerrada el ${fmt(mediation.closedAt)}`, { align: 'center' });
+    } else {
+      doc.font('Helvetica').fillColor('#888').text('Mediación en curso — no cerrada', { align: 'center' });
+    }
+    doc.moveDown(2);
+
+    doc.fontSize(7.5).font('Courier').fillColor('#555').text(`SHA-256: ${hash}`, { align: 'center' });
+    if (signature) doc.fontSize(7).text(`Firma electrónica: ${signature.slice(0, 40)}…`, { align: 'center' });
+
+    doc.end();
+  });
+}

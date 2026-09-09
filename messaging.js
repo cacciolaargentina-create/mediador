@@ -99,9 +99,15 @@ async function finalizeMessage(io, channel, messageId) {
 
   // avisar a la OTRA parte del canal, sin importar si este mensaje vino de
   // la web o de WhatsApp — la notificación es para quien no lo escribió.
-  const otherMember = db.members.find(
-    (m) => m.channelId === channel.id && m.userId && m.userId !== msg.senderId && (m.role === 'A' || m.role === 'B')
-  );
+  // Los hilos de Mediador (identificados por channel.partyId) usan roles
+  // 'mediador'/'parte' en vez de 'A'/'B' — para esos, cualquier otro
+  // miembro real cuenta. Para canales de coparentalidad (sin partyId) se
+  // mantiene EXACTO el filtro A/B de siempre: no tocarlo evita, por
+  // ejemplo, que un profesional observador (rol 'mediador' ahí también)
+  // termine recibiendo una notificación pensada para la Parte B.
+  const otherMember = channel.partyId
+    ? db.members.find((m) => m.channelId === channel.id && m.userId && m.userId !== msg.senderId)
+    : db.members.find((m) => m.channelId === channel.id && m.userId && m.userId !== msg.senderId && (m.role === 'A' || m.role === 'B'));
   if (otherMember && sender) {
     scheduleNotification(io, channel, { toUserId: otherMember.userId, fromName: sender.name });
   }

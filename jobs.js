@@ -7,6 +7,7 @@ const { getDB, commit } = require('./db');
 const { sendText } = require('./whatsapp');
 const { sendPushToUser } = require('./push');
 const { accessLinkFor } = require('./messaging');
+const { logMediationEvent } = require('./mediationEvents');
 
 const REMINDER_AFTER_MS = 3 * 24 * 60 * 60 * 1000; // 3 días sin que se una la otra parte
 const SUMMARY_PERIOD_MS = 7 * 24 * 60 * 60 * 1000; // resumen semanal
@@ -124,4 +125,141 @@ async function generateWeeklySummaries() {
   return { sent };
 }
 
-module.exports = { checkUnjoinedChannels, generateWeeklySummaries, REMINDER_AFTER_MS, SUMMARY_PERIOD_MS };
+// Bloque 6 de Mediador (B2B) — motor operativo, reglas COMMITMENT_OVERDUE
+// y HEARING_CONFIRMATION_MISSING (ver IMPLEMENTATION_PLAN.md §3.11).
+//
+// Importante, y ya documentado en el plan: el dashboard de Mediador NUNCA
+// depende de que este job haya corrido a tiempo — las alertas ahí se
+// recalculan en vivo contra la fecha. Este job solo se encarga de:
+// (a) la transición de estado real (pendiente -> vencido), que si o si
+//     necesita que algo la dispare en algún momento, y
+// (b) dejar constancia en el timeline la PRIMERA vez que se detecta cada
+//     caso — nunca repite el mismo aviso en cada corrida.
+// Bloque 11 — manda el aviso de verdad, por los canales que el mediador
+// configuró para ESA mediación puntual (reminderChannels, por defecto
+// los dos). whatsapp se salta solo si el mediador no cargó teléfono —
+// mismo criterio ya usado en generateWeeklySummaries de acá arriba.
+async function notifyMediator(db, mediation, { title, body, url }) {
+  const channels = (mediation.reminderChannels || 'push,whatsapp').split(',');
+  const mediator = db.users.find((u) => u.id === mediation.mediatorUserId);
+  if (!mediator) return;
+  if (channels.includes('push')) {
+    try { await sendPushToUser(db, commit, mediator.id, { title, body, url }); }
+    catch (err) { console.error('No se pudo mandar push de Mediador:', err); }
+  }
+  if (channels.includes('whatsapp') && mediator.phone) {
+    try { await sendText(mediator.phone, body); }
+    catch (err) { console.error('No se pudo mandar WhatsApp de Mediador:', err); }
+  }
+}
+
+async function checkMediationDeadlines() {
+  const db = getDB();
+  const now = Date.now();
+  let commitmentsMarked = 0;
+  let hearingAlertsLogged = 0;
+  let hearingRemindersLogged = 0;
+  let tasksOverdueLogged = 0;
+  const mediationById = Object.fromEntries(db.mediations.map((m) => [m.id, m]));
+
+  // compromisos vencidos: pendiente + dueDate ya pasó — ahora además NOTIFICA
+  // de verdad al mediador (antes solo quedaba logueado en el timeline).
+  for (const commitment of db.commitments) {
+    if (commitment.status !== 'pendiente' || !commitment.dueDate) continue;
+    if (new Date(commitment.dueDate).getTime() >= now) continue;
+    commitment.status = 'vencido';
+    logMediationEvent(db, {
+      mediationId: commitment.mediationId, type: 'COMMITMENT_OVERDUE', actorId: null,
+      entityType: 'commitment', entityId: commitment.id,
+      title: `Compromiso vencido: ${commitment.description}`,
+      causedByEventId: commitment.createdFromEventId || null,
+    });
+    const mediation = mediationById[commitment.mediationId];
+    if (mediation) {
+      await notifyMediator(db, mediation, {
+        title: 'Compromiso vencido — Mediador',
+        body: `${mediation.code}: "${commitment.description}" venció sin cumplirse.`,
+        url: '/mediador.html',
+      });
+    }
+    commitmentsMarked++;
+  }
+
+  // tareas vencidas — Bloque 11, cobertura nueva: antes esto solo se
+  // calculaba en vivo para el dashboard, nunca generaba un aviso proactivo.
+  // No hay estado "vencida" en tasks (solo pendiente/en_proceso/completada/
+  // cancelada) — se avisa una sola vez, sin cambiar el status.
+  for (const task of db.tasks) {
+    if (!['pendiente', 'en_proceso'].includes(task.status) || !task.dueDate) continue;
+    if (new Date(task.dueDate).getTime() >= now) continue;
+    const alreadyLogged = db.mediationEvents.some((e) => e.type === 'TASK_OVERDUE' && e.entityId === task.id);
+    if (alreadyLogged) continue;
+
+    logMediationEvent(db, {
+      mediationId: task.mediationId, type: 'TASK_OVERDUE', actorId: null,
+      entityType: 'task', entityId: task.id, title: `Tarea vencida: ${task.title}`,
+    });
+    const mediation = mediationById[task.mediationId];
+    if (mediation) {
+      await notifyMediator(db, mediation, {
+        title: 'Tarea vencida — Mediador',
+        body: `${mediation.code}: "${task.title}" venció sin completarse.`,
+        url: '/mediador.html',
+      });
+    }
+    tasksOverdueLogged++;
+  }
+
+  // audiencias próximas con alguna confirmación todavía pendiente — la
+  // ventana ya no es fija (48hs): usa reminderHoursBefore de CADA
+  // mediación (Bloque 11, configurable). Se avisa UNA sola vez por audiencia.
+  for (const hearing of db.hearings) {
+    if (!['programada', 'confirmada'].includes(hearing.status)) continue;
+    const mediation = mediationById[hearing.mediationId];
+    if (!mediation) continue;
+    const windowMs = (mediation.reminderHoursBefore || 48) * 60 * 60 * 1000;
+    const hearingTime = new Date(hearing.date + (hearing.startTime ? 'T' + hearing.startTime : '')).getTime();
+    if (isNaN(hearingTime) || hearingTime - now > windowMs || hearingTime < now) continue;
+
+    const stillPending = db.hearingConfirmations.some((c) => c.hearingId === hearing.id && c.response === 'pendiente');
+    if (stillPending) {
+      const alreadyAlerted = db.mediationEvents.some((e) => e.type === 'HEARING_CONFIRMATION_MISSING' && e.entityId === hearing.id);
+      if (!alreadyAlerted) {
+        logMediationEvent(db, {
+          mediationId: hearing.mediationId, type: 'HEARING_CONFIRMATION_MISSING', actorId: null,
+          entityType: 'hearing', entityId: hearing.id,
+          title: `Audiencia del ${hearing.date} con confirmaciones pendientes`,
+        });
+        await notifyMediator(db, mediation, {
+          title: 'Confirmación pendiente — Mediador',
+          body: `${mediation.code}: hay partes sin confirmar la audiencia del ${hearing.date}.`,
+          url: '/mediador.html',
+        });
+        hearingAlertsLogged++;
+      }
+    }
+
+    // recordatorio de audiencia próxima — Bloque 11, cobertura nueva:
+    // independiente de si ya confirmaron o no, un aviso simple de "se
+    // viene la audiencia", que antes no existía en ninguna forma.
+    const alreadyReminded = db.mediationEvents.some((e) => e.type === 'HEARING_REMINDER' && e.entityId === hearing.id);
+    if (!alreadyReminded) {
+      logMediationEvent(db, {
+        mediationId: hearing.mediationId, type: 'HEARING_REMINDER', actorId: null,
+        entityType: 'hearing', entityId: hearing.id,
+        title: `Recordatorio: audiencia del ${hearing.date}`,
+      });
+      await notifyMediator(db, mediation, {
+        title: 'Audiencia próxima — Mediador',
+        body: `${mediation.code}: audiencia el ${hearing.date}${hearing.startTime ? ' a las ' + hearing.startTime : ''}.`,
+        url: '/mediador.html',
+      });
+      hearingRemindersLogged++;
+    }
+  }
+
+  if (commitmentsMarked > 0 || hearingAlertsLogged > 0 || hearingRemindersLogged > 0 || tasksOverdueLogged > 0) await commit();
+  return { commitmentsMarked, hearingAlertsLogged, hearingRemindersLogged, tasksOverdueLogged };
+}
+
+module.exports = { checkUnjoinedChannels, generateWeeklySummaries, checkMediationDeadlines, REMINDER_AFTER_MS, SUMMARY_PERIOD_MS };

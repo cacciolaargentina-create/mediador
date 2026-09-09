@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mi mediación</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#12181A; --surface:#1B2326; --surface-2:#222C30; --line:#2E393D;
+    --text:#E7EDEC; --text-dim:#93A3A2; --text-faint:#5E6E6D;
+    --calm:#5FA8A0; --calm-dim:#3E6E69; --warn:#D98C4A; --warn-dim:#5A4327;
+    --danger:#C4614A; --danger-dim:#4A2C23;
+    --serif:'Fraunces',serif; --sans:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
+  }
+  *{box-sizing:border-box;}
+  body{ margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); -webkit-font-smoothing:antialiased; }
+  .brand{ font-family:var(--serif); font-weight:700; font-size:20px; padding:16px 20px; border-bottom:1px solid var(--line); }
+  .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
+  main{ max-width:600px; margin:0 auto; padding:20px; }
+  .card{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin-bottom:14px; }
+  h1{ font-family:var(--serif); font-size:20px; margin:0 0 4px; }
+  h2{ font-family:var(--serif); font-size:15px; margin:0 0 10px; }
+  .eyebrow{ font-family:var(--mono); font-size:10.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px; }
+  .item{ padding:10px 0; border-bottom:1px solid var(--line); }
+  .item:last-child{ border-bottom:none; }
+  .empty-hint{ color:var(--text-faint); font-size:12.5px; }
+  button{ cursor:pointer; font-family:var(--sans); border:none; border-radius:8px; font-size:12.5px; }
+  button.primary{ background:var(--calm); color:#0E1A19; font-weight:600; padding:8px 14px; }
+  button.ghost{ background:none; border:1px solid var(--line); color:var(--text); padding:8px 14px; }
+  select, input{ background:var(--surface-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:8px 10px; font-family:var(--sans); font-size:12.5px; }
+  .pill{ font-family:var(--mono); font-size:9.5px; padding:2px 8px; border-radius:8px; text-transform:uppercase; }
+  .pill.calm{ background:var(--calm-dim); color:var(--calm); }
+  .pill.warn{ background:var(--warn-dim); color:var(--warn); }
+  .pill.danger{ background:var(--danger-dim); color:var(--danger); }
+</style>
+</head>
+<body>
+  <div class="brand">Mediador<em>digital</em></div>
+  <main id="main"><p class="empty-hint">Cargando…</p></main>
+  <script src="/portal.js"></script>
+</body>
+</html>
