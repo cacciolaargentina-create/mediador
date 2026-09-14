@@ -10,7 +10,13 @@
   :root{
     --bg:#12181A; --surface:#1B2326; --surface-2:#222C30; --line:#2E393D;
     --text:#E7EDEC; --text-dim:#93A3A2; --text-faint:#5E6E6D;
-    --calm:#5FA8A0; --calm-dim:#3E6E69; --warn:#D98C4A; --warn-dim:#5A4327;
+    /* --calm mantiene el nombre histórico (heredado de Puente Digital) pero
+       ya NO es el verde-teal de coparentalidad — Mediador necesita su propio
+       color de marca para no parecer la misma app en otro capítulo. Un
+       índigo profundo es la convención de software legal/profesional
+       (Clio, DocuSign) y no se confunde con --warn (naranja) ni --danger
+       (rojo), que siguen significando lo mismo en toda la UI. */
+    --calm:#6E85DC; --calm-dim:#2B3358; --warn:#D98C4A; --warn-dim:#5A4327;
     --danger:#C4614A; --danger-dim:#4A2C23;
     --serif:'Fraunces',serif; --sans:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
   }
@@ -33,7 +39,7 @@
   .account-btn .avatar{ width:28px; height:28px; border-radius:50%; object-fit:cover; display:block; }
   .account-btn-initial{
     width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center;
-    background:var(--calm); color:#0E1A19; font-size:12.5px; font-weight:600; flex-shrink:0;
+    background:var(--calm); color:#12172B; font-size:12.5px; font-weight:600; flex-shrink:0;
   }
   .account-btn .account-name{ font-size:12.5px; color:var(--text-dim); white-space:nowrap; max-width:140px; overflow:hidden; text-overflow:ellipsis; }
   .account-btn .caret{ width:13px; height:13px; flex-shrink:0; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; color:var(--text-faint); transition:transform .18s ease; }
@@ -81,7 +87,7 @@
   }
   nav.tabs button svg{ width:19px; height:19px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
   nav.tabs button span.tab-label{ max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  nav.tabs button.active{ color:var(--calm); background:rgba(95,168,160,0.16); }
+  nav.tabs button.active{ color:var(--calm); background:rgba(110,133,220,0.18); }
   @media (min-width:700px){
     nav.tabs{ left:50%; right:auto; transform:translateX(-50%); width:min(calc(100% - 48px), 520px); }
   }
@@ -102,7 +108,7 @@
   input, textarea, select{ width:100%; background:var(--surface-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:9px 11px; font-family:var(--sans); font-size:13.5px; margin-bottom:10px; }
   label{ font-size:11.5px; color:var(--text-dim); display:block; margin-bottom:4px; }
   button{ cursor:pointer; font-family:var(--sans); border:none; border-radius:8px; }
-  button.primary{ background:var(--calm); color:#0E1A19; font-weight:600; padding:10px 16px; font-size:13.5px; }
+  button.primary{ background:var(--calm); color:#12172B; font-weight:600; padding:10px 16px; font-size:13.5px; }
   button.ghost{ background:none; border:1px solid var(--line); color:var(--text); padding:8px 14px; font-size:12.5px; }
   .mediation-row{ padding:12px 0; border-bottom:1px solid var(--line); cursor:pointer; }
   .mediation-row:last-child{ border-bottom:none; }
