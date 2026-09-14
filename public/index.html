@@ -27,6 +27,12 @@
     --text:#E7EDEC; --text-dim:#93A3A2; --text-faint:#5E6E6D;
     --calm:#5FA8A0; --calm-dim:#3E6E69; --warn:#D98C4A; --warn-dim:#5A4327;
     --danger:#C4614A; --danger-dim:#4A2C23; --header-bg:rgba(18,24,26,0.92);
+    /* fondo de la pastilla activa del nav inferior y de las filas del menú de
+       cuenta: --calm-dim acá no sirve porque en oscuro es un teal sólido que
+       pinta un bloque duro; esto es el mismo color de marca pero apenas
+       insinuado, que es lo que hace iOS con el ítem seleccionado. */
+    --tab-active-bg:rgba(95,168,160,0.16); --menu-hover-bg:rgba(255,255,255,0.06);
+    --float-shadow:0 8px 30px rgba(0,0,0,0.34), 0 2px 8px rgba(0,0,0,0.18);
     --serif:'Fraunces',serif; --sans:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
     /* colores de burbuja del chat, aparte de --calm — WhatsApp usa un verde
        propio para "mis" mensajes que no es el --calm de marca del resto de
@@ -42,9 +48,16 @@
     --text:#16211F; --text-dim:#4C5C59; --text-faint:#7C8C89;
     --calm:#2E7A72; --calm-dim:#D9EDE9; --warn:#A85A1D; --warn-dim:#FBE8D2;
     --danger:#B23A24; --danger-dim:#F8DFD8; --header-bg:rgba(244,247,246,0.92);
+    --tab-active-bg:rgba(46,122,114,0.12); --menu-hover-bg:rgba(22,33,31,0.05);
+    --float-shadow:0 8px 30px rgba(31,45,43,0.14), 0 2px 8px rgba(31,45,43,0.08);
     --wa-me-bg:#d9fdd3; --wa-them-bg:#ffffff; --wa-tick-read:#53bdeb;
   }
   *{box-sizing:border-box; margin:0; padding:0;}
+  /* varios botones se muestran/ocultan con el atributo `hidden` en vez de con
+     style.display (ver setInstallBtnVisible en app.js). El display:none que
+     trae `hidden` de fábrica lo pisa cualquier regla con clase, así que hay
+     que subirlo acá una sola vez para toda la hoja. */
+  [hidden]{ display:none !important; }
   html,body{height:100%;}
   body{ background:var(--bg); color:var(--text); font-family:var(--sans); -webkit-font-smoothing:antialiased; display:flex; flex-direction:column; min-height:100vh; }
 
@@ -67,8 +80,14 @@
      hover/focus no arrastran una transición de color que los haría sentir
      lentos. ---- */
   html.theme-anim, html.theme-anim *{ transition:background-color .35s ease, color .35s ease, border-color .35s ease, box-shadow .35s ease !important; }
-  .icon-btn{ background:none; border:1px solid var(--line); color:var(--text-dim); width:32px; height:32px; border-radius:8px; font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  /* .icon-btn ahora siempre lleva una SVG adentro (antes eran emoji con
+     font-size): el tamaño lo fija el botón, no la tipografía, así todos los
+     íconos del header miden exactamente lo mismo — con emoji cada plataforma
+     los dibujaba con su propio alto de línea y quedaban desparejos. */
+  .icon-btn{ background:none; border:1px solid var(--line); color:var(--text-dim); width:34px; height:34px; border-radius:10px; padding:0; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; -webkit-tap-highlight-color:transparent; }
+  .icon-btn svg{ width:17px; height:17px; display:block; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
   .icon-btn:hover{ border-color:var(--calm-dim); color:var(--text); }
+  .icon-btn:focus-visible, .account-btn:focus-visible, .account-menu button:focus-visible, .account-menu a:focus-visible{ outline:2px solid var(--calm); outline-offset:2px; }
   @keyframes theme-icon-pop{ 0%{ transform:rotate(0) scale(1); } 45%{ transform:rotate(160deg) scale(0.65); } 100%{ transform:rotate(360deg) scale(1); } }
   .icon-btn.animating{ animation:theme-icon-pop .5s ease; }
 
@@ -80,7 +99,7 @@
   .bridge-logo .bridge-arc{ position:absolute; left:0; top:100%; width:100%; height:0.5em; pointer-events:none; overflow:visible; }
 
   header.topbar{
-    margin:10px 12px 0; padding:12px 18px; border-radius:22px; display:flex; align-items:center;
+    margin:10px 12px 0; padding:9px 10px 9px 16px; border-radius:20px; display:flex; align-items:center;
     justify-content:space-between; flex-shrink:0; gap:10px; position:relative; z-index:20;
     background:var(--header-bg); -webkit-backdrop-filter:blur(14px) saturate(1.4); backdrop-filter:blur(14px) saturate(1.4);
     border:1px solid var(--line); box-shadow:0 4px 16px rgba(0,0,0,0.14);
@@ -94,15 +113,93 @@
     -webkit-backdrop-filter:blur(22px) saturate(1.6); backdrop-filter:blur(22px) saturate(1.6);
     box-shadow:0 6px 22px rgba(0,0,0,0.24);
   }
-  header.topbar .brand{ font-family:var(--serif); font-weight:600; font-size:18px; }
+  /* min-width:0 en las dos mitades es lo que evita el desborde: sin eso, un
+     hijo flex NO puede achicarse por debajo de su contenido (min-width:auto es
+     el default) y la barra crece más ancha que la pantalla en vez de recortar
+     el nombre. El logo además tiene flex-shrink propio y el lado derecho
+     flex-shrink:0, así que lo primero que cede es siempre el texto. */
+  header.topbar .brand-slot{ min-width:0; flex:0 1 auto; overflow:hidden; }
+  header.topbar .brand{ font-family:var(--serif); font-weight:600; font-size:18px; white-space:nowrap; }
   header.topbar .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
-  header.topbar .user-chip{ display:flex; align-items:center; gap:8px; }
-  header.topbar .user-chip img{ width:24px; height:24px; border-radius:50%; }
-  header.topbar .user-chip .name{ font-size:12px; color:var(--text-dim); }
-  header.topbar .user-chip button{ background:none; border:none; color:var(--text-faint); font-size:11px; cursor:pointer; text-decoration:underline; font-family:var(--sans); }
-  header.topbar .user-chip .role-badge{ font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:0.05em; color:var(--calm); border:1px solid var(--calm-dim); padding:2px 7px; border-radius:10px; }
+  header.topbar .topbar-actions{ display:flex; align-items:center; gap:6px; flex-shrink:0; min-width:0; }
 
-  main{ flex:1; overflow-y:auto; padding-bottom:84px; }
+  /* ---- botón de cuenta (avatar) — el único elemento del lado derecho que
+     sobrevive en pantallas angostas; todo lo demás se pliega adentro del
+     menú que abre. Es un <button> y no un <div> porque ahora abre algo. ---- */
+  .account-btn{
+    display:flex; align-items:center; gap:7px; background:none; border:1px solid transparent;
+    border-radius:999px; padding:3px 4px 3px 3px; cursor:pointer; font-family:var(--sans);
+    color:var(--text-dim); flex-shrink:0; max-width:150px; -webkit-tap-highlight-color:transparent;
+  }
+  .account-btn:hover, .account-btn[aria-expanded="true"]{ border-color:var(--line); background:var(--menu-hover-bg); }
+  .account-btn .avatar{ width:28px; height:28px; border-radius:50%; flex-shrink:0; object-fit:cover; display:block; }
+  /* fallback cuando no hay foto de Google: inicial sobre el color de marca,
+     no un rojo genérico del navegador. */
+  span.account-btn-initial{
+    width:28px; height:28px; border-radius:50%; flex-shrink:0; display:flex; align-items:center;
+    justify-content:center; background:var(--calm); color:#0E1516; font-size:12.5px; font-weight:600;
+  }
+  .account-btn .account-name{ font-size:12.5px; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .account-btn .caret{ width:13px; height:13px; flex-shrink:0; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; color:var(--text-faint); transition:transform .18s ease; }
+  .account-btn[aria-expanded="true"] .caret{ transform:rotate(180deg); }
+  /* invitado en pantalla ancha: no hay nada que el menú agregue, así que el
+     avatar deja de parecer un botón. */
+  .account-btn.no-menu{ cursor:default; }
+  .account-btn.no-menu:hover{ background:none; border-color:transparent; }
+  .account-btn.no-menu .caret{ display:none; }
+  /* debajo de 600px sólo queda el avatar: ni nombre ni flecha ni la fila de
+     íconos sueltos — eso es lo que hacía que la barra se saliera de pantalla.
+     600 y no 560: a 560 los cinco íconos (5×34 + gaps) más el nombre más el
+     logo entran justo justo, sin aire. */
+  .account-btn .account-name, .account-btn .caret{ display:none; }
+  .topbar-actions .only-wide{ display:none; }
+  @media (min-width:600px){
+    .account-btn .account-name, .account-btn .caret{ display:block; }
+    .topbar-actions .only-wide{ display:flex; }
+  }
+
+  /* ---- menú de cuenta ---- */
+  .account-menu{
+    position:absolute; top:calc(100% + 8px); right:10px; min-width:232px; max-width:min(280px, calc(100vw - 32px));
+    background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:6px;
+    box-shadow:var(--float-shadow); z-index:35; display:none;
+    opacity:0; transform:translateY(-6px) scale(.98); transform-origin:top right;
+    transition:opacity .16s ease, transform .16s ease;
+  }
+  .account-menu.mounted{ display:block; }
+  .account-menu.open{ opacity:1; transform:none; }
+  /* z-index 15 (no 34) a propósito: el backdrop es hermano del header, y el
+     header tiene backdrop-filter, que arma su propio contexto de apilamiento.
+     El menú vive DENTRO del header, así que por más z-index que tenga nunca
+     sube por encima del z-index:20 del header — un backdrop con z-index mayor
+     le taparía el menú y se comería los clics. Con 15 queda debajo del header
+     (y de su menú) pero encima de #main (z auto) y del nav inferior (z:10),
+     que es exactamente lo que tiene que cubrir para cerrar al tocar afuera. */
+  .account-menu-backdrop{ position:fixed; inset:0; z-index:15; display:none; }
+  .account-menu-backdrop.mounted{ display:block; }
+  .account-menu-head{ padding:9px 11px 10px; border-bottom:1px solid var(--line); margin-bottom:6px; }
+  .account-menu-head .who{ font-size:13.5px; color:var(--text); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .account-menu-head .role-badge{ display:inline-block; margin-top:5px; font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:0.05em; color:var(--calm); border:1px solid var(--calm-dim); padding:2px 7px; border-radius:10px; }
+  .account-menu .row{
+    display:flex; align-items:center; gap:10px; width:100%; background:none; border:none;
+    color:var(--text); font-family:var(--sans); font-size:13px; text-align:left; text-decoration:none;
+    padding:9px 11px; border-radius:10px; cursor:pointer;
+  }
+  .account-menu .row:hover{ background:var(--menu-hover-bg); }
+  .account-menu .row svg{ width:16px; height:16px; flex-shrink:0; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; color:var(--text-dim); }
+  .account-menu .row .label{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .account-menu .row .state{ font-size:11px; color:var(--text-faint); flex-shrink:0; }
+  .account-menu .sep{ height:1px; background:var(--line); margin:6px 4px; }
+  .account-menu .row.danger, .account-menu .row.danger svg{ color:var(--danger); }
+  /* las filas que duplican un ícono ya visible en el header se ocultan a
+     partir de 560px, para no ofrecer la misma acción dos veces. */
+  @media (min-width:600px){ .account-menu .row.dup{ display:none; } .account-menu .sep.dup{ display:none; } }
+
+  /* la barra de abajo ahora flota (no está pegada al borde), así que el
+     colchón tiene que cubrir alto de la píldora + su separación del borde +
+     el home indicator de iOS; si no, el último ítem de cualquier lista queda
+     tapado por el vidrio. */
+  main{ flex:1; overflow-y:auto; padding-bottom:calc(96px + env(safe-area-inset-bottom, 0px)); }
   .screen{ display:none; animation:fade .25s ease; }
   .screen.active{ display:block; }
   @keyframes fade{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;} }
@@ -114,12 +211,26 @@
      ese sí trae su propio width/height fijo (16px) porque no vive dentro
      de un .ic. */
   .ic svg{ width:1em; height:1em; display:block; stroke:currentColor; }
-  nav.tabs{ position:fixed; bottom:0; left:0; right:0; display:flex; background:var(--surface); border-top:1px solid var(--line); z-index:10; }
-  nav.tabs button{ flex:1; background:none; border:none; color:var(--text-faint); font-size:10.5px; padding:10px 2px 12px; display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer; position:relative; }
-  nav.tabs button .ic{ font-size:17px; line-height:1; }
-  nav.tabs button.active{ color:var(--calm); }
-  nav.tabs button .dot-alert{ display:none; position:absolute; top:6px; right:calc(50% - 17px); width:6px; height:6px; border-radius:50%; background:var(--warn); }
+  /* ---- nav inferior: píldora flotante estilo barra de Safari en iOS ----
+     Antes era una barra full-bleed pegada abajo con un borde superior. Ahora
+     flota separada de los tres bordes, con vidrio (blur + --header-bg, que ya
+     es semitransparente y theme-aware) y sombra difusa, de modo que el
+     contenido se ve pasar por debajo. El bottom usa env(safe-area-inset-bottom)
+     para no montarse sobre el home indicator del iPhone. */
+  nav.tabs{
+    position:fixed; bottom:calc(10px + env(safe-area-inset-bottom, 0px)); left:12px; right:12px;
+    display:flex; gap:4px; padding:6px; z-index:10;
+    background:var(--header-bg); border:1px solid var(--line); border-radius:22px;
+    -webkit-backdrop-filter:blur(20px) saturate(1.7); backdrop-filter:blur(20px) saturate(1.7);
+    box-shadow:var(--float-shadow);
+  }
+  nav.tabs button{ flex:1; min-width:0; background:none; border:none; border-radius:16px; color:var(--text-faint); font-family:var(--sans); font-size:10.5px; padding:7px 4px 6px; display:flex; flex-direction:column; align-items:center; gap:3px; cursor:pointer; position:relative; -webkit-tap-highlight-color:transparent; transition:background-color .18s ease, color .18s ease; }
+  nav.tabs button .ic{ font-size:20px; line-height:1; }
+  nav.tabs button .tab-label{ max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  nav.tabs button.active{ color:var(--calm); background:var(--tab-active-bg); }
+  nav.tabs button .dot-alert{ display:none; position:absolute; top:5px; right:calc(50% - 16px); width:6px; height:6px; border-radius:50%; background:var(--warn); }
   nav.tabs button .dot-alert.show{ display:block; }
+  @media (prefers-reduced-motion:reduce){ nav.tabs button{ transition:none; } }
 
   /* ---- nav contextual: solo visible DENTRO de un caso (Chat/Calendario/Gastos/Historial/Asistente/Config) ----
      va arriba, entre el topbar y el contenido — dos barras separadas, cada
@@ -899,8 +1010,11 @@
 
   /* ---- Tablet and up: give the app shell breathing room instead of a full-bleed mobile column ---- */
   @media (min-width:700px){
-    header.topbar{ padding-left:max(24px, calc((100% - 680px)/2)); padding-right:max(24px, calc((100% - 680px)/2)); }
-    nav.tabs{ padding-left:max(24px, calc((100% - 680px)/2)); padding-right:max(24px, calc((100% - 680px)/2)); }
+    header.topbar{ max-width:728px; margin-left:auto; margin-right:auto; padding:10px 12px 10px 20px; }
+    /* la píldora no se estira a lo ancho de un monitor: se centra con el mismo
+       ancho de columna que el contenido, si no los tres ítems quedan flotando
+       a metros uno del otro. */
+    nav.tabs{ left:50%; right:auto; transform:translateX(-50%); width:min(calc(100% - 48px), 460px); }
     .pad{ max-width:680px; margin:0 auto; padding:26px 24px; }
     .chat-wrap{ height:calc(100vh - 300px); }
 
@@ -1019,16 +1133,24 @@
 <body>
 
 <header class="topbar" id="topbar" style="display:none">
-  <div>
+  <div class="brand-slot">
     <div class="brand bridge-logo">Puente<em>digital</em></div>
   </div>
-  <div style="display:flex; align-items:center; gap:8px;">
-    <button class="icon-btn install-btn" id="install-btn-app" onclick="promptInstall()" style="display:none" title="Instalar app" aria-label="Instalar app">📲</button>
-    <button class="icon-btn theme-btn" onclick="toggleTheme()" title="Cambiar a modo claro" aria-label="Cambiar tema">🌙</button>
-    <button class="icon-btn" onclick="openAppSettingsModal()" title="Configuración" aria-label="Configuración">⚙️</button>
-    <div class="user-chip" id="user-chip"></div>
+  <div class="topbar-actions">
+    <button class="icon-btn install-btn only-wide" id="install-btn-app" onclick="promptInstall()" hidden title="Instalar app" aria-label="Instalar app"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11"/><path d="m7.5 9.5 4.5 4.5 4.5-4.5"/><path d="M4 16v2.5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V16"/></svg></button>
+    <button class="icon-btn only-wide" id="notify-toggle" title="Notificaciones" aria-label="Notificaciones"></button>
+    <button class="icon-btn theme-btn only-wide" onclick="toggleTheme()" title="Cambiar tema" aria-label="Cambiar tema"></button>
+    <button class="icon-btn only-wide" onclick="openAppSettingsModal()" title="Configuración" aria-label="Configuración"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M18.9 14.1a1.6 1.6 0 0 0 .32 1.76l.06.06a1.9 1.9 0 1 1-2.69 2.69l-.06-.06a1.6 1.6 0 0 0-1.76-.32 1.6 1.6 0 0 0-.97 1.46v.16a1.9 1.9 0 1 1-3.8 0v-.08a1.6 1.6 0 0 0-1.05-1.46 1.6 1.6 0 0 0-1.76.32l-.06.06a1.9 1.9 0 1 1-2.69-2.69l.06-.06a1.6 1.6 0 0 0 .32-1.76 1.6 1.6 0 0 0-1.46-.97H3.1a1.9 1.9 0 1 1 0-3.8h.08a1.6 1.6 0 0 0 1.46-1.05 1.6 1.6 0 0 0-.32-1.76l-.06-.06A1.9 1.9 0 1 1 6.95 4.85l.06.06a1.6 1.6 0 0 0 1.76.32h.08a1.6 1.6 0 0 0 .97-1.46V3.6a1.9 1.9 0 1 1 3.8 0v.08a1.6 1.6 0 0 0 .97 1.46 1.6 1.6 0 0 0 1.76-.32l.06-.06a1.9 1.9 0 1 1 2.69 2.69l-.06.06a1.6 1.6 0 0 0-.32 1.76v.08a1.6 1.6 0 0 0 1.46.97h.16a1.9 1.9 0 1 1 0 3.8h-.08a1.6 1.6 0 0 0-1.46.97Z"/></svg></button>
+    <a class="icon-btn only-wide" id="admin-link" href="/admin.html" hidden title="Panel de administración" aria-label="Panel de administración"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2 19 6v5.4c0 4.2-2.9 7.9-7 9-4.1-1.1-7-4.8-7-9V6l7-2.8Z"/><path d="m9.4 12.1 1.9 1.9 3.4-3.6"/></svg></a>
+    <button class="account-btn" id="account-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" onclick="toggleAccountMenu(event)">
+      <span id="account-avatar"></span>
+      <span class="account-name" id="account-name"></span>
+      <svg class="caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9.5 6 6 6-6"/></svg>
+    </button>
   </div>
+  <div class="account-menu" id="account-menu" role="menu" aria-labelledby="account-btn"></div>
 </header>
+<div class="account-menu-backdrop" id="account-menu-backdrop" onclick="closeAccountMenu()"></div>
 
 <div id="connection-banner" class="status-banner warn" style="display:none; margin:0; border-radius:0; justify-content:center;">
   <span class="dot"></span>Reconectando… los mensajes nuevos pueden tardar en aparecer.
@@ -1120,9 +1242,9 @@
 <header class="site-header">
   <a href="/" class="brand bridge-logo">Puente<em>digital</em></a>
   <div class="site-header-actions">
-    <button class="icon-btn install-btn" id="install-btn-landing" onclick="promptInstall()" style="display:none" title="Instalar app" aria-label="Instalar app">📲</button>
-    <button class="icon-btn theme-btn" onclick="toggleTheme()" title="Cambiar a modo claro" aria-label="Cambiar tema">🌙</button>
-    <button class="icon-btn hamburger-btn" id="hamburger-btn" onclick="toggleMobileNav()" aria-label="Menú" aria-expanded="false">☰</button>
+    <button class="icon-btn install-btn" id="install-btn-landing" onclick="promptInstall()" hidden title="Instalar app" aria-label="Instalar app"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11"/><path d="m7.5 9.5 4.5 4.5 4.5-4.5"/><path d="M4 16v2.5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V16"/></svg></button>
+    <button class="icon-btn theme-btn" onclick="toggleTheme()" title="Cambiar tema" aria-label="Cambiar tema"></button>
+    <button class="icon-btn hamburger-btn" id="hamburger-btn" onclick="toggleMobileNav()" aria-label="Menú" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
   </div>
   <nav class="site-nav" id="site-nav">
     <div class="site-nav-drawer-head">
@@ -1138,8 +1260,8 @@
     <button class="site-nav-action" id="site-nav-theme-btn" onclick="toggleThemeWash(event)">
       <span class="ic" id="site-nav-theme-ic">🌙</span><span id="site-nav-theme-label">Apariencia: oscuro</span>
     </button>
-    <button class="site-nav-action install-btn" id="site-nav-install-btn" onclick="promptInstall()" style="display:none">
-      <span class="ic">📲</span>Instalar app
+    <button class="site-nav-action install-btn" id="site-nav-install-btn" onclick="promptInstall()" hidden>
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="m7.5 9.5 4.5 4.5 4.5-4.5"/><path d="M4 16v2.5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V16"/></svg></span>Instalar app
     </button>
     <button class="site-nav-action site-nav-google" onclick="location.href='/auth/google'">
       <svg width="16" height="16" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
@@ -1430,9 +1552,9 @@
 </div>
 
 <nav class="tabs" id="tabs" style="display:none">
-  <button class="active" data-screen="inicio" onclick="goTo('inicio')"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20a1 1 0 0 0 1 1H9a1 1 0 0 0 1-1v-4.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V20a1 1 0 0 0 1 1h2.5a1 1 0 0 0 1-1V9.5"/></svg></span>Inicio<span class="dot-alert" id="dot-inicio"></span></button>
-  <button data-screen="borrador" onclick="goTo('borrador')"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h8"/><path d="M16.5 4.5a2 2 0 0 1 2.83 2.83L7 20 3 21l1-4Z"/></svg></span>Borrador</button>
-  <button data-screen="nuevo" onclick="openNuevoModal()"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></span>Nuevo/Unirme</button>
+  <button class="active" data-screen="inicio" onclick="goTo('inicio')"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20a1 1 0 0 0 1 1H9a1 1 0 0 0 1-1v-4.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V20a1 1 0 0 0 1 1h2.5a1 1 0 0 0 1-1V9.5"/></svg></span><span class="tab-label">Inicio</span><span class="dot-alert" id="dot-inicio"></span></button>
+  <button data-screen="borrador" onclick="goTo('borrador')"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h8"/><path d="M16.5 4.5a2 2 0 0 1 2.83 2.83L7 20 3 21l1-4Z"/></svg></span><span class="tab-label">Borrador</span></button>
+  <button data-screen="nuevo" onclick="openNuevoModal()"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></span><span class="tab-label">Nuevo</span></button>
 </nav>
 
 <script src="/app.js"></script>

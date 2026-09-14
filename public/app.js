@@ -188,15 +188,39 @@ initBridgeLogos();
 // ==================================================================
 function currentTheme(){ return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark'; }
 
+// ==================================================================
+// ÍCONOS DEL HEADER — SVG de línea, mismo trazo y misma caja que los del
+// nav inferior (antes acá había emoji: cada sistema operativo los dibujaba
+// distinto, con su propio alto y su propio color, y no se podían teñir con
+// currentColor). Van declarados ACÁ ARRIBA y no junto al resto del código
+// del header: applyTheme() los usa y se ejecuta en el boot (initTheme, más
+// abajo en este mismo archivo), así que un const declarado después quedaría
+// en zona muerta temporal y tiraría ReferenceError al cargar la página.
+// ==================================================================
+const ICONS = {
+  bellOn:  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8.5a6 6 0 1 0-12 0c0 6-2.5 8-2.5 8h17s-2.5-2-2.5-8"/><path d="M13.8 20.5a2 2 0 0 1-3.6 0"/></svg>',
+  bellOff: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.8 20.5a2 2 0 0 1-3.6 0"/><path d="M18.4 13.4A15 15 0 0 1 18 8.5"/><path d="M6.4 6.6A6 6 0 0 0 6 8.5c0 6-2.5 8-2.5 8h13"/><path d="M18 8.5a6 6 0 0 0-9-5.2"/><path d="m3 3 18 18"/></svg>',
+  moon:    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.6A8.6 8.6 0 0 1 9.4 3.5a8.6 8.6 0 1 0 11.1 11.1Z"/></svg>',
+  sun:     '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6"/></svg>',
+  gear:    '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M18.9 14.1a1.6 1.6 0 0 0 .32 1.76l.06.06a1.9 1.9 0 1 1-2.69 2.69l-.06-.06a1.6 1.6 0 0 0-1.76-.32 1.6 1.6 0 0 0-.97 1.46v.16a1.9 1.9 0 1 1-3.8 0v-.08a1.6 1.6 0 0 0-1.05-1.46 1.6 1.6 0 0 0-1.76.32l-.06.06a1.9 1.9 0 1 1-2.69-2.69l.06-.06a1.6 1.6 0 0 0 .32-1.76 1.6 1.6 0 0 0-1.46-.97H3.1a1.9 1.9 0 1 1 0-3.8h.08a1.6 1.6 0 0 0 1.46-1.05 1.6 1.6 0 0 0-.32-1.76l-.06-.06A1.9 1.9 0 1 1 6.95 4.85l.06.06a1.6 1.6 0 0 0 1.76.32h.08a1.6 1.6 0 0 0 .97-1.46V3.6a1.9 1.9 0 1 1 3.8 0v.08a1.6 1.6 0 0 0 .97 1.46 1.6 1.6 0 0 0 1.76-.32l.06-.06a1.9 1.9 0 1 1 2.69 2.69l-.06.06a1.6 1.6 0 0 0-.32 1.76v.08a1.6 1.6 0 0 0 1.46.97h.16a1.9 1.9 0 1 1 0 3.8h-.08a1.6 1.6 0 0 0-1.46.97Z"/></svg>',
+  shield:  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2 19 6v5.4c0 4.2-2.9 7.9-7 9-4.1-1.1-7-4.8-7-9V6l7-2.8Z"/><path d="m9.4 12.1 1.9 1.9 3.4-3.6"/></svg>',
+  install: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11"/><path d="m7.5 9.5 4.5 4.5 4.5-4.5"/><path d="M4 16v2.5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V16"/></svg>',
+  logout:  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15.5 16.5 4.5-4.5-4.5-4.5"/><path d="M20 12H9.5"/><path d="M9.5 4H6.5A2.5 2.5 0 0 0 4 6.5v11A2.5 2.5 0 0 0 6.5 20h3"/></svg>',
+};
+
 function applyTheme(theme, persist){
   if(theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
   else document.documentElement.removeAttribute('data-theme');
   if(persist){ try{ localStorage.setItem('pd_theme', theme); }catch(e){ /* modo privado sin storage — el toggle sigue andando, solo no se recuerda */ } }
   const metaTheme = document.querySelector('meta[name=theme-color]');
   if(metaTheme) metaTheme.content = theme === 'light' ? '#F4F7F6' : '#12181A';
+  // .theme-btn del header: SVG, no emoji. En el drawer del landing (legal.html
+  // y la home deslogueada) el ícono sigue siendo un emoji dentro de un <span
+  // class="ic">, que se actualiza más abajo — son dos superficies distintas.
   document.querySelectorAll('.theme-btn').forEach(b => {
-    b.textContent = theme === 'light' ? '🌙' : '☀️';
+    b.innerHTML = theme === 'light' ? ICONS.moon : ICONS.sun;
     b.title = theme === 'light' ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro';
+    b.setAttribute('aria-label', b.title);
   });
   // fila "Apariencia" del drawer de la hamburguesa — mismo estado, mismo ícono.
   const navIc = document.getElementById('site-nav-theme-ic');
@@ -579,21 +603,28 @@ document.addEventListener('click', (e) => {
 // intentar un prompt que no existe.
 // ==================================================================
 let deferredInstallPrompt = null;
+// mostrar/ocultar con el atributo `hidden` y no con style.display: el botón del
+// header vive dentro de .only-wide, que lo esconde por CSS abajo de 560px, y un
+// display inline-style le ganaba a esa media query — el botón reaparecía en
+// mobile y volvía a empujar la barra fuera de pantalla. `hidden` no compite con
+// el layout, sólo se suma.
+function setInstallBtnVisible(v){
+  document.querySelectorAll('.install-btn').forEach(b => { b.hidden = !v; });
+  if(typeof renderAccountMenu === 'function') renderAccountMenu();
+}
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredInstallPrompt = e;
-  document.querySelectorAll('.install-btn').forEach(b => b.style.display = 'flex');
+  setInstallBtnVisible(true);
 });
 window.addEventListener('appinstalled', () => {
   deferredInstallPrompt = null;
-  document.querySelectorAll('.install-btn').forEach(b => b.style.display = 'none');
+  setInstallBtnVisible(false);
 });
 
 function initInstallButton(){
   if(isStandalone()) return; // ya la tiene instalada — no hay nada que ofrecer
-  if(isIOS()){
-    document.querySelectorAll('.install-btn').forEach(b => b.style.display = 'flex');
-  }
+  if(isIOS()) setInstallBtnVisible(true);
   // en Android/desktop Chrome el botón se muestra recién cuando llega
   // beforeinstallprompt (arriba) — antes de eso no hay nada que ofrecer.
 }
@@ -608,7 +639,7 @@ async function promptInstall(){
   deferredInstallPrompt.prompt();
   await deferredInstallPrompt.userChoice;
   deferredInstallPrompt = null;
-  document.querySelectorAll('.install-btn').forEach(b => b.style.display = 'none');
+  setInstallBtnVisible(false);
 }
 function closeInstallModal(){ document.getElementById('install-modal')?.classList.remove('show'); }
 
@@ -996,16 +1027,137 @@ function initScrollReveal(){
   els.forEach(el => io.observe(el));
 }
 
+// ==================================================================
+// HEADER: BOTÓN DE CUENTA + MENÚ
+// ==================================================================
+// Antes el lado derecho del header era una fila plana de elementos sueltos
+// (emoji de tema, emoji de engranaje, link "Admin" subrayado, emoji de
+// campana, avatar, nombre, botón "Salir" subrayado). En un teléfono esa fila
+// medía más que la pantalla y la barra se desbordaba en horizontal.
+// Ahora hay un solo punto de entrada — el avatar — que abre este menú con
+// todo adentro; a partir de 560px, donde sí hay lugar, los íconos más usados
+// se muestran además sueltos en la barra y sus filas del menú se ocultan por
+// CSS (.row.dup) para no ofrecer la misma acción dos veces.
+// ==================================================================
+let isAdminUser = false;
+
+function accountInitial(){
+  const n = (me && me.name ? me.name.trim() : '') || '?';
+  return n.charAt(0).toUpperCase();
+}
+
 function renderUserChip(){
-  const el = document.getElementById('user-chip');
-  const roleBadge = isProfessional() ? `<span class="role-badge">${professionalRoleLabel(myRole)}</span>` : '';
-  el.innerHTML = `
-    ${roleBadge}
-    ${me.avatar ? `<img src="${me.avatar}" alt="">` : ''}
-    <span class="name">${escapeHtml(me.name)}</span>
-    ${isGuest ? '' : '<button onclick="logout()">Salir</button>'}
+  const av = document.getElementById('account-avatar');
+  const nm = document.getElementById('account-name');
+  if(!av || !nm) return;
+  // se reemplaza el nodo entero (y no sólo el src) porque con foto es un
+  // <img class="avatar"> y sin foto un <span> con la inicial — dos elementos
+  // distintos, misma caja de 28px.
+  const next = me.avatar
+    ? Object.assign(document.createElement('img'), { className:'avatar', src:me.avatar, alt:'' })
+    : Object.assign(document.createElement('span'), { className:'account-btn-initial', textContent:accountInitial() });
+  next.id = 'account-avatar';
+  av.replaceWith(next);
+  nm.textContent = me.name || '';
+  renderAccountMenu();
+  const btn = document.getElementById('account-btn');
+  const hasMenu = accountMenuHasContent();
+  btn.setAttribute('aria-label', hasMenu ? `Cuenta de ${me.name || 'usuario'} — abrir menú` : `Cuenta de ${me.name || 'usuario'}`);
+  btn.classList.toggle('no-menu', !hasMenu);
+}
+
+function renderAccountMenu(){
+  const menu = document.getElementById('account-menu');
+  // initNotifications() corre en el boot, antes de que haya sesión — sin este
+  // guard, la primera pasada entraría acá con `me` todavía undefined.
+  if(!menu || !me) return;
+  const roleLabel = isProfessional() ? professionalRoleLabel(myRole) : null;
+  const notifyOn = typeof notifyEnabled !== 'undefined' && notifyEnabled;
+  const light = currentTheme() === 'light';
+  const installBtn = document.getElementById('install-btn-app');
+  const canInstall = !!installBtn && !installBtn.hidden;
+
+  menu.innerHTML = `
+    <div class="account-menu-head">
+      <div class="who">${escapeHtml(me.name || '')}</div>
+      ${roleLabel ? `<span class="role-badge">${roleLabel}</span>` : ''}
+    </div>
+    ${typeof Notification !== 'undefined' ? `
+      <button class="row dup" role="menuitem" onclick="closeAccountMenu(); toggleNotifications();">
+        ${notifyOn ? ICONS.bellOn : ICONS.bellOff}
+        <span class="label">Notificaciones</span>
+        <span class="state">${notifyOn ? 'Activadas' : 'Desactivadas'}</span>
+      </button>` : ''}
+    <button class="row dup" role="menuitem" onclick="closeAccountMenu(); toggleTheme();">
+      ${light ? ICONS.moon : ICONS.sun}
+      <span class="label">Apariencia</span>
+      <span class="state">${light ? 'Claro' : 'Oscuro'}</span>
+    </button>
+    <button class="row dup" role="menuitem" onclick="closeAccountMenu(); openAppSettingsModal();">
+      ${ICONS.gear}<span class="label">Configuración</span>
+    </button>
+    ${canInstall ? `<button class="row dup" role="menuitem" onclick="closeAccountMenu(); promptInstall();">
+      ${ICONS.install}<span class="label">Instalar app</span>
+    </button>` : ''}
+    ${isAdminUser ? `<a class="row dup" role="menuitem" href="/admin.html">
+      ${ICONS.shield}<span class="label">Panel de administración</span>
+    </a>` : ''}
+    ${isGuest ? '' : `<div class="sep dup"></div>
+    <button class="row danger" role="menuitem" onclick="logout()">
+      ${ICONS.logout}<span class="label">Salir</span>
+    </button>`}
   `;
 }
+
+// Un invitado no tiene "Salir", así que su menú son puras filas .dup — y esas,
+// de 560px para arriba, están todas ocultas porque el ícono equivalente ya
+// está suelto en la barra. Abrirlo mostraría un panel vacío: en ese caso el
+// avatar no abre nada (y no muestra la flecha).
+function accountMenuHasContent(){
+  const menu = document.getElementById('account-menu');
+  if(!menu) return false;
+  // no se puede medir con offsetParent: el menú está en display:none mientras
+  // está cerrado, así que TODO daría "invisible". Se replica la condición del
+  // CSS (el mismo breakpoint de .row.dup) sobre el DOM ya renderizado.
+  const wide = window.matchMedia('(min-width:600px)').matches;
+  const rows = menu.querySelectorAll(wide ? '.row:not(.dup)' : '.row');
+  return rows.length > 0;
+}
+
+function toggleAccountMenu(event){
+  if(event) event.stopPropagation();
+  const menu = document.getElementById('account-menu');
+  const btn = document.getElementById('account-btn');
+  if(!menu || !btn) return;
+  if(btn.getAttribute('aria-expanded') === 'true'){ closeAccountMenu(); return; }
+  renderAccountMenu();
+  if(!accountMenuHasContent()) return;
+  const backdrop = document.getElementById('account-menu-backdrop');
+  menu.classList.add('mounted');
+  backdrop.classList.add('mounted');
+  // dos frames: 'mounted' saca el display:none y recién el frame siguiente
+  // 'open' dispara la transición — con una sola tanda el navegador colapsa
+  // los dos cambios y el menú aparece de golpe, sin animación.
+  requestAnimationFrame(() => requestAnimationFrame(() => menu.classList.add('open')));
+  btn.setAttribute('aria-expanded', 'true');
+  document.addEventListener('keydown', accountMenuEsc);
+}
+
+function closeAccountMenu(){
+  const menu = document.getElementById('account-menu');
+  const btn = document.getElementById('account-btn');
+  const backdrop = document.getElementById('account-menu-backdrop');
+  if(!menu || !btn) return;
+  menu.classList.remove('open');
+  btn.setAttribute('aria-expanded', 'false');
+  backdrop.classList.remove('mounted');
+  document.removeEventListener('keydown', accountMenuEsc);
+  setTimeout(() => { if(!menu.classList.contains('open')) menu.classList.remove('mounted'); }, 180);
+}
+function accountMenuEsc(e){
+  if(e.key === 'Escape'){ closeAccountMenu(); document.getElementById('account-btn')?.focus(); }
+}
+
 async function logout(){
   updateAppBadge(0);
   await api('/auth/logout', { method:'POST' });
@@ -1016,12 +1168,10 @@ async function checkAdminLink(){
   try{
     const res = await api('/api/admin/am-i-admin');
     if(!res.isAdmin) return;
-    const chip = document.getElementById('user-chip');
-    const a = document.createElement('a');
-    a.href = '/admin.html';
-    a.textContent = 'Admin';
-    a.style.cssText = 'color:var(--calm); font-size:11px; text-decoration:underline;';
-    chip.insertBefore(a, chip.firstChild);
+    isAdminUser = true;
+    const link = document.getElementById('admin-link');
+    if(link) link.hidden = false;   // en angosto igual queda oculto por .only-wide
+    renderAccountMenu();
   }catch(e){ /* si falla, simplemente no aparece el link */ }
 }
 
@@ -1104,20 +1254,20 @@ function initNotifications(){
   document.addEventListener('click', () => { if(notifyEnabled) ensureAudioCtx(); }, { once:true });
 }
 
+// El botón ya existe en el HTML (no se crea ni se inyecta a mano como antes):
+// acá sólo se le pone el ícono y el título que corresponden al estado. Si el
+// navegador no soporta Notification, se saca del header directamente en vez de
+// dejar un botón que no hace nada.
 function renderNotifyToggle(){
-  if(typeof Notification === 'undefined') return;
-  const chip = document.getElementById('user-chip');
-  if(!chip) return;
-  let btn = document.getElementById('notify-toggle');
-  if(!btn){
-    btn = document.createElement('button');
-    btn.id = 'notify-toggle';
-    btn.onclick = toggleNotifications;
-    btn.style.cssText = 'background:none; border:none; font-size:15px; cursor:pointer; padding:0 2px; line-height:1;';
-    chip.insertBefore(btn, chip.firstChild);
-  }
-  btn.textContent = notifyEnabled ? '🔔' : '🔕';
+  const btn = document.getElementById('notify-toggle');
+  if(!btn) return;
+  if(typeof Notification === 'undefined'){ btn.hidden = true; return; }
+  btn.onclick = toggleNotifications;
+  btn.innerHTML = notifyEnabled ? ICONS.bellOn : ICONS.bellOff;
   btn.title = notifyEnabled ? 'Sonido y notificaciones activados — tocá para desactivar' : 'Activar sonido y notificaciones de mensajes nuevos';
+  btn.setAttribute('aria-label', btn.title);
+  btn.setAttribute('aria-pressed', notifyEnabled ? 'true' : 'false');
+  renderAccountMenu(); // la fila "Notificaciones" del menú muestra el mismo estado
 }
 
 async function toggleNotifications(){
