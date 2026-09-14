@@ -24,7 +24,7 @@ const SQLITE_PATH = process.env.SQLITE_PATH || path.join(__dirname, 'data.sqlite
 const LEGACY_JSON_PATH = process.env.DB_PATH || path.join(__dirname, 'data.json');
 
 const EMPTY_DB = {
-  users: [],       // { id, googleId, email, name, avatar, phone, guest, createdAt }
+  users: [],       // { id, googleId, email, name, avatar, phone, guest, icsToken|null, createdAt }
   channels: [],    // { id, code, guestToken, calendarToken, professionalInvites, status:'abierto'|'en_proceso'|'cerrado', createdAt }
   members: [],     // { id, channelId, userId, role, label, webAccessToken, assignedByAdmin, lastSeenAt, joinedAt }
   messages: [],    // { id, channelId, senderId|null, text, flagged, reason, pattern, eventId, readAt, createdAt, replyToId, deliverAt } — replyToId: id de otro mensaje del mismo canal al que este responde (hilo estilo WhatsApp), null si no es una respuesta. deliverAt: cuándo se transmite/notifica de verdad — igual a createdAt salvo durante la ventana de "deshacer envío" (ver messaging.js), mientras está en el futuro el mensaje solo lo ve quien lo escribió
@@ -422,6 +422,11 @@ function openDb() {
   // "independiente", exactamente como antes — no se rompe nada.
   ensureColumns(sqlite, 'users', { studioId: 'TEXT', studioRole: 'TEXT' });
   sqlite.exec('CREATE INDEX IF NOT EXISTS idx_users_studio ON users(studioId);');
+  // Feed ICS de Mediador — token propio de cada mediador para suscribir su
+  // agenda de audiencias en Google Calendar/Apple Calendar/Outlook, de
+  // SOLO LECTURA (ver routes/agenda.js GET /feed.ics). NULL hasta que el
+  // usuario lo pide por primera vez, ahí se genera y se guarda.
+  ensureColumns(sqlite, 'users', { icsToken: 'TEXT' });
   // Bloque 11 — avisos configurables por mediación: con cuánta
   // anticipación avisar de una audiencia próxima, y por qué canal(es).
   ensureColumns(sqlite, 'mediations', { reminderHoursBefore: 'INTEGER DEFAULT 48', reminderChannels: "TEXT DEFAULT 'push,whatsapp'", nextActionSetBy: 'TEXT', upcomingDueWindowDays: 'INTEGER DEFAULT 7', closedBy: 'TEXT' });

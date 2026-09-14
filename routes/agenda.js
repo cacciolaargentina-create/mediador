@@ -6,10 +6,20 @@
 // usuario tiene acceso (reusa mediationAccess.js, no duplica ese cálculo).
 
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const { nanoid } = require('nanoid');
 const { getDB, commit } = require('../db');
 const { getMyMediations } = require('../mediationAccess');
 const { checkHearingConflicts, toMinutes } = require('../agenda');
+const { buildHearingsIcsFeed } = require('../ics');
+
+// mismo throttle liviano que portalLimiter en party-portal.js/lawyer-
+// portal.js — el token de 32 caracteres no es adivinable por fuerza
+// bruta, esto es más que nada contra loops de un cliente mal configurado.
+const feedLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Demasiados intentos — esperá unos minutos.' },
+});
 
 // Buenos Aires es UTC-3 fijo, sin horario de verano desde 2009 — no hace
 // falta Intl ni conversión real de zona horaria para la aritmética de
@@ -189,6 +199,59 @@ module.exports = function () {
     });
 
     res.json(enriched.sort((a, b) => b.createdAt - a.createdAt));
+  });
+
+  // ---------- feed ICS (solo lectura) ----------
+  // Suscripción de calendario (Google Calendar/Apple Calendar/Outlook) con
+  // las audiencias del mediador — aditivo y de solo lectura: no cambia en
+  // nada cómo se cargan o gestionan las audiencias, solo las expone en
+  // otro formato. Nada de push nativo ni de integrarse con la API de
+  // Google Calendar todavía — si en algún momento hay pedido real de algo
+  // más "vivo", se evalúa esa API con más cuidado, con uso real de por
+  // medio en vez de construirlo a ciegas.
+  router.get('/feed-token', requireAuth, async (req, res) => {
+    const db = getDB();
+    const user = db.users.find((u) => u.id === req.user.id);
+    if (!user.icsToken) {
+      user.icsToken = nanoid(32);
+      await commit();
+    }
+    res.json({ url: `/api/agenda/feed.ics?token=${user.icsToken}` });
+  });
+
+  // regenerar invalida la URL vieja — para cuando el link se compartió por
+  // error o el mediador simplemente quiere cortar una suscripción activa.
+  router.post('/feed-token/regenerate', requireAuth, async (req, res) => {
+    const db = getDB();
+    const user = db.users.find((u) => u.id === req.user.id);
+    user.icsToken = nanoid(32);
+    await commit();
+    res.json({ url: `/api/agenda/feed.ics?token=${user.icsToken}` });
+  });
+
+  // SIN requireAuth a propósito — el token de 32 caracteres ES la
+  // identidad acá, mismo espíritu que portalToken en party-portal.js/
+  // lawyer-portal.js: un cliente de calendario no manda la cookie de
+  // sesión cuando refresca la suscripción por su cuenta cada tanto.
+  router.get('/feed.ics', feedLimiter, (req, res) => {
+    const db = getDB();
+    const token = req.query.token;
+    const user = token ? db.users.find((u) => u.icsToken === token) : null;
+    if (!user) return res.status(404).type('text/plain').send('Feed no encontrado.');
+
+    const myMediations = getMyMediations(db, user);
+    const myMediationIds = new Set(myMediations.map((m) => m.id));
+    const mediationById = Object.fromEntries(myMediations.map((m) => [m.id, m]));
+    const hearings = db.hearings
+      .filter((h) => myMediationIds.has(h.mediationId))
+      .map((h) => ({
+        id: h.id, mediationCode: mediationById[h.mediationId].code, mediationObject: mediationById[h.mediationId].object,
+        date: h.date, startTime: h.startTime, endTime: h.endTime, modality: h.modality,
+        location: h.location, meetingUrl: h.meetingUrl, status: h.status,
+      }));
+
+    const ics = buildHearingsIcsFeed(hearings, { calendarName: `Mediador — ${user.name}` });
+    res.type('text/calendar; charset=utf-8').send(ics);
   });
 
   return router;

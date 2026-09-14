@@ -550,6 +550,13 @@ async function renderAgenda(){
     </div>
 
     <div class="card">
+      <h2>Ver en tu calendario</h2>
+      <p class="empty-hint" style="margin-top:-4px; margin-bottom:10px;">Suscribite una vez y tus audiencias (programadas, confirmadas o realizadas) aparecen solas en Google Calendar, Apple Calendar u Outlook — de solo lectura, se actualiza sola.</p>
+      <button class="ghost" style="width:100%;" onclick="openIcsFeedLink()">Suscribirme en mi calendario</button>
+      <p style="margin-top:8px; text-align:center;"><a href="#" onclick="event.preventDefault(); regenerateIcsFeedLink();" style="color:var(--text-faint); font-size:11px;">¿Se filtró el link? Generar uno nuevo</a></p>
+    </div>
+
+    <div class="card">
       ${studio ? `
         <label>Mediador/a</label>
         <select id="filter-ag-mediador" onchange="applyAgendaFilters()">
@@ -626,6 +633,29 @@ function applyAgendaFilters(){
   agendaState.modalidad = document.getElementById('filter-ag-modalidad').value;
   agendaState.confirmacionPendiente = document.getElementById('filter-ag-pendiente').checked;
   renderAgenda();
+}
+
+// feed ICS de solo lectura — el token se genera server-side la primera vez
+// que se pide (GET /feed-token es idempotente: si ya existe, devuelve el
+// mismo). Mismo patrón de "mostrar el link en un prompt para copiar" que
+// ya se usa para los links de portal de parte/abogado y de invitación a
+// estudio, no hace falta inventar un modal nuevo para esto.
+async function openIcsFeedLink(){
+  let data;
+  try{ data = await api('/api/agenda/feed-token'); }
+  catch(e){ alert(e.error || 'No se pudo generar el link.'); return; }
+  const fullUrl = location.origin + data.url;
+  prompt('Copiá este link y agregalo en tu calendario como "suscribirse por URL" (en Google Calendar: Otros calendarios → Desde URL):', fullUrl);
+}
+
+// invalida la URL vieja — para cuando se compartió por error o el
+// mediador simplemente quiere cortar una suscripción activa.
+async function regenerateIcsFeedLink(){
+  if(!confirm('¿Generar un link nuevo? El anterior deja de funcionar — cualquier calendario ya suscripto con ese link va a dejar de actualizarse.')) return;
+  let data;
+  try{ data = await api('/api/agenda/feed-token/regenerate', { method:'POST' }); }
+  catch(e){ alert(e.error || 'No se pudo generar el link.'); return; }
+  prompt('Link nuevo — el anterior ya no funciona. Copialo y actualizá tu suscripción de calendario:', location.origin + data.url);
 }
 
 // ================= BANDEJA DE SOLICITUDES =================
