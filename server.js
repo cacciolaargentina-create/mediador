@@ -124,6 +124,8 @@ const pushRoutes = require('./routes/push')();
 const mediationRoutes = require('./routes/mediations')(io, presence);
 const partyPortalRoutes = require('./routes/party-portal')(io);
 const lawyerPortalRoutes = require('./routes/lawyer-portal')();
+const studiosRoutes = require('./routes/studios')();
+const agendaRoutes = require('./routes/agenda')();
 
 app.use('/auth', authRoutes);
 app.use('/api/channels', channelRoutes);
@@ -137,6 +139,8 @@ app.use('/api/push', pushRoutes);
 app.use('/api/mediations', mediationRoutes);
 app.use('/api/party-portal', partyPortalRoutes);
 app.use('/api/lawyer-portal', lawyerPortalRoutes);
+app.use('/api/studios', studiosRoutes);
+app.use('/api/agenda', agendaRoutes);
 
 app.get('/api/health', (req, res) => res.json({ ok: true, users: getDB().users.length }));
 

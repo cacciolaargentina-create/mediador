@@ -99,10 +99,10 @@ async function finalizeMessage(io, channel, messageId) {
 
   // avisar a la OTRA parte del canal, sin importar si este mensaje vino de
   // la web o de WhatsApp — la notificación es para quien no lo escribió.
-  // Los hilos de Mediador (identificados por channel.partyId) usan roles
-  // 'mediador'/'parte' en vez de 'A'/'B' — para esos, cualquier otro
+  // Los hilos de Mediador (Bloque 9, identificados por channel.partyId) usan
+  // roles 'mediador'/'parte' en vez de 'A'/'B' — para esos, cualquier otro
   // miembro real cuenta. Para canales de coparentalidad (sin partyId) se
-  // mantiene EXACTO el filtro A/B de siempre: no tocarlo evita, por
+  // mantiene EXACTO el filtro A/B de siempre: no tocarlo evitaría, por
   // ejemplo, que un profesional observador (rol 'mediador' ahí también)
   // termine recibiendo una notificación pensada para la Parte B.
   const otherMember = channel.partyId
@@ -260,4 +260,46 @@ function getPendingNotificationsCount() {
   return pendingNotifications.size;
 }
 
-module.exports = { postMessage, postSystemMessage, undoMessage, scheduleNotification, accessLinkFor, getPendingNotificationsCount };
+// Bloque 15 (Parte 2) — notificar a una parte sobre su audiencia (§9:
+// "si WhatsApp no está disponible para una persona, no fingir que fue
+// enviado. Registrar correctamente: enviado, no disponible, error").
+// Reusa sendText y logWhatsappEvent tal cual — nada de un motor nuevo.
+async function notifyPartyAboutHearing(db, party, text) {
+  if (!party.linkedUserId) {
+    logWhatsappEvent(db, { kind: 'notification_unavailable', userName: party.firstName, mediationId: party.mediationId, detail: 'Nunca se unió al portal' });
+    return { status: 'no_disponible' };
+  }
+  const user = db.users.find((u) => u.id === party.linkedUserId);
+  if (!user || !user.phone) {
+    logWhatsappEvent(db, { kind: 'notification_unavailable', userName: party.firstName, mediationId: party.mediationId, detail: 'Sin teléfono cargado' });
+    return { status: 'no_disponible' };
+  }
+  try {
+    await sendText(user.phone, text);
+    logWhatsappEvent(db, { kind: 'notification_sent', phone: user.phone, userName: user.name, mediationId: party.mediationId, detail: text });
+    return { status: 'enviado' };
+  } catch (err) {
+    logWhatsappEvent(db, { kind: 'notification_error', phone: user.phone, userName: user.name, mediationId: party.mediationId, detail: err.message });
+    return { status: 'error' };
+  }
+}
+
+// Bloque 16 — notificar a un abogado. Más simple que la parte: el
+// teléfono vive directo en el registro de lawyers (Bloque 4), nunca hizo
+// falta el mismo mecanismo de usuario invitado que las partes.
+async function notifyLawyerAboutHearing(db, lawyer, text) {
+  if (!lawyer.phone) {
+    logWhatsappEvent(db, { kind: 'notification_unavailable', userName: lawyer.name, mediationId: lawyer.mediationId, detail: 'Sin teléfono cargado' });
+    return { status: 'no_disponible' };
+  }
+  try {
+    await sendText(lawyer.phone, text);
+    logWhatsappEvent(db, { kind: 'notification_sent', phone: lawyer.phone, userName: lawyer.name, mediationId: lawyer.mediationId, detail: text });
+    return { status: 'enviado' };
+  } catch (err) {
+    logWhatsappEvent(db, { kind: 'notification_error', phone: lawyer.phone, userName: lawyer.name, mediationId: lawyer.mediationId, detail: err.message });
+    return { status: 'error' };
+  }
+}
+
+module.exports = { postMessage, postSystemMessage, undoMessage, scheduleNotification, accessLinkFor, getPendingNotificationsCount, notifyPartyAboutHearing, notifyLawyerAboutHearing };

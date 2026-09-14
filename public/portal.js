@@ -23,6 +23,7 @@ async function api(path, opts = {}){
 }
 
 const CONFIRM_LABELS = { confirma:'Confirmaste', no_puede:'Avisaste que no podés', pide_cambio:'Pediste un cambio' };
+const REQUEST_STATUS_LABELS = { pendiente:'Esperando respuesta del mediador/a', aceptada:'Aceptado — la audiencia se reprogramó', rechazada:'No se pudo hacer el cambio', resuelta:'Resuelto sin cambio' };
 const MEDIATION_STATUS_LABELS = {
   borrador:'Recién iniciada', iniciada:'Iniciada', contactando_partes:'Contactando a las partes',
   notificaciones:'En notificaciones', audiencia_programada:'Audiencia programada', en_mediacion:'En mediación',
@@ -71,6 +72,7 @@ async function render(){
                 <button class="ghost" onclick="confirmHearing('${h.id}','pide_cambio')">Pedir cambio</button>
               `}
           </div>
+          ${h.myRescheduleRequestStatus ? `<p class="empty-hint" style="margin-top:6px;">Tu pedido de cambio: ${REQUEST_STATUS_LABELS[h.myRescheduleRequestStatus] || h.myRescheduleRequestStatus}</p>` : ''}
         </div>
       `).join('') : `<p class="empty-hint">No hay audiencias agendadas por ahora.</p>`}
     </div>
@@ -142,7 +144,10 @@ async function confirmHearing(hearingId, response){
   const body = { response };
   if(response === 'pide_cambio'){
     body.reason = prompt('¿Por qué necesitás cambiar la audiencia? (opcional)') || null;
-    const proposedDate = prompt('¿Tenés una fecha que te venga mejor? (opcional, formato AAAA-MM-DD)');
+    body.comment = prompt('¿Algo más que quieras agregar? (opcional)') || null;
+    body.preferredDayText = prompt('¿Qué día te vendría mejor? (opcional, ej: "un jueves")') || null;
+    body.preferredTimeText = prompt('¿Qué horario preferís? (opcional, ej: "por la tarde")') || null;
+    const proposedDate = prompt('¿Tenés una fecha exacta que te venga mejor? (opcional, formato AAAA-MM-DD)');
     if(proposedDate) body.proposedDate = proposedDate;
   }
   try{

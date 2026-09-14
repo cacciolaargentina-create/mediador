@@ -19,6 +19,7 @@ const rateLimit = require('express-rate-limit');
 const { nanoid } = require('nanoid');
 const { getDB, commit } = require('../db');
 const { logMediationEvent } = require('../mediationEvents');
+const { notifyMediator } = require('../jobs');
 
 const portalLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false,
@@ -121,10 +122,13 @@ module.exports = function () {
       .sort((a, b) => a.date.localeCompare(b.date))
       .map((h) => {
         const confirmation = db.hearingConfirmations.find((c) => c.hearingId === h.id && c.partyId === party.id);
+        const myRequests = db.hearingRescheduleRequests.filter((r) => r.hearingId === h.id && r.requestedByPartyId === party.id).sort((a, b) => b.createdAt - a.createdAt);
+        const myRequest = myRequests.find((r) => r.status === 'pendiente') || myRequests[0] || null;
         return {
           id: h.id, date: h.date, startTime: h.startTime, modality: h.modality,
           location: h.location, meetingUrl: h.meetingUrl, status: h.status,
           myResponse: confirmation ? confirmation.response : null,
+          myRescheduleRequestStatus: myRequest ? myRequest.status : null,
         };
       });
 
@@ -190,7 +194,7 @@ module.exports = function () {
 
   // ---------- confirmar / pedir cambio de audiencia ----------
   router.post('/:token/mediations/:mediationId/hearings/:hearingId/confirm', portalLimiter, resolveLawyer, resolveLawyerMediation, async (req, res) => {
-    const { response, reason, proposedDate, proposedStartTime } = req.body || {};
+    const { response, reason, comment, preferredDayText, preferredTimeText, proposedDate, proposedStartTime } = req.body || {};
     if (!['confirma', 'no_puede', 'pide_cambio'].includes(response)) {
       return res.status(400).json({ error: 'Respuesta inválida' });
     }
@@ -202,6 +206,7 @@ module.exports = function () {
       (c) => c.hearingId === req.params.hearingId && c.partyId === req.party.id
     );
     if (!confirmation) return res.status(404).json({ error: 'Confirmación no encontrada' });
+    const hearingForConfirm = db.hearings.find((h) => h.id === confirmation.hearingId);
     confirmation.response = response;
     confirmation.respondedAt = Date.now();
     const confirmEvent = logMediationEvent(db, {
@@ -214,15 +219,36 @@ module.exports = function () {
       rescheduleRequest = {
         id: nanoid(), hearingId: req.params.hearingId, mediationId: req.mediation.id,
         requestedByPartyId: req.party.id, requestedByType: 'lawyer', requestedByLawyerId: req.lawyer.id,
-        reason: reason || null, proposedDate: proposedDate || null, proposedStartTime: proposedStartTime || null,
+        reason: reason || null, comment: comment || null, preferredDayText: preferredDayText || null, preferredTimeText: preferredTimeText || null,
+        proposedDate: proposedDate || null, proposedStartTime: proposedStartTime || null,
         status: 'pendiente', mediatorNote: null, resolvedBy: null, resolvedAt: null, createdAt: Date.now(),
       };
       db.hearingRescheduleRequests.push(rescheduleRequest);
-      logMediationEvent(db, {
+      const reqEvent = logMediationEvent(db, {
         mediationId: req.mediation.id, type: 'HEARING_RESCHEDULE_REQUESTED', actorId: null,
         entityType: 'hearing_reschedule_request', entityId: rescheduleRequest.id,
         title: `${req.lawyer.name} pidió cambiar la audiencia`,
         description: reason || null, causedByEventId: confirmEvent.id,
+      });
+      const resolveTask = {
+        id: nanoid(), mediationId: req.mediation.id, assignedTo: req.mediation.mediatorUserId,
+        title: 'Resolver solicitud de cambio de audiencia', description: null,
+        dueDate: null, priority: 'media', status: 'pendiente',
+        createdBy: null, completedAt: null, createdAt: Date.now(),
+      };
+      db.tasks.push(resolveTask);
+      logMediationEvent(db, {
+        mediationId: req.mediation.id, type: 'TASK_CREATED', actorId: null,
+        entityType: 'task', entityId: resolveTask.id, title: `Tarea generada: ${resolveTask.title}`,
+        causedByEventId: reqEvent.id,
+      });
+    }
+    // Bloque 16 §2 — mismo criterio que en el Portal de Partes.
+    if (hearingForConfirm && hearingForConfirm.status === 'propuesta' && response !== 'pide_cambio') {
+      await notifyMediator(db, req.mediation, {
+        title: 'Respuesta a propuesta de audiencia',
+        body: `${req.mediation.code}: ${req.lawyer.name} respondió "${response}" a la propuesta del ${hearingForConfirm.date}${hearingForConfirm.startTime ? ' ' + hearingForConfirm.startTime : ''}, en representación de ${partyDisplayName(db, req.party.id)}.`,
+        url: '/mediador.html',
       });
     }
     await commit();

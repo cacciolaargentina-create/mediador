@@ -4,6 +4,7 @@
 // ahí sí conviene algo como BullMQ + Redis, pero sería sobre-ingeniería hoy.
 
 const { getDB, commit } = require('./db');
+const { nanoid } = require('nanoid');
 const { sendText } = require('./whatsapp');
 const { sendPushToUser } = require('./push');
 const { accessLinkFor } = require('./messaging');
@@ -225,10 +226,24 @@ async function checkMediationDeadlines() {
     if (stillPending) {
       const alreadyAlerted = db.mediationEvents.some((e) => e.type === 'HEARING_CONFIRMATION_MISSING' && e.entityId === hearing.id);
       if (!alreadyAlerted) {
-        logMediationEvent(db, {
+        const alertEvent = logMediationEvent(db, {
           mediationId: hearing.mediationId, type: 'HEARING_CONFIRMATION_MISSING', actorId: null,
           entityType: 'hearing', entityId: hearing.id,
           title: `Audiencia del ${hearing.date} con confirmaciones pendientes`,
+        });
+        // Bloque 15 (Parte 3) §10 — tercer ejemplo de tarea operativa
+        // determinista: "audiencia próxima sin confirmación → revisar confirmaciones".
+        const reviewTask = {
+          id: nanoid(), mediationId: hearing.mediationId, assignedTo: mediation.mediatorUserId,
+          title: `Revisar confirmaciones: audiencia del ${hearing.date}`, description: null,
+          dueDate: null, priority: 'alta', status: 'pendiente',
+          createdBy: null, completedAt: null, createdAt: Date.now(),
+        };
+        db.tasks.push(reviewTask);
+        logMediationEvent(db, {
+          mediationId: hearing.mediationId, type: 'TASK_CREATED', actorId: null,
+          entityType: 'task', entityId: reviewTask.id, title: `Tarea generada: ${reviewTask.title}`,
+          causedByEventId: alertEvent.id,
         });
         await notifyMediator(db, mediation, {
           title: 'Confirmación pendiente — Mediador',
@@ -258,8 +273,33 @@ async function checkMediationDeadlines() {
     }
   }
 
-  if (commitmentsMarked > 0 || hearingAlertsLogged > 0 || hearingRemindersLogged > 0 || tasksOverdueLogged > 0) await commit();
-  return { commitmentsMarked, hearingAlertsLogged, hearingRemindersLogged, tasksOverdueLogged };
+  // Bloque 15 (Parte 2) §10 — recordatorio de solicitud de cambio
+  // pendiente para el mediador. Mismo patrón que los de arriba: una sola
+  // vez por solicitud, nunca reenvía si ya se avisó.
+  let rescheduleRequestRemindersLogged = 0;
+  const PENDING_REQUEST_REMINDER_AFTER_MS = 24 * 60 * 60 * 1000; // 1 día sin resolver
+  for (const request of db.hearingRescheduleRequests) {
+    if (request.status !== 'pendiente') continue;
+    if (now - request.createdAt < PENDING_REQUEST_REMINDER_AFTER_MS) continue;
+    const mediation = mediationById[request.mediationId];
+    if (!mediation) continue;
+    const alreadyReminded = db.mediationEvents.some((e) => e.type === 'HEARING_RESCHEDULE_REMINDER' && e.entityId === request.id);
+    if (alreadyReminded) continue;
+    logMediationEvent(db, {
+      mediationId: request.mediationId, type: 'HEARING_RESCHEDULE_REMINDER', actorId: null,
+      entityType: 'hearing_reschedule_request', entityId: request.id,
+      title: 'Recordatorio: hay una solicitud de cambio de audiencia sin resolver',
+    });
+    await notifyMediator(db, mediation, {
+      title: 'Solicitud de cambio pendiente',
+      body: `${mediation.code}: hay una solicitud de cambio de audiencia esperando tu respuesta.`,
+      url: '/mediador.html',
+    });
+    rescheduleRequestRemindersLogged++;
+  }
+
+  if (commitmentsMarked > 0 || hearingAlertsLogged > 0 || hearingRemindersLogged > 0 || tasksOverdueLogged > 0 || rescheduleRequestRemindersLogged > 0) await commit();
+  return { commitmentsMarked, hearingAlertsLogged, hearingRemindersLogged, tasksOverdueLogged, rescheduleRequestRemindersLogged };
 }
 
-module.exports = { checkUnjoinedChannels, generateWeeklySummaries, checkMediationDeadlines, REMINDER_AFTER_MS, SUMMARY_PERIOD_MS };
+module.exports = { checkUnjoinedChannels, generateWeeklySummaries, checkMediationDeadlines, notifyMediator, REMINDER_AFTER_MS, SUMMARY_PERIOD_MS };

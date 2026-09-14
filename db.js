@@ -34,7 +34,7 @@ const EMPTY_DB = {
   expenses: [],    // { id, channelId, amount, description, requestedBy(userId), status:'pendiente'|'confirmado'|'rechazado', respondedAt, eventId, createdAt }
   checkins: [],    // { id, channelId, userId, lat, lng, createdAt } — la ubicación nunca se muestra en el texto del chat, solo queda en el registro
   auditLog: [],    // { id, actorId, action, channelCode, meta, createdAt } — acciones sensibles para el panel de admin
-  whatsappLog: [],      // { id, kind, phone, userName, channelCode, detail, createdAt } — notificaciones enviadas, onboarding, mensajes entrantes procesados
+  whatsappLog: [],      // { id, kind, phone, userName, channelCode, mediationId|null, detail, createdAt } — notificaciones enviadas, onboarding, mensajes entrantes procesados
   whatsappWebhookRaw: [], // { id, payload, createdAt } — últimos payloads crudos del webhook de Meta, para debug técnico
   certifiedExports: [], // { id, hash, signature, channelCode, generatedByName, generatedByRole, createdAt } — un registro por cada export certificado en PDF, para que la página pública de verificación (/verificar/:hash) pueda confirmar que el documento realmente salió de acá. signature: firma electrónica Ed25519 del hash (ver signing.js) — null en exports viejos, de antes de que existiera esto
   professionalApplications: [], // { id, userId, role, orgName, status:'pending'|'approved'|'rejected', createdAt, decidedAt, decidedBy } — autoregistro de mediador/a o estudio jurídico, pendiente de aprobación manual de un admin
@@ -42,17 +42,25 @@ const EMPTY_DB = {
   pushSubscriptions: [], // { id, userId, endpoint, keys:{p256dh,auth}, createdAt } — un dispositivo suscripto a notificaciones push del navegador; una persona puede tener varios (celu + compu)
   reports: [], // { id, channelId, messageId|null, reporterId, reason, createdAt, status:'pendiente'|'revisado', reviewedBy, reviewedAt } — "Reportar" desde el chat, para cuando lo que preocupa es un mensaje del OTRO lado (la moderación de IA solo filtra lo que uno mismo manda)
 
-  // ===== Mediador (B2B) — Bloque 1. Ver IMPLEMENTATION_PLAN.md §3 para el resto de las tablas (Bloques 4-6) =====
+  // ===== Mediador (B2B) — Bloque 1. Ver IMPLEMENTATION_PLAN.md §3 para el resto de las tablas (Bloques 4-6, todavía no creadas) =====
   mediations: [], // { id, code, internalNumber, mediatorUserId, channelId, type, object, description, status:'borrador'|'iniciada'|'contactando_partes'|'notificaciones'|'audiencia_programada'|'en_mediacion'|'acuerdo'|'acuerdo_parcial'|'sin_acuerdo'|'incomparecencia'|'cerrada', nextActionText, nextActionResponsibleType:'mediador'|'party'|'lawyer', nextActionResponsibleId, nextActionDueDate, closedAt, closedResult, closedNotes, createdAt }
   mediationStatusHistory: [], // { id, mediationId, fromStatus, toStatus, changedBy, note, createdAt } — nunca se borra una fila, solo se agregan
   mediationAccess: [], // { id, mediationId, userId, role:'mediador'|'asistente'|'abogado'|'admin', partyId|null, grantedBy, grantedAt } — el mediador titular vive en mediations.mediatorUserId, esta tabla es para accesos ADICIONALES (ver §3.2b del plan)
 
+  // ===== Bloque 14 (Parte 1). Multiusuario/estudio =====
+  studios: [], // { id, name, ownerId, status:'activo'|'inactivo', createdAt }
+  studioInvitations: [], // { id, studioId, email, role:'admin'|'mediador'|'asistente', token, invitedBy, status:'pendiente'|'aceptada'|'rechazada', createdAt, resolvedAt }
+
   // ===== Bloque 4. Ver IMPLEMENTATION_PLAN.md §3.3-3.6 =====
   parties: [], // { id, mediationId, type:'persona'|'empresa', role:'requirente'|'requerido'|'otro', firstName, lastName, legalName, documentType, documentNumber, taxId, email, phone, address, status:'activa'|'inactiva', linkedUserId|null, notes, createdAt }
   lawyers: [], // { id, mediationId, partyId, name, enrollmentNumber, barAssociation, email, phone, createdAt }
-  hearings: [], // { id, mediationId, date, startTime, endTime, type:'primera'|'continuacion'|'privada'|'otra', modality:'presencial'|'virtual'|'hibrida', location, meetingUrl, status:'programada'|'confirmada'|'realizada'|'cancelada'|'no_realizada', notes, createdAt }
+  hearings: [], // { id, mediationId, date, startTime, endTime, type:'primera'|'continuacion'|'privada'|'otra', modality:'presencial'|'virtual'|'hibrida', location, meetingUrl, status:'propuesta'|'programada'|'confirmada'|'realizada'|'cancelada'|'no_realizada', notes, proposalGroupId|null, targetPartyId|null, createdAt }
   hearingConfirmations: [], // { id, hearingId, partyId, response:'pendiente'|'confirma'|'no_puede'|'pide_cambio', respondedAt, createdAt } — una fila por parte por audiencia, se crea sola al crear la audiencia
-  hearingRescheduleRequests: [], // { id, hearingId, mediationId, requestedByPartyId, requestedByType:'party'|'lawyer', requestedByLawyerId|null, reason|null, proposedDate|null, proposedStartTime|null, status:'pendiente'|'aceptada'|'rechazada'|'reprogramada', mediatorNote|null, resolvedBy|null, resolvedAt|null, createdAt }
+  hearingRescheduleRequests: [], // { id, hearingId, mediationId, requestedByPartyId, requestedByType:'party'|'lawyer', requestedByLawyerId|null, reason|null, comment|null, preferredDayText|null, preferredTimeText|null, proposedDate|null, proposedStartTime|null, status:'pendiente'|'aceptada'|'rechazada'|'resuelta', mediatorNote|null, resolvedBy|null, resolvedAt|null, createdAt }
+
+  // ===== Bloque 15 (Parte 1). Agenda/disponibilidad =====
+  mediatorAvailability: [], // { id, userId, dayOfWeek (0=domingo..6=sabado), startTime, endTime, createdAt } — varios bloques por día son varias filas
+  mediatorScheduleBlocks: [], // { id, userId, date, startTime, endTime, reason (interno, nunca visible para partes/abogados), createdAt }
 
   // ===== Bloque 5. Ver IMPLEMENTATION_PLAN.md §3.7 =====
   documents: [], // { id, mediationId, uploadedBy, partyId|null, type, originalFilename (solo para mostrar), storagePath (nombre físico aleatorio en disco), mimeType, size, status:'pendiente_escaneo'|'recibido'|'pendiente_revision'|'revisado'|'observado'|'final', version, parentDocumentId|null (apunta a la RAÍZ del linaje de versiones, no a la anterior — null = documento independiente o es él mismo la raíz), createdAt }
@@ -158,6 +166,24 @@ CREATE TABLE IF NOT EXISTS mediation_access (
   id TEXT PRIMARY KEY, mediationId TEXT, userId TEXT, role TEXT, partyId TEXT,
   grantedBy TEXT, grantedAt INTEGER
 );
+-- ===== Bloque 14 (Parte 1) — multiusuario/estudio =====
+-- studios: la entidad mínima que pide la especificación — nombre,
+-- propietario, estado. NADA de facturación/planes/límites (fuera de
+-- alcance a propósito). "usuarios integrantes" no es una columna acá —
+-- vive en users.studioId (ver ensureColumns más abajo), un usuario
+-- pertenece a UN estudio, no hace falta una tabla de membresía aparte
+-- para esta Parte 1.
+CREATE TABLE IF NOT EXISTS studios (
+  id TEXT PRIMARY KEY, name TEXT, ownerId TEXT, status TEXT DEFAULT 'activo', createdAt INTEGER
+);
+-- la invitación es su propio registro con token — recién se asocia el
+-- usuario al estudio (users.studioId/studioRole) cuando alguien
+-- autenticado con el email exacto de la invitación la acepta. Así nunca
+-- se crea una cuenta nueva por invitar a alguien que todavía no existe.
+CREATE TABLE IF NOT EXISTS studio_invitations (
+  id TEXT PRIMARY KEY, studioId TEXT, email TEXT, role TEXT, token TEXT,
+  invitedBy TEXT, status TEXT DEFAULT 'pendiente', createdAt INTEGER, resolvedAt INTEGER
+);
 -- ===== Bloque 4 — ver IMPLEMENTATION_PLAN.md §3.3/3.4/3.5/3.6 =====
 -- las partes tienen sus propios datos legales completos, y existen
 -- independientemente de que la persona alguna vez inicie sesión — por eso
@@ -194,9 +220,24 @@ CREATE TABLE IF NOT EXISTS hearing_confirmations (
 CREATE TABLE IF NOT EXISTS hearing_reschedule_requests (
   id TEXT PRIMARY KEY, hearingId TEXT, mediationId TEXT,
   requestedByPartyId TEXT, requestedByType TEXT, requestedByLawyerId TEXT,
-  reason TEXT, proposedDate TEXT, proposedStartTime TEXT,
+  reason TEXT, comment TEXT, preferredDayText TEXT, preferredTimeText TEXT,
+  proposedDate TEXT, proposedStartTime TEXT,
   status TEXT DEFAULT 'pendiente', mediatorNote TEXT,
   resolvedBy TEXT, resolvedAt INTEGER, createdAt INTEGER
+);
+-- ===== Bloque 15 — agenda/disponibilidad. hearings sigue siendo la
+-- única fuente de verdad de la audiencia en sí; esto es solo la
+-- disponibilidad recurrente y los bloqueos puntuales del mediador, que
+-- son datos nuevos (no existían en ningún lado), no una segunda tabla
+-- de audiencias.
+CREATE TABLE IF NOT EXISTS mediator_availability (
+  id TEXT PRIMARY KEY, userId TEXT, dayOfWeek INTEGER, startTime TEXT, endTime TEXT, createdAt INTEGER
+);
+-- bloqueo puntual — nunca visible para partes ni abogados (ver §3 de la
+-- especificación: "un bloqueo nunca debe aparecer como información para
+-- partes o abogados").
+CREATE TABLE IF NOT EXISTS mediator_schedule_blocks (
+  id TEXT PRIMARY KEY, userId TEXT, date TEXT, startTime TEXT, endTime TEXT, reason TEXT, createdAt INTEGER
 );
 -- ===== Bloque 5 — ver IMPLEMENTATION_PLAN.md §3.7 y su checklist de
 -- seguridad. originalFilename es SOLO para mostrar — nunca se usa para
@@ -252,6 +293,12 @@ CREATE INDEX IF NOT EXISTS idx_hearings_mediation ON hearings(mediationId);
 CREATE INDEX IF NOT EXISTS idx_hearing_confirmations_hearing ON hearing_confirmations(hearingId);
 CREATE INDEX IF NOT EXISTS idx_reschedule_requests_hearing ON hearing_reschedule_requests(hearingId);
 CREATE INDEX IF NOT EXISTS idx_reschedule_requests_mediation ON hearing_reschedule_requests(mediationId);
+CREATE INDEX IF NOT EXISTS idx_studios_owner ON studios(ownerId);
+CREATE INDEX IF NOT EXISTS idx_studio_invitations_studio ON studio_invitations(studioId);
+CREATE INDEX IF NOT EXISTS idx_studio_invitations_email ON studio_invitations(email);
+CREATE INDEX IF NOT EXISTS idx_mediator_availability_user ON mediator_availability(userId);
+CREATE INDEX IF NOT EXISTS idx_mediator_blocks_user ON mediator_schedule_blocks(userId);
+CREATE INDEX IF NOT EXISTS idx_mediator_blocks_date ON mediator_schedule_blocks(date);
 CREATE INDEX IF NOT EXISTS idx_documents_mediation ON documents(mediationId);
 CREATE INDEX IF NOT EXISTS idx_mediation_events_mediation ON mediation_events(mediationId);
 CREATE INDEX IF NOT EXISTS idx_tasks_mediation ON tasks(mediationId);
@@ -289,8 +336,10 @@ const TABLE_NAMES = {
   // ===== Mediador (B2B) =====
   mediations: 'mediations', mediationStatusHistory: 'mediation_status_history',
   mediationAccess: 'mediation_access',
+  studios: 'studios', studioInvitations: 'studio_invitations',
   parties: 'parties', lawyers: 'lawyers', hearings: 'hearings', hearingConfirmations: 'hearing_confirmations',
   hearingRescheduleRequests: 'hearing_reschedule_requests',
+  mediatorAvailability: 'mediator_availability', mediatorScheduleBlocks: 'mediator_schedule_blocks',
   documents: 'documents',
   mediationEvents: 'mediation_events', tasks: 'tasks', commitments: 'commitments',
 };
@@ -356,6 +405,23 @@ function openDb() {
   // esta migración, así que un índice sobre una columna que recién se
   // crea acá arriba rompe en una base de datos nueva.
   sqlite.exec('CREATE INDEX IF NOT EXISTS idx_documents_parent ON documents(parentDocumentId);');
+  // Bloque 15 (Parte 2) — "proponer audiencia": varios horarios candidatos
+  // se agrupan por proposalGroupId; targetPartyId, si está, acota la
+  // propuesta a una sola parte (null = todas). NULL en ambos para
+  // cualquier audiencia ya creada — sigue siendo una audiencia normal,
+  // no una propuesta, exactamente como antes.
+  ensureColumns(sqlite, 'hearings', { proposalGroupId: 'TEXT', targetPartyId: 'TEXT', lastModifiedBy: 'TEXT', lastModifiedAt: 'INTEGER' });
+  // Bloque 16 — faltaba esta migración: el campo ya estaba en el objeto
+  // JS y en el comentario de EMPTY_DB, pero nunca en la columna SQL real.
+  // Sin esto, cualquier intento de guardar una notificación con
+  // mediationId hacía fallar el commit entero (se detectó con un test real).
+  ensureColumns(sqlite, 'whatsapp_log', { mediationId: 'TEXT' });
+  sqlite.exec('CREATE INDEX IF NOT EXISTS idx_hearings_proposal_group ON hearings(proposalGroupId);');
+  // Bloque 14 — un usuario pertenece a lo sumo UN estudio en esta Parte 1.
+  // NULL para todo usuario existente: sigue siendo un mediador
+  // "independiente", exactamente como antes — no se rompe nada.
+  ensureColumns(sqlite, 'users', { studioId: 'TEXT', studioRole: 'TEXT' });
+  sqlite.exec('CREATE INDEX IF NOT EXISTS idx_users_studio ON users(studioId);');
   // Bloque 11 — avisos configurables por mediación: con cuánta
   // anticipación avisar de una audiencia próxima, y por qué canal(es).
   ensureColumns(sqlite, 'mediations', { reminderHoursBefore: 'INTEGER DEFAULT 48', reminderChannels: "TEXT DEFAULT 'push,whatsapp'", nextActionSetBy: 'TEXT', upcomingDueWindowDays: 'INTEGER DEFAULT 7', closedBy: 'TEXT' });

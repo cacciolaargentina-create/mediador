@@ -13,10 +13,10 @@ const { nanoid } = require('nanoid');
 const MAX_LOG = 500;
 const MAX_RAW = 100;
 
-function logWhatsappEvent(db, { kind, phone, userName, channelCode, detail }) {
+function logWhatsappEvent(db, { kind, phone, userName, channelCode, mediationId, detail }) {
   db.whatsappLog.push({
     id: nanoid(), kind, phone: phone || null, userName: userName || null,
-    channelCode: channelCode || null, detail: detail || null, createdAt: Date.now(),
+    channelCode: channelCode || null, mediationId: mediationId || null, detail: detail || null, createdAt: Date.now(),
   });
   if (db.whatsappLog.length > MAX_LOG) {
     db.whatsappLog.splice(0, db.whatsappLog.length - MAX_LOG);

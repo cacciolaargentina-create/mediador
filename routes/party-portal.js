@@ -19,6 +19,7 @@ const rateLimit = require('express-rate-limit');
 const { nanoid } = require('nanoid');
 const { getDB, commit } = require('../db');
 const { logMediationEvent } = require('../mediationEvents');
+const { notifyMediator } = require('../jobs');
 const { postMessage } = require('../messaging');
 const { serializeMessage } = require('../serializers');
 
@@ -86,10 +87,15 @@ module.exports = function (io) {
       .sort((a, b) => a.date.localeCompare(b.date))
       .map((h) => {
         const confirmation = db.hearingConfirmations.find((c) => c.hearingId === h.id && c.partyId === party.id);
+        // Bloque 15 (Parte 2) §12: mostrar el estado de SU PROPIA
+        // solicitud de cambio si tiene una pendiente — nunca la de otra parte.
+        const myRequests = db.hearingRescheduleRequests.filter((r) => r.hearingId === h.id && r.requestedByPartyId === party.id).sort((a, b) => b.createdAt - a.createdAt);
+        const myRequest = myRequests.find((r) => r.status === 'pendiente') || myRequests[0] || null;
         return {
           id: h.id, date: h.date, startTime: h.startTime, modality: h.modality,
           location: h.location, meetingUrl: h.meetingUrl,
           myResponse: confirmation ? confirmation.response : null,
+          myRescheduleRequestStatus: myRequest ? myRequest.status : null,
         };
       });
 
@@ -156,7 +162,7 @@ module.exports = function (io) {
 
   // ---------- confirmar audiencia (la parte responde ella misma) ----------
   router.post('/:token/hearings/:hearingId/confirm', portalLimiter, resolveParty, async (req, res) => {
-    const { response, reason, proposedDate, proposedStartTime } = req.body || {};
+    const { response, reason, comment, preferredDayText, preferredTimeText, proposedDate, proposedStartTime } = req.body || {};
     if (!['confirma', 'no_puede', 'pide_cambio'].includes(response)) {
       return res.status(400).json({ error: 'Respuesta inválida' });
     }
@@ -168,6 +174,7 @@ module.exports = function (io) {
     // el chequeo de que la audiencia pertenece a ESTA mediación pasa por
     // el propio partyId (una parte solo tiene confirmaciones de audiencias
     // de su propia mediación) — no hace falta un segundo chequeo cruzado.
+    const hearingForConfirm = db.hearings.find((h) => h.id === confirmation.hearingId);
     confirmation.response = response;
     confirmation.respondedAt = Date.now();
     const confirmEvent = logMediationEvent(db, {
@@ -185,15 +192,43 @@ module.exports = function (io) {
       rescheduleRequest = {
         id: nanoid(), hearingId: req.params.hearingId, mediationId: req.mediation.id,
         requestedByPartyId: req.party.id, requestedByType: 'party', requestedByLawyerId: null,
-        reason: reason || null, proposedDate: proposedDate || null, proposedStartTime: proposedStartTime || null,
+        reason: reason || null, comment: comment || null, preferredDayText: preferredDayText || null, preferredTimeText: preferredTimeText || null,
+        proposedDate: proposedDate || null, proposedStartTime: proposedStartTime || null,
         status: 'pendiente', mediatorNote: null, resolvedBy: null, resolvedAt: null, createdAt: Date.now(),
       };
       db.hearingRescheduleRequests.push(rescheduleRequest);
-      logMediationEvent(db, {
+      const reqEvent = logMediationEvent(db, {
         mediationId: req.mediation.id, type: 'HEARING_RESCHEDULE_REQUESTED', actorId: null,
         entityType: 'hearing_reschedule_request', entityId: rescheduleRequest.id,
         title: `${req.party.firstName || 'La parte'} pidió cambiar la audiencia`,
         description: reason || null, causedByEventId: confirmEvent.id,
+      });
+      // Bloque 15 (Parte 3) §10 — tarea operativa determinista, mismo
+      // criterio que documento→revisar: nunca sustantiva, solo un
+      // recordatorio de housekeeping.
+      const resolveTask = {
+        id: nanoid(), mediationId: req.mediation.id, assignedTo: req.mediation.mediatorUserId,
+        title: 'Resolver solicitud de cambio de audiencia', description: null,
+        dueDate: null, priority: 'media', status: 'pendiente',
+        createdBy: null, completedAt: null, createdAt: Date.now(),
+      };
+      db.tasks.push(resolveTask);
+      logMediationEvent(db, {
+        mediationId: req.mediation.id, type: 'TASK_CREATED', actorId: null,
+        entityType: 'task', entityId: resolveTask.id, title: `Tarea generada: ${resolveTask.title}`,
+        causedByEventId: reqEvent.id,
+      });
+    }
+    // Bloque 16 §2 — "cuando una parte confirma una propuesta, notificar
+    // al mediador" — solo aplica mientras la audiencia sigue en estado
+    // 'propuesta' (todavía no fue elegida como definitiva); una
+    // confirmación normal de una audiencia ya programada no dispara esto,
+    // sería ruido — eso ya lo ve el mediador en el expediente.
+    if (hearingForConfirm && hearingForConfirm.status === 'propuesta' && response !== 'pide_cambio') {
+      await notifyMediator(db, req.mediation, {
+        title: 'Respuesta a propuesta de audiencia',
+        body: `${req.mediation.code}: ${req.party.firstName || 'una parte'} respondió "${response}" a la propuesta del ${hearingForConfirm.date}${hearingForConfirm.startTime ? ' ' + hearingForConfirm.startTime : ''}.`,
+        url: '/mediador.html',
       });
     }
     await commit();

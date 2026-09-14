@@ -16,6 +16,8 @@ const { logAudit } = require('../audit');
 const { logMediationEvent } = require('../mediationEvents');
 const { signHash } = require('../signing');
 const { integrityHash, buildMediationPlainContent, buildMediationCertifiedPDF, buildMediationConstanciaPDF } = require('../certificate');
+const { checkHearingConflicts, toMinutes } = require('../agenda');
+const { notifyPartyAboutHearing, notifyLawyerAboutHearing } = require('../messaging');
 const { askMediationAssistant, askDashboardAssistant } = require('../assistant');
 const archiver = require('archiver');
 const { postMessage } = require('../messaging');
@@ -143,6 +145,15 @@ module.exports = function (io, presence) {
   // "Una parte nunca debe poder consultar otra mediación cambiando
   // simplemente un ID": esto es lo que lo impide en el server, no algo
   // que se confía al frontend.
+  // Bloque 14 — una sola función para "cuáles son mis mediaciones",
+  // usada por GET /, /search, /dashboard y /stats — antes cada una tenía
+  // su propia copia de este mismo cálculo (4 veces). Ahora suma también
+  // las del estudio completo si sos admin de uno — antes de esto, admin
+  // de estudio solo veía las que tenía asignadas una por una.
+  // Bloque 15 — extraída a mediationAccess.js para que routes/agenda.js
+  // pueda reusar exactamente esta misma lógica, sin duplicarla.
+  const { getMyMediations } = require('../mediationAccess');
+
   function requireMediationAccess(req, res, next) {
     const db = getDB();
     const mediation = db.mediations.find((m) => m.id === req.params.id);
@@ -157,6 +168,20 @@ module.exports = function (io, presence) {
       req.mediation = mediation;
       req.mediationRole = 'mediador';
       return next();
+    }
+    // Bloque 14 — admin de ESTUDIO: acceso general a las mediaciones de su
+    // equipo, sin necesitar una fila puntual en mediation_access por cada
+    // una. Una mediación "es del estudio" a través de quién es su
+    // mediatorUserId — nunca se guarda studioId en mediations, se deriva.
+    // Mediador/asistente del estudio NO entran por acá — ellos siguen
+    // necesitando la asignación explícita de abajo, igual que siempre.
+    if (req.user.studioId && req.user.studioRole === 'admin') {
+      const owner = db.users.find((u) => u.id === mediation.mediatorUserId);
+      if (owner && owner.studioId === req.user.studioId) {
+        req.mediation = mediation;
+        req.mediationRole = 'admin';
+        return next();
+      }
     }
     const access = db.mediationAccess.find(
       (a) => a.mediationId === mediation.id && a.userId === req.user.id
@@ -230,21 +255,17 @@ module.exports = function (io, presence) {
   //
   // Filtros opcionales por query string (nuevo, a pedido explícito):
   //   ?estado=iniciada            -> por status exacto
-  //   ?responsable=mediador       -> por nextActionResponsibleType
+  //   ?responsable=mediador       -> por nextActionResponsibleType (quién debe la próxima acción)
+  //   ?mediador=<userId>          -> por mediatorUserId (quién es el mediador dueño) — Bloque 15 Parte 4:
+  //                                  mismo nombre y mismo criterio que ya usan /api/agenda y /api/mediations/studio,
+  //                                  antes solo esas dos pantallas lo tenían.
   //   ?vencidas=1                 -> solo con nextActionDueDate ya pasado
   router.get('/', requireAuth, (req, res) => {
     const db = getDB();
-    let mine;
-    if (isAdminUser(req.user)) {
-      mine = db.mediations;
-    } else {
-      const accessIds = new Set(
-        db.mediationAccess.filter((a) => a.userId === req.user.id).map((a) => a.mediationId)
-      );
-      mine = db.mediations.filter((m) => m.mediatorUserId === req.user.id || accessIds.has(m.id));
-    }
+    let mine = getMyMediations(db, req.user);
     if (req.query.estado) mine = mine.filter((m) => m.status === req.query.estado);
     if (req.query.responsable) mine = mine.filter((m) => m.nextActionResponsibleType === req.query.responsable);
+    if (req.query.mediador) mine = mine.filter((m) => m.mediatorUserId === req.query.mediador);
     // filtro por responsable específico, por NOMBRE — filtrar por
     // nextActionResponsibleId no tendría sentido acá: ese id es propio de
     // las partes/abogados de CADA mediación, nunca se repite entre
@@ -277,12 +298,7 @@ module.exports = function (io, presence) {
     const q = (req.query.q || '').trim().toLowerCase();
     if (q.length < 2) return res.json([]);
     const db = getDB();
-    const accessIds = new Set(
-      db.mediationAccess.filter((a) => a.userId === req.user.id).map((a) => a.mediationId)
-    );
-    const scope = isAdminUser(req.user)
-      ? db.mediations
-      : db.mediations.filter((m) => m.mediatorUserId === req.user.id || accessIds.has(m.id));
+    const scope = getMyMediations(db, req.user);
     const results = scope.filter((m) =>
       m.code.toLowerCase().includes(q) ||
       (m.object || '').toLowerCase().includes(q) ||
@@ -306,12 +322,7 @@ module.exports = function (io, presence) {
   // (estructurada, no un texto suelto) y el historial de cambios de estado.
   router.get('/dashboard', requireAuth, (req, res) => {
     const db = getDB();
-    const accessIds = new Set(
-      db.mediationAccess.filter((a) => a.userId === req.user.id).map((a) => a.mediationId)
-    );
-    const mine = isAdminUser(req.user)
-      ? db.mediations
-      : db.mediations.filter((m) => m.mediatorUserId === req.user.id || accessIds.has(m.id));
+    const mine = getMyMediations(db, req.user);
 
     const activas = mine.filter((m) => !m.closedAt && m.status !== 'borrador');
     const now = Date.now();
@@ -407,6 +418,42 @@ module.exports = function (io, presence) {
       .filter((d) => mineIds.has(d.mediationId) && d.status === 'recibido')
       .map((d) => ({ id: d.id, mediationId: d.mediationId, mediationCode: mediationById[d.mediationId]?.code || null, originalFilename: d.originalFilename, createdAt: d.createdAt }));
 
+    // Bloque 15 (Parte 2) §17 — alertas de agenda. El dashboard sigue
+    // respondiendo "¿qué tengo que hacer ahora?", no se vuelve un
+    // calendario — estas son señales puntuales, no una lista completa de audiencias.
+    const myHearings = db.hearings.filter((h) => mineIds.has(h.mediationId));
+    const solicitudesCambioPendientes = db.hearingRescheduleRequests
+      .filter((r) => mineIds.has(r.mediationId) && r.status === 'pendiente')
+      .map((r) => ({ id: r.id, mediationId: r.mediationId, mediationCode: mediationById[r.mediationId]?.code || null, hearingId: r.hearingId }));
+    const audienciasReprogramadasRecientemente = myHearings
+      .filter((h) => db.mediationEvents.some((e) => e.type === 'HEARING_RESCHEDULED' && e.entityId === h.id && (now - e.createdAt) <= 7 * 24 * 60 * 60 * 1000))
+      .map((h) => ({ id: h.id, mediationId: h.mediationId, mediationCode: mediationById[h.mediationId]?.code || null, date: h.date }));
+    // pasó la fecha y sigue "programada"/"confirmada" — nadie registró qué pasó
+    const audienciasSinResultado = myHearings
+      .filter((h) => ['programada', 'confirmada'].includes(h.status) && h.date < new Date(now).toISOString().slice(0, 10))
+      .map((h) => ({ id: h.id, mediationId: h.mediationId, mediationCode: mediationById[h.mediationId]?.code || null, date: h.date }));
+    // realizada, pero la mediación se quedó sin próxima acción cargada
+    const audienciasRealizadasSinProximaAccion = myHearings
+      .filter((h) => h.status === 'realizada' && !(mediationById[h.mediationId]?.nextActionText))
+      .map((h) => ({ id: h.id, mediationId: h.mediationId, mediationCode: mediationById[h.mediationId]?.code || null, date: h.date }));
+
+    // Bloque 16 §9 — visibilidad de agenda, derivada de datos reales,
+    // sin ningún estado duplicado nuevo.
+    const propuestasPendientes = myHearings
+      .filter((h) => h.status === 'propuesta')
+      .map((h) => ({ id: h.id, mediationId: h.mediationId, mediationCode: mediationById[h.mediationId]?.code || null, date: h.date, proposalGroupId: h.proposalGroupId }));
+    const audienciasConfirmadasRecientemente = myHearings
+      .filter((h) => db.mediationEvents.some((e) => (e.type === 'HEARING_SCHEDULED' || e.type === 'HEARING_CONFIRMED') && e.entityId === h.id && (now - e.createdAt) <= 3 * 24 * 60 * 60 * 1000))
+      .map((h) => ({ id: h.id, mediationId: h.mediationId, mediationCode: mediationById[h.mediationId]?.code || null, date: h.date }));
+    const audienciasCanceladasRecientemente = myHearings
+      .filter((h) => h.status === 'cancelada' && db.mediationEvents.some((e) => e.type === 'HEARING_CANCELLED' && e.entityId === h.id && (now - e.createdAt) <= 7 * 24 * 60 * 60 * 1000))
+      .map((h) => ({ id: h.id, mediationId: h.mediationId, mediationCode: mediationById[h.mediationId]?.code || null, date: h.date }));
+    // fallos/no disponibilidad — reusa whatsappLog tal cual (se le agregó
+    // mediationId), no una tabla nueva de notificaciones.
+    const fallosNotificacion = db.whatsappLog
+      .filter((w) => w.mediationId && mineIds.has(w.mediationId) && ['notification_unavailable', 'notification_error'].includes(w.kind) && (now - w.createdAt) <= 3 * 24 * 60 * 60 * 1000)
+      .map((w) => ({ mediationId: w.mediationId, mediationCode: mediationById[w.mediationId]?.code || null, kind: w.kind, userName: w.userName, createdAt: w.createdAt }));
+
     // "N mediaciones requieren atención" — cuenta MEDIACIONES distintas
     // con al menos un ítem de atención, no la suma de ítems (una mediación
     // con 3 tareas vencidas cuenta una vez, no tres).
@@ -446,6 +493,18 @@ module.exports = function (io, presence) {
         audienciasSinConfirmar,
         documentosPendientesRevision,
       },
+      // Bloque 15 (Parte 2) — alertas de agenda, separadas del bloque de
+      // arriba para no mezclar conceptos, pero con el mismo espíritu
+      alertasAgenda: {
+        solicitudesCambioPendientes,
+        audienciasReprogramadasRecientemente,
+        audienciasSinResultado,
+        audienciasRealizadasSinProximaAccion,
+        propuestasPendientes,
+        audienciasConfirmadasRecientemente,
+        audienciasCanceladasRecientemente,
+        fallosNotificacion,
+      },
       // "vencen próximamente" — todavía no es urgente, pero se viene
       vencenProximamente: {
         tareas: tareasProximasAVencer,
@@ -466,10 +525,7 @@ module.exports = function (io, presence) {
   // semana?". Reusa el mismo criterio de "mis mediaciones" que ya usan
   // GET / y GET /dashboard — no un cálculo nuevo.
   function buildDashboardPlainContext(db, user) {
-    const accessIds = new Set(db.mediationAccess.filter((a) => a.userId === user.id).map((a) => a.mediationId));
-    const mine = isAdminUser(user)
-      ? db.mediations
-      : db.mediations.filter((m) => m.mediatorUserId === user.id || accessIds.has(m.id));
+    const mine = getMyMediations(db, user);
     const now = Date.now();
     const lines = [];
     for (const m of mine) {
@@ -506,10 +562,7 @@ module.exports = function (io, presence) {
   // no una tabla nueva que acumula nada.
   router.get('/stats', requireAuth, (req, res) => {
     const db = getDB();
-    const accessIds = new Set(db.mediationAccess.filter((a) => a.userId === req.user.id).map((a) => a.mediationId));
-    const mine = isAdminUser(req.user)
-      ? db.mediations
-      : db.mediations.filter((m) => m.mediatorUserId === req.user.id || accessIds.has(m.id));
+    const mine = getMyMediations(db, req.user);
 
     const closed = mine.filter((m) => m.closedAt);
     const active = mine.filter((m) => !m.closedAt && m.status !== 'borrador');
@@ -548,6 +601,55 @@ module.exports = function (io, presence) {
         vencidos: allCommitments.filter((c) => c.status === 'vencido').length,
       },
     });
+  });
+
+  // Bloque 14 (Parte 2) — vista "Mediaciones del estudio" para el admin.
+  // Reusa getMyMediations tal cual (misma derivación de siempre: por
+  // mediatorUserId + studioId del dueño, nunca guardado en mediations) —
+  // lo único nuevo acá es el enriquecimiento por fila (responsables,
+  // próxima audiencia, alertas) y los filtros.
+  router.get('/studio', requireAuth, (req, res) => {
+    if (!req.user.studioId || req.user.studioRole !== 'admin') {
+      return res.status(403).json({ error: 'Necesitás ser administrador de un estudio para ver esta vista' });
+    }
+    const db = getDB();
+    let list = getMyMediations(db, req.user);
+    const now = Date.now();
+
+    let enriched = list.map((m) => {
+      const owner = db.users.find((u) => u.id === m.mediatorUserId);
+      const accessRows = db.mediationAccess.filter((a) => a.mediationId === m.id && ['mediador', 'asistente'].includes(a.role));
+      const assigned = accessRows.map((a) => {
+        const u = db.users.find((x) => x.id === a.userId);
+        return { accessId: a.id, userId: a.userId, userName: u ? u.name : null, role: a.role };
+      });
+      const upcomingHearing = db.hearings
+        .filter((h) => h.mediationId === m.id && ['programada', 'confirmada'].includes(h.status))
+        .sort((a, b) => a.date.localeCompare(b.date))[0] || null;
+      const hearingUnconfirmed = upcomingHearing
+        ? db.hearingConfirmations.some((c) => c.hearingId === upcomingHearing.id && c.response === 'pendiente')
+        : false;
+      const nextActionVencida = !!(m.nextActionDueDate && new Date(m.nextActionDueDate).getTime() < now);
+
+      return {
+        id: m.id, code: m.code, object: m.object, status: m.status, createdAt: m.createdAt,
+        mediatorUserId: m.mediatorUserId, mediatorName: owner ? owner.name : null,
+        nextActionText: m.nextActionText || null, nextActionDueDate: m.nextActionDueDate || null,
+        assigned,
+        upcomingHearingDate: upcomingHearing ? upcomingHearing.date : null,
+        alerts: { nextActionVencida, hearingUnconfirmed },
+      };
+    });
+
+    // filtros — todos opcionales, se aplican sobre lo ya enriquecido
+    if (req.query.mediador) enriched = enriched.filter((m) => m.mediatorUserId === req.query.mediador);
+    if (req.query.asistente) enriched = enriched.filter((m) => m.assigned.some((a) => a.userId === req.query.asistente && a.role === 'asistente'));
+    if (req.query.estado) enriched = enriched.filter((m) => m.status === req.query.estado);
+    if (req.query.nextActionVencida === '1') enriched = enriched.filter((m) => m.alerts.nextActionVencida);
+    if (req.query.audienciaProxima === '1') enriched = enriched.filter((m) => !!m.upcomingHearingDate);
+    if (req.query.sinAsignar === '1') enriched = enriched.filter((m) => m.assigned.length === 0);
+
+    res.json(enriched.sort((a, b) => b.createdAt - a.createdAt));
   });
 
   // ---------- expediente (registro básico — el resumen agregado con
@@ -652,6 +754,99 @@ module.exports = function (io, presence) {
   });
 
   // ---------- historial de estados (para mostrar en el expediente) ----------
+  // Bloque 14 — asignación de mediaciones a mediadores/asistentes del
+  // estudio. Reusa mediation_access tal cual — no se agrega ninguna
+  // tabla ni columna nueva para esto. Solo admin (de estudio o de
+  // plataforma) puede tocarlo — req.mediationRole ya es 'admin' para los
+  // dos casos, gracias a requireMediationAccess.
+  // admin de estudio (o de plataforma) puede asignar — incluye el caso de
+  // que sea, ADEMÁS, el propio mediador dueño de esta mediación puntual:
+  // ese caso llega acá con mediationRole:'mediador' (por el chequeo de
+  // propietario en requireMediationAccess, que corre antes que la rama de
+  // estudio), así que no alcanza con mirar solo mediationRole.
+  function requireMediationAdmin(req, res, next) {
+    const isStudioAdminOwner = req.mediation.mediatorUserId === req.user.id && req.user.studioRole === 'admin';
+    if (req.mediationRole !== 'admin' && !isStudioAdminOwner) {
+      return res.status(403).json({ error: 'Solo un administrador puede asignar esta mediación' });
+    }
+    next();
+  }
+
+  function serializeAccess(db, a) {
+    const user = db.users.find((u) => u.id === a.userId);
+    return { id: a.id, mediationId: a.mediationId, userId: a.userId, userName: user ? user.name : null, role: a.role, grantedBy: a.grantedBy, grantedAt: a.grantedAt };
+  }
+
+  router.get('/:id/access', requireAuth, requireMediationAccess, (req, res) => {
+    const db = getDB();
+    const list = db.mediationAccess.filter((a) => a.mediationId === req.mediation.id);
+    res.json(list.map((a) => serializeAccess(db, a)));
+  });
+
+  router.post('/:id/access', requireAuth, requireMediationAccess, requireMediationAdmin, async (req, res) => {
+    const { userId, role } = req.body || {};
+    if (!['mediador', 'asistente'].includes(role)) {
+      return res.status(400).json({ error: "Rol inválido para asignación — usar 'mediador' o 'asistente' (abogado se agrega desde la sección de abogados, no acá)" });
+    }
+    const db = getDB();
+    // Bloque 14 (Parte 3): un estudio dado de baja no admite asignaciones
+    // nuevas. Solo aplica si quien pide esto lo hace como admin de SU
+    // estudio (no al admin de plataforma, que puede no tener estudio).
+    if (req.user.studioId) {
+      const requesterStudio = db.studios.find((s) => s.id === req.user.studioId);
+      if (requesterStudio && requesterStudio.status !== 'activo') {
+        return res.status(400).json({ error: 'El estudio está dado de baja — no se pueden hacer asignaciones nuevas' });
+      }
+    }
+    const target = db.users.find((u) => u.id === userId);
+    if (!target) return res.status(404).json({ error: 'Usuario no encontrado' });
+    // no se puede asignar a cualquiera — tiene que ser del MISMO estudio
+    // que el dueño de la mediación (nunca cruzando estudios, aunque el
+    // admin conozca el ID de alguien de otro equipo).
+    const owner = db.users.find((u) => u.id === req.mediation.mediatorUserId);
+    const studioId = owner ? owner.studioId : null;
+    if (!studioId || target.studioId !== studioId) {
+      return res.status(400).json({ error: 'Esa persona no pertenece al mismo estudio que esta mediación' });
+    }
+    if (target.id === req.mediation.mediatorUserId) {
+      return res.status(400).json({ error: 'Esa persona ya es la responsable principal de esta mediación' });
+    }
+    // Bloque 14 (Parte 2) — nadie se asigna a sí mismo por acá, ni
+    // siquiera el admin (que de todas formas ya tiene acceso general vía
+    // el estudio — esto evita una fila de mediation_access redundante y
+    // confusa).
+    if (target.id === req.user.id) {
+      return res.status(400).json({ error: 'No podés asignarte a vos mismo' });
+    }
+    const already = db.mediationAccess.find((a) => a.mediationId === req.mediation.id && a.userId === userId);
+    if (already) return res.status(400).json({ error: 'Esa persona ya tiene acceso a esta mediación' });
+
+    const access = { id: nanoid(), mediationId: req.mediation.id, userId, role, partyId: null, grantedBy: req.user.id, grantedAt: Date.now() };
+    db.mediationAccess.push(access);
+    logMediationEvent(db, {
+      mediationId: req.mediation.id, type: 'MEDIATION_ACCESS_GRANTED', actorId: req.user.id,
+      visibility: 'mediator_only', entityType: 'mediation_access', entityId: access.id,
+      title: `${target.name} asignado/a como ${role}`,
+    });
+    await commit();
+    res.json(serializeAccess(db, access));
+  });
+
+  router.delete('/:id/access/:accessId', requireAuth, requireMediationAccess, requireMediationAdmin, async (req, res) => {
+    const db = getDB();
+    const access = db.mediationAccess.find((a) => a.id === req.params.accessId && a.mediationId === req.mediation.id);
+    if (!access) return res.status(404).json({ error: 'Asignación no encontrada en esta mediación' });
+    const target = db.users.find((u) => u.id === access.userId);
+    db.mediationAccess = db.mediationAccess.filter((a) => a.id !== access.id);
+    logMediationEvent(db, {
+      mediationId: req.mediation.id, type: 'MEDIATION_ACCESS_REVOKED', actorId: req.user.id,
+      visibility: 'mediator_only', entityType: 'mediation_access', entityId: access.id,
+      title: `Se quitó el acceso de ${target ? target.name : 'un usuario'}`,
+    });
+    await commit();
+    res.json({ ok: true });
+  });
+
   router.get('/:id/status-history', requireAuth, requireMediationAccess, (req, res) => {
     const db = getDB();
     const history = db.mediationStatusHistory
@@ -718,10 +913,13 @@ module.exports = function (io, presence) {
     };
   }
   function serializeHearing(h, confirmations) {
+    const db = getDB();
     return {
       id: h.id, mediationId: h.mediationId, date: h.date, startTime: h.startTime, endTime: h.endTime,
       type: h.type, modality: h.modality, location: h.location, meetingUrl: h.meetingUrl,
-      status: h.status, notes: h.notes, createdAt: h.createdAt,
+      status: h.status, notes: h.notes, proposalGroupId: h.proposalGroupId || null, targetPartyId: h.targetPartyId || null,
+      lastModifiedByName: h.lastModifiedBy ? (db.users.find((u) => u.id === h.lastModifiedBy)?.name || null) : null,
+      lastModifiedAt: h.lastModifiedAt || null, createdAt: h.createdAt,
       confirmations: (confirmations || []).map((c) => ({
         id: c.id, partyId: c.partyId, response: c.response, respondedAt: c.respondedAt,
       })),
@@ -905,6 +1103,93 @@ module.exports = function (io, presence) {
   });
 
   // ---------- audiencias ----------
+  // Bloque 15 (Parte 3) §1-3 — checklist de preparación, calculado en
+  // vivo desde datos existentes (partes, abogados, confirmaciones,
+  // documentos, tareas, compromisos, solicitudes) — nunca una tabla
+  // nueva de checklist. "pendiente porque falta acción" se distingue de
+  // "no corresponde" (ej. no hay abogados vinculados, no es un problema).
+  function buildHearingPreparation(db, mediation, hearing) {
+    const parties = db.parties.filter((p) => p.mediationId === mediation.id && p.status === 'activa');
+    const lawyers = db.lawyers.filter((l) => l.mediationId === mediation.id);
+    const confirmations = db.hearingConfirmations.filter((c) => c.hearingId === hearing.id);
+    const allConfirmed = confirmations.length > 0 && confirmations.every((c) => c.response === 'confirma');
+    const documentsPendingReview = db.documents.filter((d) => d.mediationId === mediation.id && d.status === 'recibido');
+    const pendingTasks = db.tasks.filter((t) => t.mediationId === mediation.id && ['pendiente', 'en_proceso'].includes(t.status));
+    const pendingCommitments = db.commitments.filter((c) => c.mediationId === mediation.id && ['pendiente', 'vencido'].includes(c.status));
+    const pendingRequests = db.hearingRescheduleRequests.filter((r) => r.hearingId === hearing.id && r.status === 'pendiente');
+    const modalityIssue = validateModalityData(hearing.modality, hearing.location, hearing.meetingUrl);
+
+    const items = {
+      partesIdentificadas: { status: parties.length > 0 ? 'realizado' : 'pendiente', detail: `${parties.length} parte(s)` },
+      datosDeContacto: { status: parties.length > 0 && parties.every((p) => p.email || p.phone) ? 'realizado' : (parties.length ? 'pendiente' : 'no_corresponde') },
+      abogadosVinculados: { status: lawyers.length > 0 ? 'realizado' : 'no_corresponde', detail: `${lawyers.length} abogado(s)` },
+      confirmaciones: { status: confirmations.length === 0 ? 'no_corresponde' : (allConfirmed ? 'realizado' : 'pendiente'), detail: `${confirmations.filter((c) => c.response === 'confirma').length}/${confirmations.length} confirmaron` },
+      documentosPendientesRevision: { status: documentsPendingReview.length === 0 ? 'realizado' : 'pendiente', detail: `${documentsPendingReview.length} sin revisar` },
+      tareasPendientes: { status: pendingTasks.length === 0 ? 'realizado' : 'pendiente', detail: `${pendingTasks.length} pendiente(s)` },
+      compromisosPendientes: { status: pendingCommitments.length === 0 ? 'realizado' : 'pendiente', detail: `${pendingCommitments.length} pendiente(s)` },
+      modalidadDatos: { status: modalityIssue ? 'pendiente' : 'realizado', detail: modalityIssue || 'Datos completos para la modalidad' },
+      solicitudesDeCambio: { status: pendingRequests.length === 0 ? 'realizado' : 'pendiente', detail: `${pendingRequests.length} sin resolver` },
+    };
+
+    const pendingKeys = Object.keys(items).filter((k) => items[k].status === 'pendiente');
+    const criticalKeys = ['confirmaciones', 'modalidadDatos', 'solicitudesDeCambio'].filter((k) => items[k].status === 'pendiente');
+    const daysUntil = (new Date(hearing.date).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+
+    let estado, motivo;
+    if (pendingKeys.length === 0) {
+      estado = 'preparada'; motivo = 'No existen bloqueos operativos relevantes.';
+    } else if (daysUntil <= 2 && criticalKeys.length > 0) {
+      estado = 'critica'; motivo = `La audiencia es en ${Math.max(0, Math.round(daysUntil))} día(s) y hay pendientes importantes: ${criticalKeys.join(', ')}.`;
+    } else {
+      estado = 'pendiente'; motivo = `Hay elementos que todavía requieren revisión: ${pendingKeys.join(', ')}.`;
+    }
+    return { items, estado, motivo };
+  }
+
+  router.get('/:id/hearings/:hearingId/preparation', requireAuth, requireMediationAccess, (req, res) => {
+    const db = getDB();
+    const hearing = db.hearings.find((h) => h.id === req.params.hearingId && h.mediationId === req.mediation.id);
+    if (!hearing) return res.status(404).json({ error: 'Audiencia no encontrada en esta mediación' });
+    res.json(buildHearingPreparation(db, req.mediation, hearing));
+  });
+
+  // Bloque 15 (Parte 3) §15 — resumen accionable, no todo el expediente.
+  router.get('/:id/hearings/:hearingId/summary', requireAuth, requireMediationAccess, (req, res) => {
+    const db = getDB();
+    const hearing = db.hearings.find((h) => h.id === req.params.hearingId && h.mediationId === req.mediation.id);
+    if (!hearing) return res.status(404).json({ error: 'Audiencia no encontrada en esta mediación' });
+    const mediation = req.mediation;
+    const confirmations = db.hearingConfirmations.filter((c) => c.hearingId === hearing.id);
+    const lawyers = db.lawyers.filter((l) => l.mediationId === mediation.id);
+    // preparación por parte (§9) — nunca cruza información de otra parte, esto es SOLO para el mediador
+    const perParty = db.parties.filter((p) => p.mediationId === mediation.id).map((p) => {
+      const confirmation = confirmations.find((c) => c.partyId === p.id);
+      const lawyer = lawyers.find((l) => l.partyId === p.id);
+      const requests = db.hearingRescheduleRequests.filter((r) => r.hearingId === hearing.id && r.requestedByPartyId === p.id);
+      const commitments = db.commitments.filter((c) => c.mediationId === mediation.id && c.partyId === p.id && ['pendiente', 'vencido'].includes(c.status));
+      return {
+        partyId: p.id, partyName: partyDisplayName(db, p.id),
+        confirmation: confirmation ? confirmation.response : null,
+        lawyerName: lawyer ? lawyer.name : null,
+        pendingRequests: requests.filter((r) => r.status === 'pendiente').length,
+        pendingCommitments: commitments.length,
+      };
+    });
+    const relevantDocuments = db.documents.filter((d) => d.mediationId === mediation.id).map(serializeDocument).filter((d) => d.isCurrentVersion);
+    const pendingTasks = db.tasks.filter((t) => t.mediationId === mediation.id && ['pendiente', 'en_proceso'].includes(t.status)).map(serializeTask);
+    const pendingRequests = db.hearingRescheduleRequests.filter((r) => r.hearingId === hearing.id && r.status === 'pendiente').map(serializeRescheduleRequest);
+
+    res.json({
+      hearing: serializeHearing(hearing, confirmations),
+      preparation: buildHearingPreparation(db, mediation, hearing),
+      perParty,
+      documentosRelevantes: relevantDocuments,
+      tareasPendientes: pendingTasks,
+      solicitudesPendientes: pendingRequests,
+      proximaAccion: { text: mediation.nextActionText || null, dueDate: mediation.nextActionDueDate || null },
+    });
+  });
+
   router.get('/:id/hearings', requireAuth, requireMediationAccess, (req, res) => {
     const db = getDB();
     const list = db.hearings.filter((h) => h.mediationId === req.mediation.id).sort((a, b) => a.date.localeCompare(b.date));
@@ -914,14 +1199,60 @@ module.exports = function (io, presence) {
   // regla del motor operativo (IMPLEMENTATION_PLAN.md §3.11):
   // HEARING_SCHEDULED -> genera una fila de confirmación pendiente por
   // cada parte activa de la mediación, automático, en el mismo request.
+  // Bloque 15 (Parte 3) §6 — coherencia modalidad↔datos. Se define UNA
+  // vez, se usa en creación y en propuesta — nunca duplicada.
+  //
+  // Decisión importante, documentada acá: solo se exige meetingUrl para
+  // 'virtual' — es la única combinación donde la audiencia literalmente
+  // no se puede llevar a cabo sin el dato (nadie tiene dónde entrar).
+  // 'presencial'/'hibrida' NO exigen location de forma dura: la
+  // ubicación siempre fue un campo opcional desde el Bloque 4, y
+  // convertirlo en obligatorio ahora rompería cualquier audiencia
+  // presencial creada sin dirección todavía definida (un caso común:
+  // agendar el día y cargar el lugar después). "Si el modelo lo define
+  // así" (spec) — este modelo, tal como ya existía, no lo define así.
+  function validateModalityData(modality, location, meetingUrl) {
+    if (modality === 'virtual' && !meetingUrl) return 'Modalidad virtual requiere un link de reunión (meetingUrl)';
+    return null;
+  }
+
   router.post('/:id/hearings', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
-    const { date, startTime, endTime, type, modality, location, meetingUrl, notes } = req.body || {};
+    const { date, startTime, endTime, durationMinutes, type, modality, location, meetingUrl, notes } = req.body || {};
     if (!date) return res.status(400).json({ error: 'Falta la fecha de la audiencia' });
+    const modalityError = validateModalityData(modality || 'presencial', location, meetingUrl);
+    if (modalityError) return res.status(400).json({ error: modalityError });
     const db = getDB();
+
+    // Bloque 15 — duración: reusa endTime (ya existía en el esquema desde
+    // el Bloque 4, nunca se poblaba). Si mandan duración en vez de
+    // endTime directo, se calcula acá — no se agrega ningún campo nuevo.
+    let computedEndTime = endTime || null;
+    if (!computedEndTime && startTime && durationMinutes) {
+      const startMin = toMinutes(startTime);
+      if (startMin != null) {
+        const endMin = startMin + Number(durationMinutes);
+        computedEndTime = `${String(Math.floor(endMin / 60) % 24).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
+      }
+    }
+
+    // Bloque 15 — el backend rechaza el conflicto, no solo lo advierte
+    // (spec §4: "no confiar solamente en la interfaz"). El chequeo es
+    // contra la agenda del MEDIADOR RESPONSABLE de esta mediación, no de
+    // quien hace el pedido (puede ser un asistente agendando por él).
+    if (startTime) {
+      const conflicts = checkHearingConflicts(db, {
+        mediatorUserId: req.mediation.mediatorUserId, date, startTime, endTime: computedEndTime,
+      });
+      if (conflicts.length > 0) {
+        return res.status(409).json({ error: 'Hay un conflicto de horario para el mediador responsable de esta mediación', conflicts });
+      }
+    }
+
     const hearing = {
-      id: nanoid(), mediationId: req.mediation.id, date, startTime: startTime || null, endTime: endTime || null,
+      id: nanoid(), mediationId: req.mediation.id, date, startTime: startTime || null, endTime: computedEndTime,
       type: type || 'primera', modality: modality || 'presencial', location: location || null, meetingUrl: meetingUrl || null,
-      status: 'programada', notes: notes || null, createdAt: Date.now(),
+      status: 'programada', notes: notes || null, proposalGroupId: null, targetPartyId: null,
+      lastModifiedBy: req.user.id, lastModifiedAt: Date.now(), createdAt: Date.now(),
     };
     db.hearings.push(hearing);
 
@@ -939,8 +1270,170 @@ module.exports = function (io, presence) {
       description: `Se generaron ${confirmations.length} confirmación(es) pendiente(s)`,
     });
 
+    // Bloque 15 §6 — "actualizar la próxima acción si corresponde", pero
+    // SIN pisar una que el mediador ya cargó a mano. Mismo mecanismo del
+    // hardening (nextActionSetBy) — hasta ahora sin ningún llamador real;
+    // esta es la primera automatización que efectivamente lo usa.
+    if (req.mediation.nextActionSetBy !== 'manual') {
+      req.mediation.nextActionText = `Preparar audiencia del ${hearing.date}`;
+      req.mediation.nextActionDueDate = hearing.date;
+      req.mediation.nextActionResponsibleType = 'mediador';
+      req.mediation.nextActionSetBy = 'auto';
+    }
+
     await commit();
     res.json(serializeHearing(hearing, confirmations));
+  });
+
+  // ---------- proponer audiencia (Bloque 15 Parte 2 §1) ----------
+  // Uno o varios horarios candidatos, ninguno confirmado todavía — cada
+  // slot es una fila de hearings con status:'propuesta' (no una tabla
+  // paralela), agrupados por proposalGroupId para poder elegir uno y
+  // descartar el resto de una sola vez.
+  router.post('/:id/hearings/propose', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    const { slots, targetPartyId, type, modality, location, meetingUrl, notes } = req.body || {};
+    if (!Array.isArray(slots) || slots.length === 0) {
+      return res.status(400).json({ error: 'Hay que mandar al menos un horario candidato' });
+    }
+    const db = getDB();
+    const modalityError = validateModalityData(modality || 'presencial', location, meetingUrl);
+    if (modalityError) return res.status(400).json({ error: modalityError });
+    if (targetPartyId) {
+      const targetParty = db.parties.find((p) => p.id === targetPartyId && p.mediationId === req.mediation.id);
+      if (!targetParty) return res.status(404).json({ error: 'Esa parte no pertenece a esta mediación' });
+    }
+
+    // Bloque 16 §7 — idempotencia real, no solo declarada: si el mismo
+    // pedido (mismos horarios, mismo destinatario) llegó hace menos de 10
+    // segundos para esta mediación, se asume un reintento (doble click,
+    // timeout de red) y se devuelve el grupo YA creado en vez de
+    // duplicar audiencias y volver a notificar. No hace falta una clave
+    // de idempotencia nueva — alcanza con mirar lo que ya está en hearings.
+    const slotsSignature = JSON.stringify(slots.map((s) => `${s.date}|${s.startTime || ''}`).sort());
+    const recentDuplicate = db.hearings.find((h) =>
+      h.mediationId === req.mediation.id && h.status === 'propuesta' &&
+      (h.targetPartyId || null) === (targetPartyId || null) &&
+      (Date.now() - h.createdAt) < 10000
+    );
+    if (recentDuplicate && recentDuplicate.proposalGroupId) {
+      const siblingGroup = db.hearings.filter((h) => h.proposalGroupId === recentDuplicate.proposalGroupId);
+      const siblingSignature = JSON.stringify(siblingGroup.map((h) => `${h.date}|${h.startTime || ''}`).sort());
+      if (siblingSignature === slotsSignature) {
+        const existingConfirmations = db.hearingConfirmations.filter((c) => siblingGroup.some((h) => h.id === c.hearingId));
+        return res.json({ proposalGroupId: recentDuplicate.proposalGroupId, hearings: siblingGroup.map((h) => serializeHearing(h, existingConfirmations.filter((c) => c.hearingId === h.id))), deduplicated: true });
+      }
+    }
+
+    const proposalGroupId = nanoid();
+    const created = [];
+    for (const slot of slots) {
+      if (!slot.date) continue;
+      let computedEndTime = slot.endTime || null;
+      if (!computedEndTime && slot.startTime && slot.durationMinutes) {
+        const startMin = toMinutes(slot.startTime);
+        if (startMin != null) {
+          const endMin = startMin + Number(slot.durationMinutes);
+          computedEndTime = `${String(Math.floor(endMin / 60) % 24).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
+        }
+      }
+      const hearing = {
+        id: nanoid(), mediationId: req.mediation.id, date: slot.date, startTime: slot.startTime || null, endTime: computedEndTime,
+        type: type || 'primera', modality: modality || 'presencial', location: location || null, meetingUrl: meetingUrl || null,
+        status: 'propuesta', notes: notes || null, proposalGroupId, targetPartyId: targetPartyId || null,
+        lastModifiedBy: req.user.id, lastModifiedAt: Date.now(), createdAt: Date.now(),
+      };
+      db.hearings.push(hearing);
+      created.push(hearing);
+    }
+    if (created.length === 0) return res.status(400).json({ error: 'Ningún horario candidato tenía fecha' });
+
+    // confirmaciones POR PROPUESTA — sirven para que cada parte marque
+    // cuál opción prefiere, no como una confirmación real todavía.
+    const targetParties = targetPartyId
+      ? db.parties.filter((p) => p.id === targetPartyId && p.status === 'activa')
+      : db.parties.filter((p) => p.mediationId === req.mediation.id && p.status === 'activa');
+    const allConfirmations = [];
+    for (const hearing of created) {
+      const confirmations = targetParties.map((p) => ({
+        id: nanoid(), hearingId: hearing.id, partyId: p.id, response: 'pendiente', respondedAt: null, createdAt: Date.now(),
+      }));
+      db.hearingConfirmations.push(...confirmations);
+      allConfirmations.push(...confirmations);
+    }
+
+    logMediationEvent(db, {
+      mediationId: req.mediation.id, type: 'HEARING_PROPOSED', actorId: req.user.id,
+      entityType: 'hearing', entityId: created[0].id,
+      title: `Se propusieron ${created.length} horario(s) de audiencia${targetPartyId ? ' a una parte' : ' a todas las partes'}`,
+      metadata: { proposalGroupId, slotCount: created.length },
+    });
+
+    // Bloque 16 §1 — notificación real, UNA por destinatario aunque haya
+    // varios horarios candidatos (no generar ruido innecesario). El
+    // contenido lista las opciones, no una por mensaje.
+    const optionsText = created.map((h) => `${h.date}${h.startTime ? ' ' + h.startTime : ''}`).join(', ');
+    const notifyText = `${req.mediation.code}: te proponemos audiencia (${req.mediation.type || 'mediación'}, ${modality || 'presencial'}). Opciones: ${optionsText}. Ingresá al portal para confirmar cuál te sirve.`;
+    const notificationResults = [];
+    for (const party of targetParties) {
+      const n = await notifyPartyAboutHearing(db, party, notifyText);
+      notificationResults.push({ recipient: 'party', partyId: party.id, status: n.status });
+      const partyLawyers = db.lawyers.filter((l) => l.mediationId === req.mediation.id && l.partyId === party.id);
+      for (const lawyer of partyLawyers) {
+        const nl = await notifyLawyerAboutHearing(db, lawyer, `${req.mediation.code}: se propuso audiencia para tu representado/a. Opciones: ${optionsText}. Podés ver el detalle en el portal.`);
+        notificationResults.push({ recipient: 'lawyer', lawyerId: lawyer.id, status: nl.status });
+      }
+    }
+
+    await commit();
+    res.json({ proposalGroupId, hearings: created.map((h) => serializeHearing(h, allConfirmations.filter((c) => c.hearingId === h.id))), notifications: notificationResults });
+  });
+
+  // el mediador elige UNA de las propuestas del grupo: esa pasa a
+  // 'programada' de verdad (con confirmaciones reales, reiniciadas), las
+  // demás del mismo grupo se cancelan — nunca quedan sueltas como si
+  // fueran audiencias vigentes.
+  router.post('/:id/hearings/:hearingId/confirm-proposal', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    const db = getDB();
+    const hearing = db.hearings.find((h) => h.id === req.params.hearingId && h.mediationId === req.mediation.id);
+    if (!hearing) return res.status(404).json({ error: 'Audiencia no encontrada en esta mediación' });
+    if (hearing.status !== 'propuesta') return res.status(400).json({ error: 'Esta audiencia no es una propuesta pendiente de confirmar' });
+
+    hearing.status = 'programada';
+    hearing.lastModifiedBy = req.user.id;
+    hearing.lastModifiedAt = Date.now();
+    const confirmations = db.hearingConfirmations.filter((c) => c.hearingId === hearing.id);
+    confirmations.forEach((c) => { c.response = 'pendiente'; c.respondedAt = null; });
+
+    let cancelledSiblings = [];
+    if (hearing.proposalGroupId) {
+      cancelledSiblings = db.hearings.filter((h) => h.proposalGroupId === hearing.proposalGroupId && h.id !== hearing.id && h.status === 'propuesta');
+      cancelledSiblings.forEach((h) => { h.status = 'cancelada'; h.lastModifiedBy = req.user.id; h.lastModifiedAt = Date.now(); });
+    }
+
+    logMediationEvent(db, {
+      mediationId: req.mediation.id, type: 'HEARING_SCHEDULED', actorId: req.user.id,
+      entityType: 'hearing', entityId: hearing.id,
+      title: `Propuesta confirmada como audiencia: ${hearing.date}${hearing.startTime ? ' ' + hearing.startTime : ''}`,
+      description: cancelledSiblings.length ? `Se descartaron ${cancelledSiblings.length} otra(s) propuesta(s) del mismo grupo` : null,
+    });
+
+    // Bloque 16 §2 — "indicar claramente que la audiencia quedó
+    // confirmada", a todas las partes involucradas y sus abogados.
+    const involvedParties = db.parties.filter((p) => confirmations.some((c) => c.partyId === p.id));
+    const confirmNotifyText = `${req.mediation.code}: tu audiencia quedó confirmada para el ${hearing.date}${hearing.startTime ? ' ' + hearing.startTime : ''} (${hearing.modality}). Ingresá al portal para volver a confirmar tu asistencia.`;
+    const confirmNotifications = [];
+    for (const party of involvedParties) {
+      const n = await notifyPartyAboutHearing(db, party, confirmNotifyText);
+      confirmNotifications.push({ recipient: 'party', partyId: party.id, status: n.status });
+      const partyLawyers = db.lawyers.filter((l) => l.mediationId === req.mediation.id && l.partyId === party.id);
+      for (const lawyer of partyLawyers) {
+        const nl = await notifyLawyerAboutHearing(db, lawyer, `${req.mediation.code}: quedó confirmada la audiencia para el ${hearing.date}${hearing.startTime ? ' ' + hearing.startTime : ''}.`);
+        confirmNotifications.push({ recipient: 'lawyer', lawyerId: lawyer.id, status: nl.status });
+      }
+    }
+
+    await commit();
+    res.json({ ...serializeHearing(hearing, confirmations), notifications: confirmNotifications });
   });
 
   const HEARING_STATUS_EVENT_TYPE = {
@@ -949,14 +1442,23 @@ module.exports = function (io, presence) {
   };
 
   router.post('/:id/hearings/:hearingId/status', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
-    const { status } = req.body || {};
+    const { status, note } = req.body || {};
     if (!['programada', 'confirmada', 'realizada', 'cancelada', 'no_realizada'].includes(status)) {
       return res.status(400).json({ error: 'Estado de audiencia inválido' });
     }
     const db = getDB();
     const hearing = db.hearings.find((h) => h.id === req.params.hearingId && h.mediationId === req.mediation.id);
     if (!hearing) return res.status(404).json({ error: 'Audiencia no encontrada en esta mediación' });
+    // Bloque 16 §7 — mismo guard que ya usa el cambio de estado de
+    // mediación: sin esto, un doble click en "cancelar" generaba dos
+    // eventos y, ahora, dos notificaciones. Antes no existía acá.
+    if (hearing.status === status) {
+      return res.json(serializeHearing(hearing, db.hearingConfirmations.filter((c) => c.hearingId === hearing.id)));
+    }
+    const fromStatus = hearing.status;
     hearing.status = status;
+    hearing.lastModifiedBy = req.user.id;
+    hearing.lastModifiedAt = Date.now();
 
     let hearingEvent = null;
     if (HEARING_STATUS_EVENT_TYPE[status]) {
@@ -964,11 +1466,33 @@ module.exports = function (io, presence) {
         mediationId: req.mediation.id, type: HEARING_STATUS_EVENT_TYPE[status], actorId: req.user.id,
         entityType: 'hearing', entityId: hearing.id,
         title: `Audiencia ${status}: ${hearing.date}`,
+        // Bloque 15 — motivo, cuando corresponde (típicamente al cancelar)
+        description: note || null,
       });
+    }
+
+    // Bloque 16 §4 — notificación real de cancelación, a todas las
+    // partes involucradas y sus abogados, con la fecha ANTERIOR (nunca
+    // se inventa una nueva) y el motivo si se dio.
+    let cancelNotifications = [];
+    if (status === 'cancelada') {
+      const confirmations = db.hearingConfirmations.filter((c) => c.hearingId === hearing.id);
+      const involvedParties = db.parties.filter((p) => confirmations.some((c) => c.partyId === p.id));
+      const cancelText = `${req.mediation.code}: se canceló la audiencia del ${hearing.date}${hearing.startTime ? ' ' + hearing.startTime : ''}${note ? '. Motivo: ' + note : ''}.`;
+      for (const party of involvedParties) {
+        const n = await notifyPartyAboutHearing(db, party, cancelText);
+        cancelNotifications.push({ recipient: 'party', partyId: party.id, status: n.status });
+        const partyLawyers = db.lawyers.filter((l) => l.mediationId === req.mediation.id && l.partyId === party.id);
+        for (const lawyer of partyLawyers) {
+          const nl = await notifyLawyerAboutHearing(db, lawyer, cancelText);
+          cancelNotifications.push({ recipient: 'lawyer', lawyerId: lawyer.id, status: nl.status });
+        }
+      }
     }
 
     await commit();
     const response = serializeHearing(hearing, db.hearingConfirmations.filter((c) => c.hearingId === hearing.id));
+    if (cancelNotifications.length) response.notifications = cancelNotifications;
     // regla del motor operativo (§3.11): HEARING_HELD SUGIERE compromisos y
     // tareas de seguimiento, nunca los crea sola — no hay forma segura de
     // adivinar cuántos generó una audiencia real. El frontend decide si le
@@ -987,10 +1511,15 @@ module.exports = function (io, presence) {
   // WhatsApp, lo que sea) — el endpoint donde la PARTE confirma ella misma
   // desde el portal, sin cuenta, es el Bloque 7, todavía no existe.
   function serializeRescheduleRequest(r) {
+    const db = getDB();
+    const party = db.parties.find((p) => p.id === r.requestedByPartyId);
+    const mediation = db.mediations.find((m) => m.id === r.mediationId);
     return {
-      id: r.id, hearingId: r.hearingId, mediationId: r.mediationId,
-      requestedByPartyId: r.requestedByPartyId, requestedByType: r.requestedByType, requestedByLawyerId: r.requestedByLawyerId,
-      reason: r.reason, proposedDate: r.proposedDate, proposedStartTime: r.proposedStartTime,
+      id: r.id, hearingId: r.hearingId, mediationId: r.mediationId, mediationCode: mediation ? mediation.code : null,
+      requestedByPartyId: r.requestedByPartyId, requestedByPartyName: party ? (party.legalName || `${party.firstName || ''} ${party.lastName || ''}`.trim()) : null,
+      requestedByType: r.requestedByType, requestedByLawyerId: r.requestedByLawyerId,
+      reason: r.reason, comment: r.comment || null, preferredDayText: r.preferredDayText || null, preferredTimeText: r.preferredTimeText || null,
+      proposedDate: r.proposedDate, proposedStartTime: r.proposedStartTime,
       status: r.status, mediatorNote: r.mediatorNote, resolvedBy: r.resolvedBy, resolvedAt: r.resolvedAt, createdAt: r.createdAt,
     };
   }
@@ -1010,8 +1539,8 @@ module.exports = function (io, presence) {
   // (confirmar el pedido de cambio en el portal solo crea la SOLICITUD).
   router.post('/:id/hearings/:hearingId/reschedule-requests/:requestId/resolve', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
     const { action, newDate, newStartTime, note } = req.body || {};
-    if (!['aceptar', 'rechazar', 'proponer'].includes(action)) {
-      return res.status(400).json({ error: 'Acción inválida — usar aceptar, rechazar o proponer' });
+    if (!['aceptar', 'rechazar', 'proponer', 'resolver_sin_cambio'].includes(action)) {
+      return res.status(400).json({ error: 'Acción inválida — usar aceptar, rechazar, proponer o resolver_sin_cambio' });
     }
     const db = getDB();
     const request = db.hearingRescheduleRequests.find(
@@ -1021,19 +1550,30 @@ module.exports = function (io, presence) {
     if (request.status !== 'pendiente') return res.status(400).json({ error: 'Esta solicitud ya fue resuelta' });
     const hearing = db.hearings.find((h) => h.id === req.params.hearingId && h.mediationId === req.mediation.id);
     if (!hearing) return res.status(404).json({ error: 'Audiencia no encontrada' });
+    const requestingParty = db.parties.find((p) => p.id === request.requestedByPartyId);
 
-    if (action === 'rechazar') {
-      request.status = 'rechazada';
+    if (action === 'rechazar' || action === 'resolver_sin_cambio') {
+      // Bloque 15 (Parte 2) §7: "resolver sin cambiar la audiencia" es un
+      // cierre distinto de rechazar — no es una negativa, es "ya se
+      // solucionó de otra forma, no hace falta reprogramar". Misma
+      // audiencia intacta en los dos casos, pero el estado final difiere
+      // (spec §4: los cuatro estados mínimos son pendiente/aceptada/
+      // rechazada/resuelta).
+      request.status = action === 'rechazar' ? 'rechazada' : 'resuelta';
       request.mediatorNote = note || null;
       request.resolvedBy = req.user.id;
       request.resolvedAt = Date.now();
+      const eventTitle = action === 'rechazar'
+        ? 'El mediador rechazó el pedido de cambio de audiencia'
+        : 'El mediador cerró el pedido de cambio sin reprogramar';
       logMediationEvent(db, {
         mediationId: req.mediation.id, type: 'HEARING_RESCHEDULE_REJECTED', actorId: req.user.id,
         entityType: 'hearing_reschedule_request', entityId: request.id,
-        title: 'El mediador rechazó el pedido de cambio de audiencia', description: note || null,
+        title: eventTitle, description: note || null,
       });
+      const notif = requestingParty ? await notifyPartyAboutHearing(db, requestingParty, `Tu pedido de cambio de audiencia fue ${action === 'rechazar' ? 'rechazado' : 'resuelto sin reprogramar'}${note ? ': ' + note : ''}`) : { status: 'no_disponible' };
       await commit();
-      return res.json(serializeRescheduleRequest(request));
+      return res.json({ ...serializeRescheduleRequest(request), notification: notif.status });
     }
 
     // aceptar: usa la fecha que la parte/abogado propuso. proponer: el
@@ -1047,24 +1587,41 @@ module.exports = function (io, presence) {
       return res.status(400).json({ error: action === 'aceptar' ? 'Esta solicitud no tiene una fecha propuesta para aceptar' : 'Falta la nueva fecha' });
     }
 
+    // Bloque 15 — misma validación de conflictos que al crear, ahora
+    // también al reprogramar (spec §7: "validar disponibilidad, validar
+    // conflictos"). Se excluye la propia audiencia de su propio chequeo.
+    if (targetStartTime) {
+      const conflicts = checkHearingConflicts(db, {
+        mediatorUserId: req.mediation.mediatorUserId, date: targetDate, startTime: targetStartTime,
+        endTime: hearing.endTime, excludeHearingId: hearing.id,
+      });
+      if (conflicts.length > 0) {
+        return res.status(409).json({ error: 'La nueva fecha/hora tiene un conflicto de horario para el mediador responsable', conflicts });
+      }
+    }
+
     const fromDate = hearing.date;
     const fromStartTime = hearing.startTime;
     hearing.date = targetDate;
     hearing.startTime = targetStartTime;
     hearing.status = 'programada'; // vuelve a programada — hay que reconfirmar contra la fecha nueva
+    hearing.lastModifiedBy = req.user.id;
+    hearing.lastModifiedAt = Date.now();
 
     // se reinician TODAS las confirmaciones de esta audiencia — una
     // confirmación contra la fecha vieja no dice nada sobre la fecha
-    // nueva, así que no tiene sentido dejarla como estaba.
+    // nueva, así que no tiene sentido dejarla como estaba (spec §11: "las
+    // confirmaciones anteriores NO deben quedar como si confirmaran
+    // automáticamente el nuevo horario").
     const resetConfirmations = db.hearingConfirmations.filter((c) => c.hearingId === hearing.id);
     resetConfirmations.forEach((c) => { c.response = 'pendiente'; c.respondedAt = null; });
 
-    request.status = 'reprogramada';
+    request.status = 'aceptada';
     request.mediatorNote = note || null;
     request.resolvedBy = req.user.id;
     request.resolvedAt = Date.now();
 
-    logMediationEvent(db, {
+    const rescheduleEvent = logMediationEvent(db, {
       mediationId: req.mediation.id, type: 'HEARING_RESCHEDULED', actorId: req.user.id,
       entityType: 'hearing', entityId: hearing.id,
       title: `Audiencia reprogramada: ${fromDate} → ${targetDate}`,
@@ -1072,8 +1629,22 @@ module.exports = function (io, presence) {
       metadata: { fromDate, fromStartTime, toDate: targetDate, toStartTime: targetStartTime, resolvedRequestId: request.id },
       causedByEventId: null,
     });
+    // Bloque 16 §3 — a TODAS las partes afectadas y sus abogados, no solo
+    // a quien pidió el cambio (antes solo se avisaba al solicitante).
+    const involvedPartiesForReschedule = db.parties.filter((p) => resetConfirmations.some((c) => c.partyId === p.id));
+    const rescheduleNotifyText = `${req.mediation.code}: tu audiencia fue reprogramada. Nueva fecha: ${targetDate}${targetStartTime ? ' ' + targetStartTime : ''}. Hace falta que vuelvas a confirmar en el portal.`;
+    const rescheduleNotifications = [];
+    for (const party of involvedPartiesForReschedule) {
+      const n = await notifyPartyAboutHearing(db, party, rescheduleNotifyText);
+      rescheduleNotifications.push({ recipient: 'party', partyId: party.id, status: n.status });
+      const partyLawyers = db.lawyers.filter((l) => l.mediationId === req.mediation.id && l.partyId === party.id);
+      for (const lawyer of partyLawyers) {
+        const nl = await notifyLawyerAboutHearing(db, lawyer, `${req.mediation.code}: se reprogramó la audiencia de tu representado/a. Nueva fecha: ${targetDate}${targetStartTime ? ' ' + targetStartTime : ''}.`);
+        rescheduleNotifications.push({ recipient: 'lawyer', lawyerId: lawyer.id, status: nl.status });
+      }
+    }
     await commit();
-    res.json({ request: serializeRescheduleRequest(request), hearing: serializeHearing(hearing, resetConfirmations) });
+    res.json({ request: serializeRescheduleRequest(request), hearing: serializeHearing(hearing, resetConfirmations), notifications: rescheduleNotifications });
   });
 
 

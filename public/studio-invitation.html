@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Invitación a un estudio</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#12181A; --surface:#1B2326; --line:#2E393D; --text:#E7EDEC; --text-dim:#93A3A2;
+    --calm:#5FA8A0; --calm-dim:#3E6E69; --serif:'Fraunces',serif; --sans:'Inter',sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{ margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); -webkit-font-smoothing:antialiased; display:flex; align-items:center; justify-content:center; min-height:100vh; padding:20px; }
+  .card{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:24px; max-width:400px; width:100%; text-align:center; }
+  h1{ font-family:var(--serif); font-size:20px; margin:0 0 8px; }
+  p{ color:var(--text-dim); font-size:13.5px; line-height:1.5; }
+  button{ cursor:pointer; font-family:var(--sans); border:none; border-radius:8px; padding:10px 16px; font-size:13.5px; font-weight:600; margin:6px 4px; }
+  button.primary{ background:var(--calm); color:#0E1A19; }
+  button.ghost{ background:none; border:1px solid var(--line); color:var(--text); }
+</style>
+</head>
+<body>
+  <div class="card" id="main"><p>Cargando…</p></div>
+  <script src="/studio-invitation.js"></script>
+</body>
+</html>
