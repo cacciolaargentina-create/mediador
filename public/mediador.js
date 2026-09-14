@@ -41,7 +41,7 @@ const NEXT_ACTION_RESPONSIBLE_LABELS = { mediador: 'Mediador/a', party: 'Una par
   try{
     me = await api('/auth/me');
   }catch(e){
-    document.getElementById('login-gate').style.display = 'flex';
+    document.getElementById('login-gate').style.display = 'block';
     return;
   }
   document.getElementById('app').style.display = 'block';
