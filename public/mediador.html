@@ -18,11 +18,73 @@
   body{ margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); -webkit-font-smoothing:antialiased; }
   .brand{ font-family:var(--serif); font-weight:700; font-size:20px; }
   .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
-  header{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--line); flex-wrap:wrap; gap:8px; }
+  header{ display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-bottom:1px solid var(--line); position:relative; z-index:20; }
   header .brand{ font-size:17px; }
-  header nav{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-  #user-name{ font-size:11.5px; color:var(--text-dim); white-space:nowrap; }
-  main{ max-width:720px; margin:0 auto; padding:20px; }
+  main{ max-width:720px; margin:0 auto; padding:20px; padding-bottom:calc(100px + env(safe-area-inset-bottom, 0px)); }
+
+  /* ---- botón de cuenta (avatar) — único punto de entrada a la sesión:
+     antes no había ni siquiera forma de cerrar sesión desde acá. ---- */
+  .account-btn{
+    display:flex; align-items:center; gap:7px; background:none; border:1px solid transparent;
+    border-radius:999px; padding:3px 4px 3px 3px; cursor:pointer; font-family:var(--sans);
+    color:var(--text-dim); -webkit-tap-highlight-color:transparent;
+  }
+  .account-btn:hover, .account-btn[aria-expanded="true"]{ border-color:var(--line); background:rgba(255,255,255,0.06); }
+  .account-btn .avatar{ width:28px; height:28px; border-radius:50%; object-fit:cover; display:block; }
+  .account-btn-initial{
+    width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    background:var(--calm); color:#0E1A19; font-size:12.5px; font-weight:600; flex-shrink:0;
+  }
+  .account-btn .account-name{ font-size:12.5px; color:var(--text-dim); white-space:nowrap; max-width:140px; overflow:hidden; text-overflow:ellipsis; }
+  .account-btn .caret{ width:13px; height:13px; flex-shrink:0; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; color:var(--text-faint); transition:transform .18s ease; }
+  .account-btn[aria-expanded="true"] .caret{ transform:rotate(180deg); }
+  @media (max-width:480px){ .account-btn .account-name{ display:none; } }
+
+  .account-menu{
+    position:absolute; top:calc(100% + 8px); right:14px; min-width:220px; max-width:min(280px, calc(100vw - 28px));
+    background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:6px;
+    box-shadow:0 8px 30px rgba(0,0,0,0.34), 0 2px 8px rgba(0,0,0,0.18); z-index:35; display:none;
+    opacity:0; transform:translateY(-6px) scale(.98); transform-origin:top right;
+    transition:opacity .16s ease, transform .16s ease;
+  }
+  .account-menu.mounted{ display:block; }
+  .account-menu.open{ opacity:1; transform:none; }
+  .account-menu-backdrop{ position:fixed; inset:0; z-index:15; display:none; }
+  .account-menu-backdrop.mounted{ display:block; }
+  .account-menu-head{ padding:9px 11px 10px; border-bottom:1px solid var(--line); margin-bottom:6px; }
+  .account-menu-head .who{ font-size:13.5px; color:var(--text); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .account-menu-head .sub{ font-size:11.5px; color:var(--text-faint); margin-top:3px; }
+  .account-menu button.row{
+    display:flex; align-items:center; gap:10px; width:100%; background:none; border:none;
+    color:var(--danger); font-family:var(--sans); font-size:13px; text-align:left;
+    padding:9px 11px; border-radius:9px; cursor:pointer;
+  }
+  .account-menu button.row:hover{ background:rgba(255,255,255,0.06); }
+  .account-menu button.row svg{ width:16px; height:16px; flex-shrink:0; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+
+  /* ---- nav inferior: misma píldora flotante que ya usa Puente Digital
+     (public/index.html) — separada de los tres bordes, con vidrio, y
+     resalta la sección activa. Antes esto era una fila de <button class=
+     "ghost"> dentro del header, sin estado activo y que se podía desbordar. ---- */
+  nav.tabs{
+    position:fixed; bottom:calc(10px + env(safe-area-inset-bottom, 0px)); left:12px; right:12px;
+    display:flex; gap:3px; padding:6px; z-index:10;
+    background:var(--surface); border:1px solid var(--line); border-radius:22px;
+    -webkit-backdrop-filter:blur(20px) saturate(1.5); backdrop-filter:blur(20px) saturate(1.5);
+    box-shadow:0 8px 30px rgba(0,0,0,0.34), 0 2px 8px rgba(0,0,0,0.18);
+  }
+  nav.tabs button{
+    flex:1; min-width:0; background:none; border:none; border-radius:16px; color:var(--text-faint);
+    font-family:var(--sans); font-size:10px; padding:7px 2px 6px; display:flex; flex-direction:column;
+    align-items:center; gap:3px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+    transition:background-color .18s ease, color .18s ease;
+  }
+  nav.tabs button svg{ width:19px; height:19px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+  nav.tabs button span.tab-label{ max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  nav.tabs button.active{ color:var(--calm); background:rgba(95,168,160,0.16); }
+  @media (min-width:700px){
+    nav.tabs{ left:50%; right:auto; transform:translateX(-50%); width:min(calc(100% - 48px), 520px); }
+  }
   .card{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin-bottom:14px; }
   .eyebrow{ font-family:var(--mono); font-size:10.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px; }
   h1{ font-family:var(--serif); font-size:22px; margin:0 0 4px; }
@@ -63,16 +125,22 @@
 <div id="app" style="display:none;">
   <header>
     <div class="brand">Mediador<em>digital</em></div>
-    <nav>
-      <span id="user-name"></span>
-      <button class="ghost" onclick="goTo('dashboard')">Dashboard</button>
-      <button class="ghost" onclick="goTo('list')">Mediaciones</button>
-      <button class="ghost" onclick="goTo('stats')">Estadísticas</button>
-      <button class="ghost" onclick="goTo('team')">Equipo</button>
-      <button class="ghost" onclick="goTo('agenda')">Agenda</button>
-    </nav>
+    <button class="account-btn" id="account-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" onclick="toggleAccountMenu(event)">
+      <span id="account-avatar"></span>
+      <span class="account-name" id="account-name"></span>
+      <svg class="caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9.5 6 6 6-6"/></svg>
+    </button>
+    <div class="account-menu" id="account-menu" role="menu" aria-labelledby="account-btn"></div>
   </header>
+  <div class="account-menu-backdrop" id="account-menu-backdrop" onclick="closeAccountMenu()"></div>
   <main id="main"></main>
+  <nav class="tabs" id="tabs">
+    <button data-screen="dashboard" onclick="goTo('dashboard')"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20a1 1 0 0 0 1 1H9a1 1 0 0 0 1-1v-4.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V20a1 1 0 0 0 1 1h2.5a1 1 0 0 0 1-1V9.5"/></svg><span class="tab-label">Dashboard</span></button>
+    <button data-screen="list" onclick="goTo('list')"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span class="tab-label">Mediaciones</span></button>
+    <button data-screen="stats" onclick="goTo('stats')"><svg viewBox="0 0 24 24"><path d="M4 20V10M12 20V4M20 20v-7"/></svg><span class="tab-label">Estadísticas</span></button>
+    <button data-screen="team" onclick="goTo('team')"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17.5" cy="9.5" r="2.3"/><path d="M15.8 14c2.4.4 4.2 2.5 4.2 5"/></svg><span class="tab-label">Equipo</span></button>
+    <button data-screen="agenda" onclick="goTo('agenda')"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/></svg><span class="tab-label">Agenda</span></button>
+  </nav>
 </div>
 
 <script src="/mediador.js"></script>

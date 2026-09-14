@@ -45,9 +45,82 @@ const NEXT_ACTION_RESPONSIBLE_LABELS = { mediador: 'Mediador/a', party: 'Una par
     return;
   }
   document.getElementById('app').style.display = 'block';
-  document.getElementById('user-name').textContent = me.name;
+  renderAccountButton();
   goTo('dashboard');
 })();
+
+// ================= CUENTA (avatar + menú) =================
+// Antes esto era un <span id="user-name"> suelto en el header, sin forma
+// de cerrar sesión desde acá — mismo problema y misma solución que ya se
+// aplicó en public/index.html (Puente Digital): un solo botón de entrada
+// (el avatar) que abre un menú con todo adentro.
+function accountInitial(){
+  const n = (me && me.name ? me.name.trim() : '') || '?';
+  return n.charAt(0).toUpperCase();
+}
+
+function renderAccountButton(){
+  const av = document.getElementById('account-avatar');
+  const nm = document.getElementById('account-name');
+  if(!av || !nm || !me) return;
+  const next = me.avatar
+    ? Object.assign(document.createElement('img'), { className:'avatar', src:me.avatar, alt:'' })
+    : Object.assign(document.createElement('span'), { className:'account-btn-initial', textContent:accountInitial() });
+  next.id = 'account-avatar';
+  av.replaceWith(next);
+  nm.textContent = me.name || '';
+  document.getElementById('account-btn').setAttribute('aria-label', `Cuenta de ${me.name || 'usuario'} — abrir menú`);
+}
+
+function renderAccountMenu(){
+  const menu = document.getElementById('account-menu');
+  if(!menu || !me) return;
+  menu.innerHTML = `
+    <div class="account-menu-head">
+      <div class="who">${escapeHtml(me.name || '')}</div>
+      <div class="sub">${escapeHtml(me.email || '')}</div>
+    </div>
+    <button class="row" role="menuitem" onclick="closeAccountMenu(); logoutMediador();">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15.5 16.5 4.5-4.5-4.5-4.5"/><path d="M20 12H9.5"/><path d="M9.5 4H6.5A2.5 2.5 0 0 0 4 6.5v11A2.5 2.5 0 0 0 6.5 20h3"/></svg>
+      <span>Cerrar sesión</span>
+    </button>
+  `;
+}
+
+function toggleAccountMenu(event){
+  if(event) event.stopPropagation();
+  const menu = document.getElementById('account-menu');
+  const btn = document.getElementById('account-btn');
+  if(!menu || !btn) return;
+  if(btn.getAttribute('aria-expanded') === 'true'){ closeAccountMenu(); return; }
+  renderAccountMenu();
+  const backdrop = document.getElementById('account-menu-backdrop');
+  menu.classList.add('mounted');
+  backdrop.classList.add('mounted');
+  requestAnimationFrame(() => requestAnimationFrame(() => menu.classList.add('open')));
+  btn.setAttribute('aria-expanded', 'true');
+  document.addEventListener('keydown', accountMenuEsc);
+}
+
+function closeAccountMenu(){
+  const menu = document.getElementById('account-menu');
+  const btn = document.getElementById('account-btn');
+  const backdrop = document.getElementById('account-menu-backdrop');
+  if(!menu || !btn) return;
+  menu.classList.remove('open');
+  btn.setAttribute('aria-expanded', 'false');
+  backdrop.classList.remove('mounted');
+  document.removeEventListener('keydown', accountMenuEsc);
+  setTimeout(() => { if(!menu.classList.contains('open')) menu.classList.remove('mounted'); }, 180);
+}
+function accountMenuEsc(e){
+  if(e.key === 'Escape'){ closeAccountMenu(); document.getElementById('account-btn')?.focus(); }
+}
+
+async function logoutMediador(){
+  await api('/auth/logout', { method:'POST' });
+  location.href = '/mediador.html';
+}
 
 async function askMediationAI(mediationId){
   const input = document.getElementById('mediation-assistant-question');
@@ -73,8 +146,21 @@ async function askDashboardAI(){
   }catch(e){ box.innerHTML = `<p class="empty-hint">${escapeHtml(e.error || 'No se pudo consultar al asistente.')}</p>`; }
 }
 
+// pantallas que no son pestaña propia resaltan la pestaña de la que
+// "cuelgan" — el detalle de una mediación resalta Mediaciones, las
+// solicitudes de cambio resaltan Agenda, etc. — así el nav inferior
+// siempre muestra dónde estás parado/a, no solo en las 5 raíces.
+const TAB_FOR_SCREEN = {
+  dashboard:'dashboard', list:'list', detail:'list', new:'list',
+  stats:'stats', team:'team', studioMediations:'team',
+  agenda:'agenda', requests:'agenda',
+};
 function goTo(screen, id){
   currentMediationId = id || null;
+  closeAccountMenu();
+  document.querySelectorAll('nav.tabs button').forEach(b => {
+    b.classList.toggle('active', b.dataset.screen === TAB_FOR_SCREEN[screen]);
+  });
   if(screen === 'dashboard') renderDashboard();
   else if(screen === 'list') renderList();
   else if(screen === 'detail') renderDetail(id);
@@ -84,6 +170,7 @@ function goTo(screen, id){
   else if(screen === 'studioMediations') renderStudioMediations();
   else if(screen === 'agenda') renderAgenda();
   else if(screen === 'requests') renderRequests();
+  window.scrollTo(0, 0);
 }
 
 // ================= DASHBOARD =================
