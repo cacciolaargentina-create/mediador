@@ -115,6 +115,22 @@ function serializeDocument(d) {
   };
 }
 
+// Bloque 19 — mismo serializeMessage de siempre (serializers.js), más el
+// documento adjunto si el mensaje referencia uno — nunca storagePath,
+// mismo criterio que serializeDocument. Un documentId que ya no exista o
+// que (por algún motivo) no sea de esta mediación simplemente no se
+// resuelve, en vez de filtrar datos de otra mediación.
+function serializeMediatorMessage(db, m, mediationId) {
+  const base = serializeMessage(m);
+  if (!m.documentId) return { ...base, document: null };
+  // defensa en profundidad: aunque documentId solo se guarda ya validado
+  // contra la mediación en el momento de mandar el mensaje, acá se vuelve
+  // a comprobar antes de mostrarlo — nunca alcanza con "ya se validó una
+  // vez" (mismo principio que la descarga de documentos).
+  const doc = db.documents.find((d) => d.id === m.documentId && d.mediationId === mediationId);
+  return { ...base, document: doc ? serializeDocument(doc) : null };
+}
+
 const VALID_STATUSES = [
   'borrador', 'iniciada', 'contactando_partes', 'notificaciones',
   'audiencia_programada', 'en_mediacion', 'acuerdo', 'acuerdo_parcial',
@@ -474,6 +490,15 @@ module.exports = function (io, presence) {
     const porEstado = {};
     for (const m of mine) porEstado[m.status] = (porEstado[m.status] || 0) + 1;
 
+    // Bloque 19 — "comunicaciones pendientes": un número, no una alerta
+    // por mensaje (spec: "evitar ruido"). Mismo cálculo de no-leído que
+    // ya usa routes/channels.js (readAt recíproco) sobre TODOS los hilos
+    // (parte/abogado/interno) de las mediaciones del usuario.
+    const myChannelIds = new Set(db.channels.filter((c) => c.mediationId && mineIds.has(c.mediationId)).map((c) => c.id));
+    const comunicacionesPendientes = db.messages.filter(
+      (m) => myChannelIds.has(m.channelId) && m.senderId && m.senderId !== req.user.id && !m.readAt
+    ).length;
+
     res.json({
       counts: {
         activas: activas.length,
@@ -524,6 +549,10 @@ module.exports = function (io, presence) {
       pendientes: { tareas: tareasPendientes, compromisos: compromisosPendientes },
       // ¿cuándo nos reunimos?
       proximasAudiencias,
+      // Bloque 19 — un número, no una lista: el dashboard no se vuelve
+      // un buzón de mensajes, solo dice cuántas conversaciones tienen
+      // algo sin leer.
+      comunicacionesPendientes,
     });
   });
 
@@ -1036,23 +1065,24 @@ module.exports = function (io, presence) {
     const thread = db.channels.find((c) => c.mediationId === req.mediation.id && c.partyId === req.params.partyId);
     if (!thread) return res.json([]);
     const messages = db.messages.filter((m) => m.channelId === thread.id).sort((a, b) => a.createdAt - b.createdAt);
-    res.json(messages.map(serializeMessage));
+    res.json(messages.map((m) => serializeMediatorMessage(db, m, req.mediation.id)));
   });
 
   router.post('/:id/parties/:partyId/messages', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
-    const { text } = req.body || {};
+    const { text, documentId } = req.body || {};
     if (!text || !text.trim()) return res.status(400).json({ error: 'Falta el texto del mensaje' });
     const db = getDB();
     const thread = db.channels.find((c) => c.mediationId === req.mediation.id && c.partyId === req.params.partyId);
     if (!thread) return res.status(400).json({ error: 'Esta parte todavía no fue invitada al portal' });
+    const doc = documentId ? db.documents.find((d) => d.id === documentId && d.mediationId === req.mediation.id) : null;
+    if (documentId && !doc) return res.status(400).json({ error: 'Ese documento no pertenece a esta mediación' });
+    // Bloque 19 — el Timeline no registra cada mensaje individual (eso es
+    // lo que muestra Comunicaciones); solo las acciones significativas que
+    // resulten de un mensaje (tarea, compromiso, reprogramación, documento).
     const msg = await postMessage(io, thread, { senderId: req.user.id, text: text.trim(), flagged: false });
-    logMediationEvent(db, {
-      mediationId: req.mediation.id, type: 'MESSAGE_SENT', actorId: req.user.id,
-      visibility: 'mediator_only', entityType: 'message', entityId: msg.id,
-      title: `Mensaje enviado a ${partyDisplayName(db, req.params.partyId)}`,
-    });
+    if (doc) { msg.documentId = doc.id; await commit(); }
     await commit();
-    res.json(msg);
+    res.json(serializeMediatorMessage(db, msg, req.mediation.id));
   });
 
   // ---------- abogados ----------
@@ -1102,12 +1132,180 @@ module.exports = function (io, presence) {
     if (!token) token = nanoid(24);
     lawyer.portalToken = token;
 
+    // Bloque 19 — mismo patrón que ya usa el invite de parties: una
+    // identidad propia (linkedUserId, la columna ya existía pero nunca se
+    // seteaba) para poder ser senderId de un mensaje, y un hilo propio
+    // mediador↔abogado (channels.lawyerId, distinto del hilo de la parte
+    // que representa — un abogado NO debe heredar la conversación de su
+    // representado ni al revés).
+    if (!lawyer.linkedUserId) {
+      const lawyerUser = {
+        id: nanoid(), googleId: null, email: lawyer.email || '', phone: lawyer.phone || '',
+        name: lawyer.name || 'Abogado/a', avatar: '', createdAt: Date.now(), guest: true,
+      };
+      db.users.push(lawyerUser);
+      lawyer.linkedUserId = lawyerUser.id;
+    }
+    let lawyerThread = db.channels.find((c) => c.mediationId === req.mediation.id && c.lawyerId === lawyer.id);
+    if (!lawyerThread) {
+      lawyerThread = {
+        id: nanoid(), code: genCode(), guestToken: null, calendarToken: nanoid(24),
+        status: 'abierto', mediationId: req.mediation.id, partyId: null, lawyerId: lawyer.id, createdAt: Date.now(),
+      };
+      db.channels.push(lawyerThread);
+      db.members.push({ id: nanoid(), channelId: lawyerThread.id, userId: req.mediation.mediatorUserId, role: 'mediador', joinedAt: Date.now() });
+      db.members.push({ id: nanoid(), channelId: lawyerThread.id, userId: lawyer.linkedUserId, role: 'abogado', joinedAt: Date.now() });
+    }
+
     logMediationEvent(db, {
       mediationId: req.mediation.id, type: 'LAWYER_INVITED', actorId: req.user.id,
       entityType: 'lawyer', entityId: lawyer.id, title: `Invitación al portal generada para ${lawyer.name}`,
     });
     await commit();
     res.json({ portalToken: lawyer.portalToken, portalUrl: `/lawyer-portal.html?token=${lawyer.portalToken}` });
+  });
+
+  // ---------- comunicaciones con un abogado (lado del mediador) ----------
+  // Distinto del hilo de la parte que representa a propósito (Bloque 19:
+  // "una comunicación dirigida específicamente a un abogado NO debe
+  // aparecer automáticamente a la parte").
+  router.get('/:id/lawyers/:lawyerId/messages', requireAuth, requireMediationAccess, (req, res) => {
+    const db = getDB();
+    const thread = db.channels.find((c) => c.mediationId === req.mediation.id && c.lawyerId === req.params.lawyerId);
+    if (!thread) return res.json([]);
+    const now = Date.now();
+    const messages = db.messages
+      .filter((m) => m.channelId === thread.id)
+      .filter((m) => !m.senderId || m.senderId === req.user.id || (m.deliverAt || 0) <= now)
+      .sort((a, b) => a.createdAt - b.createdAt);
+    res.json(messages.map((m) => serializeMediatorMessage(db, m, req.mediation.id)));
+  });
+
+  router.post('/:id/lawyers/:lawyerId/messages', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    const { text, documentId } = req.body || {};
+    if (!text || !text.trim()) return res.status(400).json({ error: 'Falta el texto del mensaje' });
+    const db = getDB();
+    const thread = db.channels.find((c) => c.mediationId === req.mediation.id && c.lawyerId === req.params.lawyerId);
+    if (!thread) return res.status(400).json({ error: 'Este abogado todavía no fue invitado al portal' });
+    const doc = documentId ? db.documents.find((d) => d.id === documentId && d.mediationId === req.mediation.id) : null;
+    if (documentId && !doc) return res.status(400).json({ error: 'Ese documento no pertenece a esta mediación' });
+    // Bloque 19 — mismo criterio que el hilo de partes: el Timeline no
+    // registra cada mensaje, solo lo que resulte en tarea/compromiso/etc.
+    const msg = await postMessage(io, thread, { senderId: req.user.id, text: text.trim(), flagged: false });
+    if (doc) { msg.documentId = doc.id; await commit(); }
+    await commit();
+    res.json(serializeMediatorMessage(db, msg, req.mediation.id));
+  });
+
+  // ---------- comunicación interna del equipo ----------
+  // Un solo canal por mediación (mediationId seteado, partyId Y lawyerId
+  // ambos null) — nunca visible para partes ni abogados, ninguna ruta de
+  // portal lo expone. Se crea recién al primer mensaje, no al abrir el
+  // expediente (Bloque 19: "no crear duplicados").
+  function getOrCreateInternalThread(db, mediation) {
+    let thread = db.channels.find((c) => c.mediationId === mediation.id && !c.partyId && !c.lawyerId);
+    if (!thread) {
+      thread = {
+        id: nanoid(), code: genCode(), guestToken: null, calendarToken: null,
+        status: 'abierto', mediationId: mediation.id, partyId: null, lawyerId: null, createdAt: Date.now(),
+      };
+      db.channels.push(thread);
+      db.members.push({ id: nanoid(), channelId: thread.id, userId: mediation.mediatorUserId, role: 'mediador', joinedAt: Date.now() });
+    }
+    return thread;
+  }
+
+  router.get('/:id/internal/messages', requireAuth, requireMediationAccess, (req, res) => {
+    const db = getDB();
+    const thread = db.channels.find((c) => c.mediationId === req.mediation.id && !c.partyId && !c.lawyerId);
+    if (!thread) return res.json([]);
+    const messages = db.messages.filter((m) => m.channelId === thread.id).sort((a, b) => a.createdAt - b.createdAt);
+    res.json(messages.map((m) => serializeMediatorMessage(db, m, req.mediation.id)));
+  });
+
+  router.post('/:id/internal/messages', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    const { text, documentId } = req.body || {};
+    if (!text || !text.trim()) return res.status(400).json({ error: 'Falta el texto del mensaje' });
+    const db = getDB();
+    const thread = getOrCreateInternalThread(db, req.mediation);
+    // quien escribe queda como miembro del canal interno — así el resto
+    // del equipo asignado (aunque no haya sido agregado al crearse) puede
+    // seguir el hilo si en algún momento se conecta por socket.
+    if (!db.members.some((m) => m.channelId === thread.id && m.userId === req.user.id)) {
+      db.members.push({ id: nanoid(), channelId: thread.id, userId: req.user.id, role: req.mediationRole === 'admin' ? 'mediador' : req.mediationRole, joinedAt: Date.now() });
+    }
+    const doc = documentId ? db.documents.find((d) => d.id === documentId && d.mediationId === req.mediation.id) : null;
+    if (documentId && !doc) return res.status(400).json({ error: 'Ese documento no pertenece a esta mediación' });
+    // Bloque 19 — mismo criterio: sin entrada de Timeline por mensaje.
+    const msg = await postMessage(io, thread, { senderId: req.user.id, text: text.trim(), flagged: false });
+    if (doc) { msg.documentId = doc.id; }
+    await commit();
+    res.json(serializeMediatorMessage(db, msg, req.mediation.id));
+  });
+
+  // ---------- lista de conversaciones (pantalla "Comunicaciones") ----------
+  // Junta los tres tipos de hilo (parte/abogado/interno) en una sola
+  // lista, cada uno con su último mensaje y no-leídos — mismo cálculo de
+  // "no leído" que ya usa routes/channels.js (readAt recíproco), no una
+  // tabla de estado nueva. El canal interno aparece siempre, aunque
+  // todavía no tenga ni un mensaje, para que se pueda arrancar uno.
+  function unreadCountFor(db, channelId, userId) {
+    return db.messages.filter((m) => m.channelId === channelId && m.senderId && m.senderId !== userId && !m.readAt).length;
+  }
+  function lastMessagePreview(db, channelId) {
+    const msgs = db.messages.filter((m) => m.channelId === channelId).sort((a, b) => b.createdAt - a.createdAt);
+    if (!msgs.length) return null;
+    const last = msgs[0];
+    const text = last.text || (last.documentId ? '📎 Documento adjunto' : '');
+    return { text: text.length > 60 ? text.slice(0, 60) + '…' : text, createdAt: last.createdAt };
+  }
+  router.get('/:id/communications', requireAuth, requireMediationAccess, (req, res) => {
+    const db = getDB();
+    const conversations = [];
+
+    for (const party of db.parties.filter((p) => p.mediationId === req.mediation.id)) {
+      const thread = db.channels.find((c) => c.mediationId === req.mediation.id && c.partyId === party.id);
+      if (!thread) continue; // todavía no fue invitada — no hay conversación que mostrar
+      conversations.push({
+        type: 'parte', code: thread.code, participantId: party.id, participantName: partyDisplayName(db, party.id),
+        lastMessage: lastMessagePreview(db, thread.id), unreadCount: unreadCountFor(db, thread.id, req.user.id),
+      });
+    }
+    for (const lawyer of db.lawyers.filter((l) => l.mediationId === req.mediation.id)) {
+      const thread = db.channels.find((c) => c.mediationId === req.mediation.id && c.lawyerId === lawyer.id);
+      if (!thread) continue;
+      conversations.push({
+        type: 'abogado', code: thread.code, participantId: lawyer.id, participantName: lawyer.name,
+        lastMessage: lastMessagePreview(db, thread.id), unreadCount: unreadCountFor(db, thread.id, req.user.id),
+      });
+    }
+    const internalThread = db.channels.find((c) => c.mediationId === req.mediation.id && !c.partyId && !c.lawyerId);
+    conversations.push({
+      type: 'interno', code: internalThread ? internalThread.code : null, participantId: null, participantName: 'Equipo interno',
+      lastMessage: internalThread ? lastMessagePreview(db, internalThread.id) : null,
+      unreadCount: internalThread ? unreadCountFor(db, internalThread.id, req.user.id) : 0,
+    });
+
+    conversations.sort((a, b) => (b.lastMessage?.createdAt || 0) - (a.lastMessage?.createdAt || 0));
+    res.json(conversations);
+  });
+
+  // marca como leídos todos los mensajes pendientes de UN hilo de esta
+  // mediación — mismo criterio recíproco que POST /:code/messages/read-all
+  // de routes/channels.js, pero resuelto por mediationId (nunca confiar en
+  // que el :code de la URL sea realmente de esta mediación).
+  router.post('/:id/communications/:code/read-all', requireAuth, requireMediationAccess, async (req, res) => {
+    const db = getDB();
+    const thread = db.channels.find((c) => c.code === req.params.code.toUpperCase() && c.mediationId === req.mediation.id);
+    if (!thread) return res.status(404).json({ error: 'Conversación no encontrada en esta mediación' });
+    if (req.user.readReceiptsEnabled === false) return res.json({ updated: 0 });
+    const toMark = db.messages.filter((m) => m.channelId === thread.id && m.senderId && m.senderId !== req.user.id && !m.readAt);
+    if (!toMark.length) return res.json({ updated: 0 });
+    const now = Date.now();
+    toMark.forEach((m) => { m.readAt = now; });
+    await commit();
+    toMark.forEach((m) => io.to(thread.code).emit('message:read', { id: m.id, readAt: now }));
+    res.json({ updated: toMark.length });
   });
 
   // ---------- audiencias ----------
@@ -1541,6 +1739,7 @@ module.exports = function (io, presence) {
       reason: r.reason, comment: r.comment || null, preferredDayText: r.preferredDayText || null, preferredTimeText: r.preferredTimeText || null,
       proposedDate: r.proposedDate, proposedStartTime: r.proposedStartTime,
       status: r.status, mediatorNote: r.mediatorNote, resolvedBy: r.resolvedBy, resolvedAt: r.resolvedAt, createdAt: r.createdAt,
+      sourceMessageId: r.sourceMessageId || null,
     };
   }
 
@@ -1551,6 +1750,51 @@ module.exports = function (io, presence) {
       .filter((r) => r.hearingId === req.params.hearingId && r.mediationId === req.mediation.id)
       .sort((a, b) => b.createdAt - a.createdAt);
     res.json(list.map(serializeRescheduleRequest));
+  });
+
+  // Bloque 19 — "Gestionar cambio de audiencia" desde un mensaje: el
+  // mediador lee "no puedo el jueves" en el chat y transcribe el pedido
+  // al flujo YA existente (misma tabla, mismos estados, mismo endpoint de
+  // resolución de arriba) en vez de resolverlo "de palabra" sin dejar
+  // registro. Nunca se reprograma sola — esto solo crea la SOLICITUD,
+  // exactamente como cuando la manda la propia parte o abogado desde su
+  // portal.
+  router.post('/:id/hearings/:hearingId/reschedule-requests', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    const { partyId, lawyerId, reason, comment, preferredDayText, preferredTimeText, sourceMessageId } = req.body || {};
+    const db = getDB();
+    const hearing = db.hearings.find((h) => h.id === req.params.hearingId && h.mediationId === req.mediation.id);
+    if (!hearing) return res.status(404).json({ error: 'Audiencia no encontrada en esta mediación' });
+    let requestedByPartyId = null;
+    let requestedByType = null;
+    let requestedByLawyerId = null;
+    if (lawyerId) {
+      const lawyer = db.lawyers.find((l) => l.id === lawyerId && l.mediationId === req.mediation.id);
+      if (!lawyer) return res.status(400).json({ error: 'Ese abogado no pertenece a esta mediación' });
+      requestedByType = 'lawyer'; requestedByLawyerId = lawyer.id; requestedByPartyId = lawyer.partyId || null;
+    } else if (partyId) {
+      const party = db.parties.find((p) => p.id === partyId && p.mediationId === req.mediation.id);
+      if (!party) return res.status(400).json({ error: 'Esa parte no pertenece a esta mediación' });
+      requestedByType = 'party'; requestedByPartyId = party.id;
+    } else {
+      return res.status(400).json({ error: 'Falta indicar de qué parte o abogado es el pedido' });
+    }
+    const request = {
+      id: nanoid(), hearingId: hearing.id, mediationId: req.mediation.id,
+      requestedByPartyId, requestedByType, requestedByLawyerId,
+      reason: reason || null, comment: comment || null, preferredDayText: preferredDayText || null, preferredTimeText: preferredTimeText || null,
+      proposedDate: null, proposedStartTime: null, status: 'pendiente', mediatorNote: null,
+      resolvedBy: null, resolvedAt: null, createdAt: Date.now(),
+      sourceMessageId: resolveSourceMessage(db, req.mediation.id, sourceMessageId),
+    };
+    db.hearingRescheduleRequests.push(request);
+    logMediationEvent(db, {
+      mediationId: req.mediation.id, type: 'HEARING_RESCHEDULE_REQUESTED', actorId: req.user.id,
+      entityType: 'hearing_reschedule_request', entityId: request.id,
+      title: 'Pedido de cambio registrado desde un mensaje',
+      description: reason || null, metadata: request.sourceMessageId ? { sourceMessageId: request.sourceMessageId } : null,
+    });
+    await commit();
+    res.json(serializeRescheduleRequest(request));
   });
 
   // "Solo el mediador puede confirmar/rechazar/proponer la reprogramación
@@ -1885,12 +2129,14 @@ module.exports = function (io, presence) {
       id: t.id, mediationId: t.mediationId, assignedTo: t.assignedTo,
       title: t.title, description: t.description, dueDate: t.dueDate, priority: t.priority,
       status: t.status, createdBy: t.createdBy, completedAt: t.completedAt, createdAt: t.createdAt,
+      sourceMessageId: t.sourceMessageId || null,
     };
   }
   function serializeCommitment(c) {
     return {
       id: c.id, mediationId: c.mediationId, partyId: c.partyId, description: c.description, dueDate: c.dueDate,
       status: c.status, createdFromEventId: c.createdFromEventId, completedAt: c.completedAt, createdAt: c.createdAt,
+      sourceMessageId: c.sourceMessageId || null,
     };
   }
 
@@ -1938,20 +2184,36 @@ module.exports = function (io, presence) {
     res.json(list.map(serializeTask));
   });
 
+  // Bloque 19 — "mensaje → acción": el mediador elige a mano "Convertir en
+  // tarea"/"Crear compromiso" desde un mensaje puntual, nunca se genera
+  // solo porque el texto menciona una fecha. Esto solo valida que el
+  // mensaje sea de verdad de ESTA mediación antes de guardar la
+  // referencia — nunca confiar en que el frontend ya lo comprobó.
+  function resolveSourceMessage(db, mediationId, sourceMessageId) {
+    if (!sourceMessageId) return null;
+    const msg = db.messages.find((m) => m.id === sourceMessageId);
+    if (!msg) return null;
+    const channel = db.channels.find((c) => c.id === msg.channelId && c.mediationId === mediationId);
+    return channel ? msg.id : null;
+  }
+
   router.post('/:id/tasks', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
-    const { title, description, dueDate, priority } = req.body || {};
+    const { title, description, dueDate, priority, sourceMessageId } = req.body || {};
     if (!title || !title.trim()) return res.status(400).json({ error: 'Falta el título de la tarea' });
     const db = getDB();
+    const resolvedSourceMessageId = resolveSourceMessage(db, req.mediation.id, sourceMessageId);
     const task = {
       id: nanoid(), mediationId: req.mediation.id, assignedTo: req.user.id,
       title: title.trim(), description: description || null, dueDate: dueDate || null,
       priority: ['baja', 'media', 'alta', 'urgente'].includes(priority) ? priority : 'media',
       status: 'pendiente', createdBy: req.user.id, completedAt: null, createdAt: Date.now(),
+      sourceMessageId: resolvedSourceMessageId,
     };
     db.tasks.push(task);
     logMediationEvent(db, {
       mediationId: req.mediation.id, type: 'TASK_CREATED', actorId: req.user.id,
       entityType: 'task', entityId: task.id, title: `Tarea creada: ${task.title}`,
+      metadata: resolvedSourceMessageId ? { sourceMessageId: resolvedSourceMessageId } : null,
     });
     await commit();
     res.json(serializeTask(task));
@@ -1990,16 +2252,17 @@ module.exports = function (io, presence) {
   });
 
   router.post('/:id/commitments', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
-    const { partyId, description, dueDate, causedByEventId } = req.body || {};
+    const { partyId, description, dueDate, causedByEventId, sourceMessageId } = req.body || {};
     if (!partyId) return res.status(400).json({ error: 'Falta la parte responsable del compromiso' });
     if (!description || !description.trim()) return res.status(400).json({ error: 'Falta la descripción del compromiso' });
     const db = getDB();
     const party = db.parties.find((p) => p.id === partyId && p.mediationId === req.mediation.id);
     if (!party) return res.status(400).json({ error: 'La parte indicada no existe en esta mediación' });
+    const resolvedSourceMessageId = resolveSourceMessage(db, req.mediation.id, sourceMessageId);
     const commitment = {
       id: nanoid(), mediationId: req.mediation.id, partyId, description: description.trim(),
       dueDate: dueDate || null, status: 'pendiente', createdFromEventId: causedByEventId || null,
-      completedAt: null, createdAt: Date.now(),
+      completedAt: null, createdAt: Date.now(), sourceMessageId: resolvedSourceMessageId,
     };
     db.commitments.push(commitment);
     // COMMITMENT_CREATED: no se genera una fila aparte en la tabla de
@@ -2011,6 +2274,7 @@ module.exports = function (io, presence) {
       entityType: 'commitment', entityId: commitment.id,
       title: `Compromiso: ${commitment.description}`,
       causedByEventId: causedByEventId || null,
+      metadata: resolvedSourceMessageId ? { sourceMessageId: resolvedSourceMessageId } : null,
     });
     await commit();
     res.json(serializeCommitment(commitment));

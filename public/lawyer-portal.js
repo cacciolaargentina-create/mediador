@@ -164,8 +164,19 @@ async function renderDetail(mediationId){
     </div>
 
     <div class="card">
-      <h2>Comunicaciones</h2>
+      <h2>Conversación de tu representado/a</h2>
+      <p class="empty-hint" style="margin-top:-4px; margin-bottom:8px;">Lo que tu representado/a habló con el mediador/a — de solo lectura.</p>
       <div id="messages-box"></div>
+    </div>
+
+    <div class="card">
+      <h2>Tu conversación con el mediador/a</h2>
+      <p class="empty-hint" style="margin-top:-4px; margin-bottom:8px;">Esta es tuya, en tu propio nombre — el mediador/a te responde acá, no a través de tu representado/a.</p>
+      <div id="lawyer-messages-box"></div>
+      <div style="display:flex; gap:6px; margin-top:8px;">
+        <input id="lawyer-chat-input" placeholder="Escribí un mensaje…" style="flex:1; margin:0;" onkeyup="if(event.key==='Enter') sendLawyerMessage('${mediationId}')">
+        <button class="primary" onclick="sendLawyerMessage('${mediationId}')">Enviar</button>
+      </div>
     </div>
 
     <div class="card">
@@ -179,6 +190,7 @@ async function renderDetail(mediationId){
     </div>
   `;
   loadMessages(mediationId);
+  loadLawyerMessages(mediationId);
 }
 
 async function loadMessages(mediationId){
@@ -189,9 +201,43 @@ async function loadMessages(mediationId){
   catch(e){ box.innerHTML = `<p class="empty-hint">No se pudieron cargar las comunicaciones.</p>`; return; }
   box.innerHTML = messages.length ? messages.map(m => `
     <div class="item" style="${m.fromParty ? 'text-align:right;' : ''}">
-      <span style="background:${m.fromParty ? 'var(--calm-dim)' : 'var(--surface-2)'}; color:${m.fromParty ? 'var(--calm)' : 'var(--text)'}; padding:6px 10px; border-radius:8px; display:inline-block; font-size:12.5px;">${escapeHtml(m.text)}</span>
+      <span style="background:${m.fromParty ? 'var(--calm-dim)' : 'var(--surface-2)'}; color:${m.fromParty ? 'var(--calm)' : 'var(--text)'}; padding:6px 10px; border-radius:8px; display:inline-block; font-size:12.5px;">
+        ${escapeHtml(m.text)}
+        ${m.document ? `<br><a href="/api/lawyer-portal/${token}/mediations/${mediationId}/documents/${m.document.id}/download" style="color:inherit; text-decoration:underline; font-size:11.5px;">📎 ${escapeHtml(m.document.originalFilename)}</a>` : ''}
+      </span>
     </div>
   `).join('') : `<p class="empty-hint">No hay comunicaciones todavía.</p>`;
+}
+
+// Bloque 19 — hilo propio del abogado, distinto del de arriba (esa es
+// la conversación de SU representado/a, de solo lectura; esta es la
+// suya, de ida y vuelta).
+async function loadLawyerMessages(mediationId){
+  const box = document.getElementById('lawyer-messages-box');
+  if(!box) return;
+  let messages;
+  try{ messages = await api(`/api/lawyer-portal/${token}/mediations/${mediationId}/lawyer-messages`); }
+  catch(e){ box.innerHTML = `<p class="empty-hint">No se pudo cargar la conversación.</p>`; return; }
+  box.innerHTML = messages.length ? messages.map(m => `
+    <div class="item" style="${m.mine ? 'text-align:right;' : ''}">
+      <span style="background:${m.mine ? 'var(--calm-dim)' : 'var(--surface-2)'}; color:${m.mine ? 'var(--calm)' : 'var(--text)'}; padding:6px 10px; border-radius:8px; display:inline-block; font-size:12.5px;">
+        ${escapeHtml(m.text)}
+        ${m.document ? `<br><a href="/api/lawyer-portal/${token}/mediations/${mediationId}/documents/${m.document.id}/download" style="color:inherit; text-decoration:underline; font-size:11.5px;">📎 ${escapeHtml(m.document.originalFilename)}</a>` : ''}
+      </span>
+    </div>
+  `).join('') : `<p class="empty-hint">Todavía no hay mensajes.</p>`;
+  box.scrollTop = box.scrollHeight;
+}
+
+async function sendLawyerMessage(mediationId){
+  const input = document.getElementById('lawyer-chat-input');
+  const text = input.value.trim();
+  if(!text) return;
+  input.value = '';
+  try{
+    await api(`/api/lawyer-portal/${token}/mediations/${mediationId}/lawyer-messages`, { method:'POST', body: JSON.stringify({ text }) });
+    await loadLawyerMessages(mediationId);
+  }catch(e){ alert(e.error || 'No se pudo enviar el mensaje.'); }
 }
 
 async function confirmHearing(mediationId, hearingId, response){

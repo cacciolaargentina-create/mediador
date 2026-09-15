@@ -11,6 +11,7 @@ const path = require('path');
 
 const authRoutes = require('./routes/auth');
 const { getDB, resolveGuest, commit } = require('./db');
+const { canAccessMediationChannel } = require('./mediationAccess');
 
 // Sin FRONTEND_URL en producción, el CORS de abajo reflejaría cualquier
 // origen (con credentials:true) — mejor no arrancar que quedar abierto.
@@ -123,7 +124,7 @@ const professionalsRoutes = require('./routes/professionals');
 const pushRoutes = require('./routes/push')();
 const mediationRoutes = require('./routes/mediations')(io, presence);
 const partyPortalRoutes = require('./routes/party-portal')(io);
-const lawyerPortalRoutes = require('./routes/lawyer-portal')();
+const lawyerPortalRoutes = require('./routes/lawyer-portal')(io);
 const studiosRoutes = require('./routes/studios')();
 const agendaRoutes = require('./routes/agenda')();
 
@@ -149,6 +150,14 @@ function isMemberOfChannel(userId, code) {
   const db = getDB();
   const channel = db.channels.find((c) => c.code === code);
   if (!channel) return false;
+  // Bloque 19 — un canal de Mediador (mediationId seteado) se autoriza
+  // contra el acceso real a la mediación, no contra `members`: un
+  // asistente recién asignado a la mediación todavía puede no tener una
+  // fila de member en ESTE hilo puntual (se crea perezosamente, ver
+  // routes/mediations.js), y aun así tiene que poder conectarse. Canales
+  // de coparentalidad (mediationId null) siguen exactamente igual que
+  // siempre — esto no les cambia nada.
+  if (channel.mediationId) return canAccessMediationChannel(db, userId, channel);
   return db.members.some((m) => m.channelId === channel.id && m.userId === userId);
 }
 

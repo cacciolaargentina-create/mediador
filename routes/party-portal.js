@@ -148,7 +148,17 @@ module.exports = function (io) {
     const thread = db.channels.find((c) => c.mediationId === req.mediation.id && c.partyId === req.party.id);
     if (!thread) return res.json([]);
     const messages = db.messages.filter((m) => m.channelId === thread.id).sort((a, b) => a.createdAt - b.createdAt);
-    res.json(messages.map((m) => ({ id: m.id, senderId: m.senderId, text: m.text, createdAt: m.createdAt, mine: m.senderId === req.party.linkedUserId })));
+    res.json(messages.map((m) => {
+      // Bloque 19 — si el mediador adjuntó un documento a este mensaje, se
+      // muestra nombre/tipo/fecha (nunca storagePath) — la parte lo baja
+      // por el endpoint de descarga de siempre, que vuelve a comprobar
+      // que el documento sea de ESTA mediación antes de servirlo.
+      const doc = m.documentId ? db.documents.find((d) => d.id === m.documentId && d.mediationId === req.mediation.id) : null;
+      return {
+        id: m.id, senderId: m.senderId, text: m.text, createdAt: m.createdAt, mine: m.senderId === req.party.linkedUserId,
+        document: doc ? { id: doc.id, originalFilename: doc.originalFilename, type: doc.type, version: doc.version || 1, createdAt: doc.createdAt } : null,
+      };
+    }));
   });
 
   router.post('/:token/messages', portalLimiter, resolveParty, async (req, res) => {
@@ -157,12 +167,10 @@ module.exports = function (io) {
     const db = getDB();
     const thread = db.channels.find((c) => c.mediationId === req.mediation.id && c.partyId === req.party.id);
     if (!thread) return res.status(400).json({ error: 'Tu hilo todavía no está listo — pedile al mediador que te reenvíe la invitación' });
+    // Bloque 19 — el Timeline no registra cada mensaje (eso lo muestra
+    // Comunicaciones); el aviso al mediador de que hay algo nuevo es el
+    // contador "comunicaciones pendientes" del dashboard, no una entrada acá.
     const msg = await postMessage(io, thread, { senderId: req.party.linkedUserId, text: text.trim(), flagged: false });
-    logMediationEvent(db, {
-      mediationId: req.mediation.id, type: 'MESSAGE_RECEIVED', actorId: null,
-      visibility: 'mediator_only', entityType: 'message', entityId: msg.id,
-      title: `Mensaje recibido de ${req.party.firstName || 'la parte'}`,
-    });
     await commit();
     res.json({ id: msg.id, senderId: msg.sender?.id, text: msg.text, createdAt: msg.createdAt, mine: true });
   });

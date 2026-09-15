@@ -139,7 +139,10 @@ async function loadChat(){
   catch(e){ box.innerHTML = `<p class="empty-hint">No se pudo cargar el chat.</p>`; return; }
   box.innerHTML = messages.length ? messages.map(m => `
     <div class="item" style="${m.mine ? 'text-align:right;' : ''}">
-      <span style="background:${m.mine ? 'var(--calm-dim)' : 'var(--surface-2)'}; color:${m.mine ? 'var(--calm)' : 'var(--text)'}; padding:6px 10px; border-radius:8px; display:inline-block; font-size:12.5px;">${escapeHtml(m.text)}</span>
+      <span style="background:${m.mine ? 'var(--calm-dim)' : 'var(--surface-2)'}; color:${m.mine ? 'var(--calm)' : 'var(--text)'}; padding:6px 10px; border-radius:8px; display:inline-block; font-size:12.5px;">
+        ${escapeHtml(m.text)}
+        ${m.document ? `<br><a href="/api/party-portal/${token}/documents/${m.document.id}/download" style="color:inherit; text-decoration:underline; font-size:11.5px;">📎 ${escapeHtml(m.document.originalFilename)}</a>` : ''}
+      </span>
     </div>
   `).join('') : `<p class="empty-hint">Todavía no hay mensajes.</p>`;
   box.scrollTop = box.scrollHeight;

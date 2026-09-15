@@ -279,6 +279,15 @@ async function renderDashboard(){
       </div>
     </div>
 
+    ${d.comunicacionesPendientes ? `
+    <div class="card">
+      <div class="alert-row" onclick="goTo('list')" style="cursor:pointer;">
+        <div style="font-weight:600; font-size:13.5px;">Comunicaciones sin leer</div>
+        <span class="pill warn">${d.comunicacionesPendientes}</span>
+      </div>
+    </div>
+    ` : ''}
+
     <div class="card">
       <h2>Qué tengo que hacer${priorityItems.length ? ` <span class="pill warn" style="font-weight:400;">${priorityItems.length}</span>` : ''}</h2>
       ${priorityItems.length ? priorityItems.map(item => `
@@ -1125,6 +1134,8 @@ async function createMediation(){
 
 // ================= EXPEDIENTE (detalle) =================
 let currentParties = []; // cache para no tener que resolver nombre de parte a mano en cada lugar que lo necesita (abogados, confirmaciones de audiencia)
+let currentDocuments = []; // Bloque 19 — para el selector de "adjuntar documento existente" en Comunicaciones, sin otro fetch
+let currentHearings = []; // Bloque 19 — para el selector de audiencia en "Gestionar cambio" desde un mensaje
 
 const PARTY_ROLE_LABELS = { requirente: 'Requirente', requerido: 'Requerido', otro: 'Otro' };
 const HEARING_MODALITY_LABELS = { presencial: 'Presencial', virtual: 'Virtual', hibrida: 'Híbrida' };
@@ -1165,9 +1176,9 @@ function partyName(partyId){
 async function renderDetail(id){
   const main = document.getElementById('main');
   main.innerHTML = `<p class="empty-hint">Cargando…</p>`;
-  let m, history, parties, lawyers, hearings, documents, timeline, tasks, commitments, access, myStudio;
+  let m, history, parties, lawyers, hearings, documents, timeline, tasks, commitments, access, communications, myStudio;
   try{
-    [m, history, parties, lawyers, hearings, documents, timeline, tasks, commitments, access] = await Promise.all([
+    [m, history, parties, lawyers, hearings, documents, timeline, tasks, commitments, access, communications] = await Promise.all([
       api(`/api/mediations/${id}`),
       api(`/api/mediations/${id}/status-history`),
       api(`/api/mediations/${id}/parties`),
@@ -1178,10 +1189,13 @@ async function renderDetail(id){
       api(`/api/mediations/${id}/tasks`),
       api(`/api/mediations/${id}/commitments`),
       api(`/api/mediations/${id}/access`),
+      api(`/api/mediations/${id}/communications`),
     ]);
   }catch(e){ main.innerHTML = `<p class="empty-hint">${escapeHtml(e.error || 'No se pudo cargar la mediación.')}</p>`; return; }
   try{ myStudio = await api('/api/studios/me'); }catch(e){ myStudio = null; }
   currentParties = parties;
+  currentDocuments = documents;
+  currentHearings = hearings;
 
   const statusOptions = Object.keys(STATUS_LABELS).map(s =>
     `<option value="${s}" ${s === m.status ? 'selected' : ''}>${STATUS_LABELS[s]}</option>`
@@ -1227,6 +1241,7 @@ async function renderDetail(id){
       <a href="#section-abogados">Abogados</a>
       <a href="#section-audiencias">Audiencias</a>
       <a href="#section-documentos">Documentos</a>
+      <a href="#section-comunicaciones">Comunicaciones</a>
       <a href="#section-tareas">Tareas</a>
       <a href="#section-compromisos">Compromisos</a>
       <a href="#section-timeline">Timeline</a>
@@ -1386,6 +1401,13 @@ async function renderDetail(id){
         </select>
         <button class="primary" style="width:100%;" onclick="uploadDocument('${m.id}')" id="upload-btn">Subir</button>
       </div>
+    </div>
+
+    <div class="card" id="section-comunicaciones">
+      <h2>Comunicaciones</h2>
+      <p class="empty-hint" style="margin-top:-4px; margin-bottom:10px;">Qué se dijo, quién lo dijo y a quién estaba dirigido — separado del Timeline, que es lo que pasó operativamente.</p>
+      <div id="communications-list">${renderCommunicationsList(m.id, communications)}</div>
+      <div id="communications-chat" style="margin-top:10px;"></div>
     </div>
 
     <div class="card" id="section-tareas">
@@ -1738,6 +1760,192 @@ async function sendPartyMessage(mediationId, partyId){
     await api(`/api/mediations/${mediationId}/parties/${partyId}/messages`, { method:'POST', body: JSON.stringify({ text }) });
     await loadPartyChat(mediationId, partyId);
   }catch(e){ alert(e.error || 'No se pudo enviar el mensaje.'); }
+}
+
+// ================= COMUNICACIONES (Bloque 19) =================
+// Principio: MENSAJE → CONTEXTO → ACCIÓN → TRAZABILIDAD. Reusa
+// exactamente los mismos endpoints que ya arma routes/mediations.js
+// sobre channels/members/messages — nada de esto es una tabla ni un
+// socket paralelo. El chat rápido dentro de "Partes" (openPartyChat)
+// se deja intacto para no romper nada que ya funciona; esta sección es
+// la vista completa, con no-leídos, adjuntos y acciones.
+let currentConversation = null; // { mediationId, type, participantId, code }
+
+const CONVERSATION_TYPE_LABELS = { parte: 'Parte', abogado: 'Abogado', interno: 'Interno' };
+
+function renderCommunicationsList(mediationId, conversations){
+  if(!conversations || !conversations.length) return `<p class="empty-hint">Todavía no hay conversaciones — invitá a una parte o a un abogado al portal para empezar una.</p>`;
+  return conversations.map(c => `
+    <div class="status-history-item" style="cursor:pointer;" onclick="openConversation('${mediationId}','${c.type}',${c.participantId ? `'${c.participantId}'` : 'null'},${c.code ? `'${c.code}'` : 'null'})">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div><strong>${escapeHtml(c.participantName)}</strong> <span class="pill calm" style="margin-left:2px;">${CONVERSATION_TYPE_LABELS[c.type] || c.type}</span></div>
+        ${c.unreadCount ? `<span class="pill warn">${c.unreadCount} nuevo${c.unreadCount===1?'':'s'}</span>` : ''}
+      </div>
+      <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">
+        ${c.lastMessage ? escapeHtml(c.lastMessage.text) + ` <span style="color:var(--text-faint);">· ${fmtDateTime(c.lastMessage.createdAt)}</span>` : '<span class="empty-hint">Sin mensajes todavía.</span>'}
+      </div>
+    </div>
+  `).join('');
+}
+
+function conversationEndpoint(mediationId, type, participantId){
+  if(type === 'parte') return `/api/mediations/${mediationId}/parties/${participantId}/messages`;
+  if(type === 'abogado') return `/api/mediations/${mediationId}/lawyers/${participantId}/messages`;
+  return `/api/mediations/${mediationId}/internal/messages`;
+}
+
+async function openConversation(mediationId, type, participantId, code){
+  const box = document.getElementById('communications-chat');
+  const isSameAlreadyOpen = currentConversation && currentConversation.mediationId === mediationId && currentConversation.type === type && currentConversation.participantId === participantId;
+  if(isSameAlreadyOpen){ box.innerHTML = ''; currentConversation = null; return; }
+  currentConversation = { mediationId, type, participantId, code };
+  box.innerHTML = `<p class="empty-hint">Cargando…</p>`;
+  await loadConversation();
+  // marcar como leído recién al ABRIR la conversación, nunca solo por
+  // haber cargado el expediente (Bloque 19 §"mensajes no leídos") — y
+  // solo si ya existe un canal real (code), no tiene sentido marcar
+  // leído un hilo interno que todavía no se creó.
+  if(code){
+    try{
+      await api(`/api/mediations/${mediationId}/communications/${code}/read-all`, { method:'POST' });
+      // refresca el badge "N nuevo" de la lista — si no, queda marcado
+      // como leído en el servidor pero se ve sin leer hasta recargar todo.
+      const list = await api(`/api/mediations/${mediationId}/communications`);
+      document.getElementById('communications-list').innerHTML = renderCommunicationsList(mediationId, list);
+    }catch(e){ /* no bloquea la lectura si falla */ }
+  }
+}
+
+async function loadConversation(){
+  const { mediationId, type, participantId } = currentConversation;
+  const box = document.getElementById('communications-chat');
+  let messages;
+  try{ messages = await api(conversationEndpoint(mediationId, type, participantId)); }
+  catch(e){ box.innerHTML = `<p class="empty-hint">No se pudo cargar la conversación.</p>`; return; }
+
+  box.innerHTML = `
+    <div style="background:var(--surface-2); border-radius:8px; padding:10px;">
+      <div id="conversation-messages" style="max-height:320px; overflow-y:auto; margin-bottom:8px;">
+        ${messages.length ? messages.map(m => renderConversationMessage(m)).join('') : `<p class="empty-hint">Sin mensajes todavía.</p>`}
+      </div>
+      <div style="display:flex; gap:6px; align-items:center; margin-bottom:6px;">
+        <select id="conversation-attach-doc" style="width:auto; margin:0; flex:1; font-size:11px;">
+          <option value="">Sin adjuntar documento</option>
+          ${currentDocuments.map(d => `<option value="${d.id}">${escapeHtml(d.originalFilename)}</option>`).join('')}
+        </select>
+      </div>
+      <div style="display:flex; gap:6px;">
+        <input id="conversation-input" placeholder="Escribí un mensaje…" style="flex:1; margin:0;" onkeyup="if(event.key==='Enter') sendConversationMessage()">
+        <button class="primary" style="flex-shrink:0;" onclick="sendConversationMessage()">Enviar</button>
+      </div>
+    </div>
+  `;
+  const list = document.getElementById('conversation-messages');
+  list.scrollTop = list.scrollHeight;
+}
+
+function renderConversationMessage(m){
+  const isSystem = !m.sender;
+  const who = isSystem ? 'Sistema' : escapeHtml(m.sender.name);
+  const canAct = !isSystem && (currentConversation.type === 'parte' || currentConversation.type === 'abogado');
+  return `
+    <div class="status-history-item" id="msg-${m.id}">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px;">
+        <div style="flex:1;">
+          <strong>${who}</strong> ${escapeHtml(m.text)}
+          ${m.document ? `
+            <div style="margin-top:4px;">
+              <a href="/api/mediations/${currentConversation.mediationId}/documents/${m.document.id}/download" class="pill calm" style="text-decoration:none;">📎 ${escapeHtml(m.document.originalFilename)}${m.document.version > 1 ? ` (v${m.document.version})` : ''}</a>
+            </div>
+          ` : ''}
+          <div style="color:var(--text-faint); font-size:10px; margin-top:2px;">${fmtDateTime(m.createdAt)}</div>
+        </div>
+        ${canAct ? `<button class="ghost" style="padding:2px 8px; font-size:11px; flex-shrink:0;" onclick="toggleMessageActions('${m.id}')">⋯</button>` : ''}
+      </div>
+      <div id="msg-actions-${m.id}" style="display:none; margin-top:6px; gap:6px; flex-wrap:wrap;">
+        <button class="ghost" style="padding:4px 8px; font-size:11px;" onclick="startConvertToTask('${m.id}', '${escapeHtml(m.text).replace(/'/g,"\\'")}')">Convertir en tarea</button>
+        ${currentConversation.type === 'parte' ? `<button class="ghost" style="padding:4px 8px; font-size:11px;" onclick="startConvertToCommitment('${m.id}', '${escapeHtml(m.text).replace(/'/g,"\\'")}')">Crear compromiso</button>` : ''}
+        ${currentHearings.length ? `<button class="ghost" style="padding:4px 8px; font-size:11px;" onclick="startManageReschedule('${m.id}')">Gestionar cambio de audiencia</button>` : ''}
+      </div>
+      <div id="msg-reschedule-${m.id}" style="display:none; margin-top:6px;"></div>
+    </div>
+  `;
+}
+
+function toggleMessageActions(messageId){
+  const box = document.getElementById(`msg-actions-${messageId}`);
+  box.style.display = box.style.display === 'flex' ? 'none' : 'flex';
+}
+
+async function sendConversationMessage(){
+  const input = document.getElementById('conversation-input');
+  const text = input.value.trim();
+  if(!text) return;
+  const docSelect = document.getElementById('conversation-attach-doc');
+  const documentId = docSelect.value || null;
+  input.value = '';
+  try{
+    await api(conversationEndpoint(currentConversation.mediationId, currentConversation.type, currentConversation.participantId), {
+      method:'POST', body: JSON.stringify({ text, documentId }),
+    });
+    docSelect.value = '';
+    await loadConversation();
+    // refresca la lista de conversaciones (último mensaje / no-leídos) sin
+    // recargar todo el expediente.
+    const list = await api(`/api/mediations/${currentConversation.mediationId}/communications`);
+    document.getElementById('communications-list').innerHTML = renderCommunicationsList(currentConversation.mediationId, list);
+  }catch(e){ alert(e.error || 'No se pudo enviar el mensaje.'); }
+}
+
+// "Convertir en tarea" — abre el formulario de Tareas YA existente,
+// precompletado, en vez de crear la tarea sola. Nunca automático.
+function startConvertToTask(messageId, messageText){
+  pendingSourceMessageId = messageId;
+  const form = document.getElementById('task-form');
+  form.style.display = 'block';
+  document.getElementById('task-title').value = messageText.length > 80 ? messageText.slice(0, 80) + '…' : messageText;
+  document.getElementById('section-tareas').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function startConvertToCommitment(messageId, messageText){
+  pendingSourceMessageId = messageId;
+  const form = document.getElementById('commitment-form');
+  form.style.display = 'block';
+  document.getElementById('commitment-description').value = messageText.length > 80 ? messageText.slice(0, 80) + '…' : messageText;
+  if(currentConversation.type === 'parte'){
+    const select = document.getElementById('commitment-party');
+    if(select) select.value = currentConversation.participantId;
+  }
+  document.getElementById('section-compromisos').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+// "Gestionar cambio de audiencia" — NUNCA reprograma sola. Solo arma la
+// SOLICITUD (misma tabla/estados que ya usan los portales de parte y
+// abogado) para que el mediador la resuelva después con el flujo de
+// siempre, desde Audiencias → Solicitudes de cambio.
+function startManageReschedule(messageId){
+  const box = document.getElementById(`msg-reschedule-${messageId}`);
+  if(box.style.display === 'block'){ box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  box.innerHTML = `
+    <label>¿Qué audiencia?</label>
+    <select id="reschedule-hearing-${messageId}">
+      ${currentHearings.map(h => `<option value="${h.id}">${fmtDate(h.date)}${h.startTime ? ' ' + h.startTime : ''}</option>`).join('')}
+    </select>
+    <button class="primary" style="width:100%;" onclick="submitRescheduleFromMessage('${messageId}')">Registrar pedido de cambio</button>
+  `;
+}
+
+async function submitRescheduleFromMessage(messageId){
+  const hearingId = document.getElementById(`reschedule-hearing-${messageId}`).value;
+  const body = { sourceMessageId: messageId };
+  if(currentConversation.type === 'parte') body.partyId = currentConversation.participantId;
+  else body.lawyerId = currentConversation.participantId;
+  try{
+    await api(`/api/mediations/${currentConversation.mediationId}/hearings/${hearingId}/reschedule-requests`, { method:'POST', body: JSON.stringify(body) });
+    alert('Pedido de cambio registrado — lo vas a encontrar en "Solicitudes de cambio" desde Audiencias.');
+    document.getElementById(`msg-reschedule-${messageId}`).style.display = 'none';
+  }catch(e){ alert(e.error || 'No se pudo registrar el pedido.'); }
 }
 
 async function toggleAllowUpload(mediationId, partyId, allow){
@@ -2131,6 +2339,14 @@ async function uploadDocument(mediationId){
   }
 }
 
+// Bloque 19 — "mensaje → acción": cuando se abre el formulario de tarea/
+// compromiso desde un mensaje puntual (ver startConvertToTask/
+// startConvertToCommitment), se guarda acá cuál fue el mensaje de
+// origen, y addTask/addCommitment lo mandan si está seteado. Se limpia
+// después de usarlo una vez — un formulario abierto "en blanco" nunca
+// debe arrastrar la referencia de la conversión anterior.
+let pendingSourceMessageId = null;
+
 async function addTask(mediationId){
   const title = document.getElementById('task-title').value.trim();
   if(!title){ alert('Falta el título de la tarea.'); return; }
@@ -2139,7 +2355,9 @@ async function addTask(mediationId){
       title,
       dueDate: document.getElementById('task-due').value || null,
       priority: document.getElementById('task-priority').value,
+      sourceMessageId: pendingSourceMessageId,
     })});
+    pendingSourceMessageId = null;
     renderDetail(mediationId);
   }catch(e){ alert(e.error || 'No se pudo guardar la tarea.'); }
 }
@@ -2160,7 +2378,9 @@ async function addCommitment(mediationId){
     await api(`/api/mediations/${mediationId}/commitments`, { method:'POST', body: JSON.stringify({
       partyId: partySelect.value, description,
       dueDate: document.getElementById('commitment-due').value || null,
+      sourceMessageId: pendingSourceMessageId,
     })});
+    pendingSourceMessageId = null;
     renderDetail(mediationId);
   }catch(e){ alert(e.error || 'No se pudo guardar el compromiso.'); }
 }

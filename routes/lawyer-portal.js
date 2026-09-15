@@ -20,6 +20,7 @@ const { nanoid } = require('nanoid');
 const { getDB, commit } = require('../db');
 const { logMediationEvent } = require('../mediationEvents');
 const { notifyMediator } = require('../jobs');
+const { postMessage } = require('../messaging');
 
 // Bloque 17 §14/15 — "YYYY-MM-DD" a "DD/MM/YYYY" para la notificación que
 // recibe el mediador, mismo formato que fmtDate() en el frontend.
@@ -40,7 +41,7 @@ const ALLOWED_MIME_EXT = {
 };
 const MAX_UPLOAD_BYTES = Number(process.env.MAX_DOCUMENT_SIZE_MB || 15) * 1024 * 1024;
 
-module.exports = function () {
+module.exports = function (io) {
   const router = express.Router();
 
   // resuelve TODAS las filas de lawyers que comparten este token (puede
@@ -318,7 +319,46 @@ module.exports = function () {
     const thread = db.channels.find((c) => c.mediationId === req.mediation.id && c.partyId === req.party.id);
     if (!thread) return res.json([]);
     const messages = db.messages.filter((m) => m.channelId === thread.id).sort((a, b) => a.createdAt - b.createdAt);
-    res.json(messages.map((m) => ({ id: m.id, text: m.text, createdAt: m.createdAt, fromParty: m.senderId === req.party.linkedUserId })));
+    res.json(messages.map((m) => {
+      const doc = m.documentId ? db.documents.find((d) => d.id === m.documentId && d.mediationId === req.mediation.id) : null;
+      return {
+        id: m.id, text: m.text, createdAt: m.createdAt, fromParty: m.senderId === req.party.linkedUserId,
+        document: doc ? { id: doc.id, originalFilename: doc.originalFilename, type: doc.type, version: doc.version || 1, createdAt: doc.createdAt } : null,
+      };
+    }));
+  });
+
+  // ---------- comunicación propia del abogado con el mediador (Bloque 19) ----------
+  // Distinta del hilo de arriba a propósito: esta SÍ es de ida y vuelta —
+  // el abogado escribe acá en su propio nombre, no en el de su
+  // representado/a. Nunca visible para la parte ni para otros abogados
+  // (channels.lawyerId identifica el hilo, resolveLawyerMediation ya
+  // comprobó que este lawyerId es del propio abogado del token).
+  router.get('/:token/mediations/:mediationId/lawyer-messages', portalLimiter, resolveLawyer, resolveLawyerMediation, (req, res) => {
+    const db = getDB();
+    const thread = db.channels.find((c) => c.mediationId === req.mediation.id && c.lawyerId === req.lawyer.id);
+    if (!thread) return res.json([]);
+    const messages = db.messages.filter((m) => m.channelId === thread.id).sort((a, b) => a.createdAt - b.createdAt);
+    res.json(messages.map((m) => {
+      const doc = m.documentId ? db.documents.find((d) => d.id === m.documentId && d.mediationId === req.mediation.id) : null;
+      return {
+        id: m.id, text: m.text, createdAt: m.createdAt, mine: m.senderId === req.lawyer.linkedUserId,
+        document: doc ? { id: doc.id, originalFilename: doc.originalFilename, type: doc.type, version: doc.version || 1, createdAt: doc.createdAt } : null,
+      };
+    }));
+  });
+
+  router.post('/:token/mediations/:mediationId/lawyer-messages', portalLimiter, resolveLawyer, resolveLawyerMediation, async (req, res) => {
+    const { text } = req.body || {};
+    if (!text || !text.trim()) return res.status(400).json({ error: 'Falta el texto del mensaje' });
+    const db = getDB();
+    const thread = db.channels.find((c) => c.mediationId === req.mediation.id && c.lawyerId === req.lawyer.id);
+    if (!thread || !req.lawyer.linkedUserId) return res.status(400).json({ error: 'Tu hilo todavía no está listo — pedile al mediador que te reenvíe la invitación' });
+    // Bloque 19 — sin entrada de Timeline por mensaje (ver mismo criterio
+    // en routes/party-portal.js y routes/mediations.js).
+    const msg = await postMessage(io, thread, { senderId: req.lawyer.linkedUserId, text: text.trim(), flagged: false });
+    await commit();
+    res.json({ id: msg.id, text: msg.text, createdAt: msg.createdAt, mine: true, document: null });
   });
 
   return router;

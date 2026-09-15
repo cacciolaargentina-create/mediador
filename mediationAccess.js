@@ -32,4 +32,46 @@ function canEditMediation(db, user, mediation) {
   return !!access && ['mediador', 'asistente'].includes(access.role);
 }
 
-module.exports = { getMyMediations, canEditMediation };
+// puede VER esta mediación (cualquier rol de mediation_access, no solo
+// mediador/asistente) — mismo criterio que requireMediationAccess en
+// routes/mediations.js, como función pura. Bloque 19: esto es lo que
+// autoriza a alguien del equipo a unirse por Socket.IO a un canal de la
+// mediación (leer no es lo mismo que poder mandar mensajes — eso lo
+// sigue validando cada endpoint HTTP con requireEditAccess aparte).
+function canAccessMediation(db, user, mediation) {
+  if (isAdminUser(user)) return true;
+  if (mediation.mediatorUserId === user.id) return true;
+  if (user.studioId && user.studioRole === 'admin') {
+    const owner = db.users.find((u) => u.id === mediation.mediatorUserId);
+    if (owner && owner.studioId === user.studioId) return true;
+  }
+  return db.mediationAccess.some((a) => a.mediationId === mediation.id && a.userId === user.id);
+}
+
+// Bloque 19 — autorización de Socket.IO para un canal de Mediador
+// (channel.mediationId seteado). Dos caminos válidos, nada más:
+//   1) alguien del equipo con acceso a ESA mediación (cualquier hilo:
+//      interno, con cualquier parte, con cualquier abogado)
+//   2) la parte o el abogado dueño/a de ESE hilo puntual — nunca el de
+//      un hilo ajeno de la misma mediación
+// No confiar en members: un asistente recién asignado puede no tener
+// todavía una fila en members de este canal puntual, y aun así debe
+// poder unirse — por eso esto reemplaza (no complementa) el chequeo de
+// members para canales de Mediador.
+function canAccessMediationChannel(db, userId, channel) {
+  const mediation = db.mediations.find((m) => m.id === channel.mediationId);
+  if (!mediation) return false;
+  const user = db.users.find((u) => u.id === userId);
+  if (user && canAccessMediation(db, user, mediation)) return true;
+  if (channel.partyId) {
+    const party = db.parties.find((p) => p.id === channel.partyId);
+    if (party && party.linkedUserId === userId) return true;
+  }
+  if (channel.lawyerId) {
+    const lawyer = db.lawyers.find((l) => l.id === channel.lawyerId);
+    if (lawyer && lawyer.linkedUserId === userId) return true;
+  }
+  return false;
+}
+
+module.exports = { getMyMediations, canEditMediation, canAccessMediation, canAccessMediationChannel };

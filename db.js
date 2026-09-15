@@ -25,9 +25,9 @@ const LEGACY_JSON_PATH = process.env.DB_PATH || path.join(__dirname, 'data.json'
 
 const EMPTY_DB = {
   users: [],       // { id, googleId, email, name, avatar, phone, guest, icsToken|null, createdAt }
-  channels: [],    // { id, code, guestToken, calendarToken, professionalInvites, status:'abierto'|'en_proceso'|'cerrado', createdAt }
+  channels: [],    // { id, code, guestToken, calendarToken, professionalInvites, status:'abierto'|'en_proceso'|'cerrado', createdAt, mediationId|null, partyId|null, lawyerId|null } — mediationId+partyId: hilo mediador↔parte de Mediador; mediationId+lawyerId: hilo mediador↔abogado; mediationId solo (los otros dos null): canal interno del equipo de esa mediación. Los tres null = canal de coparentalidad de siempre.
   members: [],     // { id, channelId, userId, role, label, webAccessToken, assignedByAdmin, lastSeenAt, joinedAt }
-  messages: [],    // { id, channelId, senderId|null, text, flagged, reason, pattern, eventId, readAt, createdAt, replyToId, deliverAt } — replyToId: id de otro mensaje del mismo canal al que este responde (hilo estilo WhatsApp), null si no es una respuesta. deliverAt: cuándo se transmite/notifica de verdad — igual a createdAt salvo durante la ventana de "deshacer envío" (ver messaging.js), mientras está en el futuro el mensaje solo lo ve quien lo escribió
+  messages: [],    // { id, channelId, senderId|null, text, flagged, reason, pattern, eventId, readAt, createdAt, replyToId, deliverAt, documentId|null } — replyToId: id de otro mensaje del mismo canal al que este responde (hilo estilo WhatsApp), null si no es una respuesta. deliverAt: cuándo se transmite/notifica de verdad — igual a createdAt salvo durante la ventana de "deshacer envío" (ver messaging.js), mientras está en el futuro el mensaje solo lo ve quien lo escribió. documentId (Bloque 19): referencia opcional a un documento YA existente de la mediación — nunca un adjunto nuevo, el documento sigue viviendo solo en `documents`
   messageReactions: [], // { id, messageId, channelId, userId, emoji, createdAt } — una reacción activa por usuario por mensaje; reaccionar de nuevo con otro emoji reemplaza la anterior, reaccionar con el mismo la saca
   events: [],      // { id, channelId, date, detail, requestedBy(userId), status, seriesId, swapId, respondedAt, reminderSentAt, createdAt, kind:'entrega'|'vencimiento' } — kind default 'entrega' (coparentalidad, ver requireParty) en eventos viejos; 'vencimiento' es un plazo procesal (ver POST .../events/vencimiento), se crea directo en 'confirmado', sin flujo de propuesta/rechazo
   caseNotes: [],   // { id, channelId, authorId, text, createdAt } — solo visibles para mediador/a, estudio jurídico o admin del canal, nunca para las partes A/B
@@ -56,7 +56,7 @@ const EMPTY_DB = {
   lawyers: [], // { id, mediationId, partyId, name, enrollmentNumber, barAssociation, email, phone, createdAt }
   hearings: [], // { id, mediationId, date, startTime, endTime, type:'primera'|'continuacion'|'privada'|'otra', modality:'presencial'|'virtual'|'hibrida', location, meetingUrl, status:'propuesta'|'programada'|'confirmada'|'realizada'|'cancelada'|'no_realizada', notes, proposalGroupId|null, targetPartyId|null, createdAt }
   hearingConfirmations: [], // { id, hearingId, partyId, response:'pendiente'|'confirma'|'no_puede'|'pide_cambio', respondedAt, createdAt } — una fila por parte por audiencia, se crea sola al crear la audiencia
-  hearingRescheduleRequests: [], // { id, hearingId, mediationId, requestedByPartyId, requestedByType:'party'|'lawyer', requestedByLawyerId|null, reason|null, comment|null, preferredDayText|null, preferredTimeText|null, proposedDate|null, proposedStartTime|null, status:'pendiente'|'aceptada'|'rechazada'|'resuelta', mediatorNote|null, resolvedBy|null, resolvedAt|null, createdAt }
+  hearingRescheduleRequests: [], // { id, hearingId, mediationId, requestedByPartyId, requestedByType:'party'|'lawyer', requestedByLawyerId|null, reason|null, comment|null, preferredDayText|null, preferredTimeText|null, proposedDate|null, proposedStartTime|null, status:'pendiente'|'aceptada'|'rechazada'|'resuelta', mediatorNote|null, resolvedBy|null, resolvedAt|null, createdAt, sourceMessageId|null } — sourceMessageId (Bloque 19): si el mediador la creó a mano desde un mensaje de chat ("Gestionar cambio de audiencia"), en vez de haber llegado por el portal
 
   // ===== Bloque 15 (Parte 1). Agenda/disponibilidad =====
   mediatorAvailability: [], // { id, userId, dayOfWeek (0=domingo..6=sabado), startTime, endTime, createdAt } — varios bloques por día son varias filas
@@ -67,8 +67,8 @@ const EMPTY_DB = {
 
   // ===== Bloque 6. Ver IMPLEMENTATION_PLAN.md §3.10/3.11/3.8/3.9 =====
   mediationEvents: [], // { id, mediationId, type, actorId|null, visibility:'public'|'mediator_only', entityType, entityId, title, description, metadata|null, causedByEventId|null, createdAt }
-  tasks: [], // { id, mediationId, assignedTo, title, description, dueDate, priority:'baja'|'media'|'alta'|'urgente', status:'pendiente'|'en_proceso'|'completada'|'cancelada', createdBy, completedAt, createdAt }
-  commitments: [], // { id, mediationId, partyId, description, dueDate, status:'pendiente'|'cumplido'|'vencido'|'cancelado', createdFromEventId|null, completedAt, createdAt }
+  tasks: [], // { id, mediationId, assignedTo, title, description, dueDate, priority:'baja'|'media'|'alta'|'urgente', status:'pendiente'|'en_proceso'|'completada'|'cancelada', createdBy, completedAt, createdAt, sourceMessageId|null }
+  commitments: [], // { id, mediationId, partyId, description, dueDate, status:'pendiente'|'cumplido'|'vencido'|'cancelado', createdFromEventId|null, completedAt, createdAt, sourceMessageId|null }
 };
 
 const SCHEMA = `
@@ -430,6 +430,22 @@ function openDb() {
   // Bloque 11 — avisos configurables por mediación: con cuánta
   // anticipación avisar de una audiencia próxima, y por qué canal(es).
   ensureColumns(sqlite, 'mediations', { reminderHoursBefore: 'INTEGER DEFAULT 48', reminderChannels: "TEXT DEFAULT 'push,whatsapp'", nextActionSetBy: 'TEXT', upcomingDueWindowDays: 'INTEGER DEFAULT 7', closedBy: 'TEXT' });
+  // Bloque 19 — Comunicaciones. Mismas tablas de siempre (channels/
+  // members/messages), nada paralelo. lawyerId en channels distingue un
+  // hilo mediador↔abogado (nuevo) del hilo mediador↔parte que ya existía
+  // (channels.partyId) — un canal de Mediador con mediationId seteado y
+  // partyId Y lawyerId ambos NULL es el canal interno del equipo.
+  ensureColumns(sqlite, 'channels', { lawyerId: 'TEXT' });
+  // referencia opcional a un documento YA existente (tabla documents,
+  // Bloque 5) — nunca un adjunto nuevo/paralelo. NULL para todo mensaje
+  // anterior a esto, que sigue siendo un mensaje de texto normal.
+  ensureColumns(sqlite, 'messages', { documentId: 'TEXT' });
+  // trazabilidad "mensaje → acción", nunca automática (ver mediador.js:
+  // el mediador elige "Convertir en tarea"/"Crear compromiso" a mano,
+  // esto solo guarda de dónde salió).
+  ensureColumns(sqlite, 'tasks', { sourceMessageId: 'TEXT' });
+  ensureColumns(sqlite, 'commitments', { sourceMessageId: 'TEXT' });
+  ensureColumns(sqlite, 'hearing_reschedule_requests', { sourceMessageId: 'TEXT' });
   if (isNew && fs.existsSync(LEGACY_JSON_PATH)) {
     migrateFromJson(sqlite, LEGACY_JSON_PATH);
   }
