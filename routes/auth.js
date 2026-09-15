@@ -116,4 +116,28 @@ router.post('/logout', (req, res) => {
   });
 });
 
+// Bloque 18 §16 — login sin contraseña para scripts/regression-test.js
+// (y para pruebas manuales durante el desarrollo). Apagado por default:
+// solo existe si ENABLE_FAKE_LOGIN=1 está en el entorno, y ESO nunca debe
+// estar en el .env de producción — confirmarlo es parte del checklist de
+// BETA_READINESS.md antes de cada deploy. Sin la variable, esta ruta ni
+// siquiera se registra.
+if (process.env.ENABLE_FAKE_LOGIN === '1') {
+  router.post('/fake-login', async (req, res) => {
+    const db = getDB();
+    const { email, name } = req.body || {};
+    if (!email) return res.status(400).json({ error: 'Falta el email' });
+    let user = db.users.find((u) => u.email === email);
+    if (!user) {
+      user = { id: nanoid(), googleId: 'fake-' + nanoid(), email, name: name || email, avatar: '', createdAt: Date.now() };
+      db.users.push(user);
+      await commit();
+    }
+    req.login(user, (err) => {
+      if (err) return res.status(500).json({ error: String(err) });
+      res.json({ ok: true, user });
+    });
+  });
+}
+
 module.exports = router;

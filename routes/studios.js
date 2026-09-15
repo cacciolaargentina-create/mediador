@@ -217,7 +217,11 @@ module.exports = function () {
     if (!req.user.studioId) return res.status(400).json({ error: 'No pertenecés a ningún estudio' });
     const studio = db.studios.find((s) => s.id === req.user.studioId);
     if (studio && studio.ownerId === req.user.id) {
-      return res.status(400).json({ error: 'Sos el propietario del estudio — no podés abandonarlo. Por ahora hay que transferir la propiedad o dar de baja el estudio, ninguna de las dos cosas está implementada todavía.' });
+      // Bloque 18 §1 — este mensaje quedó desactualizado: transferir
+      // propiedad (POST /transfer-ownership) y dar de baja el estudio
+      // (POST /deactivate) SÍ existen — se agregaron después y nadie
+      // actualizó este texto.
+      return res.status(400).json({ error: 'Sos el propietario del estudio — no podés abandonarlo directamente. Primero transferí la propiedad a otra persona del estudio, o dalo de baja si ya no lo vas a usar.' });
     }
     // mediaciones propias, ABIERTAS, que quedarían sin nadie del estudio a
     // cargo si se va — las cerradas no bloquean, ya no necesitan gestión activa.

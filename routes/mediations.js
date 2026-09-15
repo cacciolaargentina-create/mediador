@@ -1674,6 +1674,16 @@ module.exports = function (io, presence) {
       return res.status(400).json({ error: 'Respuesta inválida' });
     }
     const db = getDB();
+    // Bloque 18 §7 — antes esto buscaba la confirmación SOLO por
+    // hearingId+partyId, sin confirmar que esa audiencia sea de ESTA
+    // mediación (la del :id de la URL, ya validada arriba por
+    // requireMediationAccess) — alguien con acceso a una mediación podía
+    // pisar la confirmación de una audiencia de OTRA mediación si conseguía
+    // su hearingId+partyId. Mismo guard que ya usan todos los demás
+    // sub-recursos de este archivo (parties/lawyers/hearings/documents/
+    // tasks/commitments, ver requireMediationAccess).
+    const hearing = db.hearings.find((h) => h.id === req.params.hearingId && h.mediationId === req.mediation.id);
+    if (!hearing) return res.status(404).json({ error: 'Audiencia no encontrada en esta mediación' });
     const confirmation = db.hearingConfirmations.find(
       (c) => c.hearingId === req.params.hearingId && c.partyId === req.params.partyId
     );
