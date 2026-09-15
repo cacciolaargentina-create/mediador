@@ -1,0 +1,273 @@
+/* public/styles/components.css — Bloque 20: componentes reutilizables.
+   Todo bajo .mediador-app. Incluye las clases NUEVAS del design system
+   (.btn, .badge, .alert, .toast, .tabs, .modal, .table, .skeleton...) y
+   redefine los selectores YA usados en mediador.js/portal.js/lawyer-portal.js
+   (button.primary/.ghost, .pill, .card, .mediation-row, .status-history-item,
+   input/select/textarea, .stat, .back-link...) para que todo el HTML ya
+   generado adopte el sistema nuevo sin tener que reescribir cada template. */
+
+/* ================= BUTTONS ================= */
+.mediador-app .btn,
+.mediador-app .btn-primary,
+.mediador-app .btn-secondary,
+.mediador-app .btn-danger,
+.mediador-app .btn-ghost,
+.mediador-app button.primary,
+.mediador-app button.ghost,
+.mediador-app button.danger{
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  height: 40px; padding: 0 var(--space-4);
+  border-radius: var(--radius-md); border: 1px solid transparent;
+  font-family: var(--font-family); font-size: var(--font-size-md); font-weight: var(--font-weight-semibold);
+  cursor: pointer; white-space: nowrap;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast);
+}
+.mediador-app .btn:disabled, .mediador-app button:disabled{ opacity: .55; cursor: not-allowed; }
+
+.mediador-app .btn-primary,
+.mediador-app button.primary{
+  background: var(--color-brand); color: var(--color-sidebar); border-color: var(--color-brand);
+}
+.mediador-app .btn-primary:hover:not(:disabled),
+.mediador-app button.primary:hover:not(:disabled){ background: var(--color-brand-dark); border-color: var(--color-brand-dark); }
+
+.mediador-app .btn-secondary,
+.mediador-app button.ghost{
+  background: var(--color-surface); color: var(--color-text); border-color: var(--color-border);
+}
+.mediador-app .btn-secondary:hover:not(:disabled),
+.mediador-app button.ghost:hover:not(:disabled){ background: var(--color-surface-2); border-color: var(--color-text-muted); }
+
+.mediador-app .btn-danger,
+.mediador-app button.danger{ background: var(--color-danger); color: #fff; border-color: var(--color-danger); }
+.mediador-app .btn-danger:hover:not(:disabled),
+.mediador-app button.danger:hover:not(:disabled){ filter: brightness(.92); }
+
+.mediador-app .btn-ghost{ background: transparent; color: var(--color-text-secondary); border-color: transparent; }
+.mediador-app .btn-ghost:hover:not(:disabled){ background: var(--color-surface-2); color: var(--color-text); }
+
+.mediador-app .btn-sm, .mediador-app button.btn-sm{ height: 32px; padding: 0 var(--space-3); font-size: var(--font-size-sm); border-radius: var(--radius-sm); }
+
+/* botón "cargando…" — spinner inline, sin bloquear toda la pantalla */
+.mediador-app .btn.is-loading, .mediador-app button.is-loading{ position: relative; color: transparent !important; pointer-events: none; }
+.mediador-app .btn.is-loading::after, .mediador-app button.is-loading::after{
+  content: ""; position: absolute; width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.5); border-top-color: #fff; animation: mediador-spin .6s linear infinite;
+}
+.mediador-app .btn-secondary.is-loading::after, .mediador-app button.ghost.is-loading::after{ border-color: rgba(23,33,36,.25); border-top-color: var(--color-text); }
+
+/* ================= INPUTS ================= */
+.mediador-app input:not([type="checkbox"]):not([type="radio"]),
+.mediador-app select,
+.mediador-app textarea,
+.mediador-app .input, .mediador-app .select, .mediador-app .textarea{
+  width: 100%; min-height: 42px; background: var(--color-surface); color: var(--color-text);
+  border: 1px solid var(--color-border); border-radius: var(--radius-md);
+  padding: 9px 12px; font-family: var(--font-family); font-size: var(--font-size-md);
+  margin-bottom: var(--space-3); transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.mediador-app textarea{ min-height: 84px; resize: vertical; }
+.mediador-app input::placeholder, .mediador-app textarea::placeholder{ color: var(--color-text-muted); }
+.mediador-app input:focus, .mediador-app select:focus, .mediador-app textarea:focus{
+  outline: none; border-color: var(--color-brand); box-shadow: 0 0 0 3px rgba(34,199,184,.12);
+}
+.mediador-app input.field-error, .mediador-app select.field-error, .mediador-app textarea.field-error{ border-color: var(--color-danger); }
+.mediador-app input[type="checkbox"], .mediador-app input[type="radio"]{ width: auto; accent-color: var(--color-brand-dark); }
+.mediador-app input:disabled, .mediador-app select:disabled, .mediador-app textarea:disabled{ background: var(--color-surface-2); color: var(--color-text-muted); cursor: not-allowed; }
+
+/* ================= CARDS ================= */
+.mediador-app .card{
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
+  padding: var(--space-5) var(--space-6); margin-bottom: var(--space-4);
+  scroll-margin-top: 96px;
+}
+.mediador-app .card-flush{ padding: 0; overflow: hidden; }
+
+/* card destacada — "Próxima acción" en el dashboard y el expediente */
+.mediador-app .card-highlight{
+  background: var(--color-brand-soft); border: 1px solid var(--color-brand);
+  border-radius: var(--radius-lg); padding: var(--space-5) var(--space-6); margin-bottom: var(--space-4);
+}
+.mediador-app .card-highlight.is-overdue{ background: var(--color-danger-soft); border-color: var(--color-danger); }
+
+/* filas de lista (mediaciones, partes, abogados, documentos...) — el
+   equivalente de "tabla" de esta app: sin <table>, cards con filas. */
+.mediador-app .mediation-row, .mediador-app .status-history-item, .mediador-app .alert-row{
+  padding: var(--space-3) 0; border-bottom: 1px solid var(--color-border-light); cursor: default;
+}
+.mediador-app .mediation-row, .mediador-app .alert-row{ cursor: pointer; transition: background-color var(--transition-fast); }
+.mediador-app .mediation-row:hover, .mediador-app .alert-row:hover{ background: var(--color-surface-2); margin: 0 calc(-1 * var(--space-3)); padding-left: var(--space-3); padding-right: var(--space-3); border-radius: var(--radius-sm); }
+.mediador-app .mediation-row:last-child, .mediador-app .status-history-item:last-child, .mediador-app .alert-row:last-child{ border-bottom: none; }
+.mediador-app .mediation-row .top{ display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); }
+.mediador-app .mediation-row .code{ font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--color-text-muted); margin-top: 2px; }
+
+.mediador-app .stat-row{ display: flex; gap: var(--space-6); flex-wrap: wrap; }
+.mediador-app .stat{ font-size: var(--font-size-xxl); font-weight: var(--font-weight-bold); color: var(--color-text); }
+.mediador-app .stat-label{ font-size: var(--font-size-xs); color: var(--color-text-secondary); }
+
+.mediador-app .back-link{ font-size: var(--font-size-sm); color: var(--color-brand-dark); cursor: pointer; margin-bottom: var(--space-4); display: inline-flex; align-items: center; gap: 4px; font-weight: var(--font-weight-medium); }
+.mediador-app .back-link:hover{ text-decoration: underline; }
+
+/* ================= BADGES (compat: .pill) ================= */
+.mediador-app .badge, .mediador-app .pill{
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--font-family); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold);
+  padding: 4px 9px; border-radius: var(--radius-pill); text-transform: none; line-height: 1.3;
+}
+.mediador-app .badge-success, .mediador-app .pill.calm{ background: var(--color-brand-soft); color: var(--color-brand-dark); }
+.mediador-app .badge-warning, .mediador-app .pill.warn{ background: var(--color-warning-soft); color: var(--color-warning); }
+.mediador-app .badge-danger, .mediador-app .pill.danger{ background: var(--color-danger-soft); color: var(--color-danger); }
+.mediador-app .badge-info{ background: var(--color-info-soft); color: var(--color-info); }
+.mediador-app .badge-neutral{ background: var(--color-surface-2); color: var(--color-text-secondary); }
+.mediador-app .badge-brand{ background: var(--color-brand); color: var(--color-sidebar); }
+
+/* ================= ALERTS / TOASTS ================= */
+.mediador-app .alert{
+  display: flex; align-items: flex-start; gap: var(--space-3);
+  border-radius: var(--radius-md); padding: var(--space-3) var(--space-4);
+  font-size: var(--font-size-md); margin-bottom: var(--space-3); border: 1px solid transparent;
+}
+.mediador-app .alert-success{ background: var(--color-success-soft); color: var(--color-success); border-color: var(--color-success); }
+.mediador-app .alert-warning{ background: var(--color-warning-soft); color: var(--color-warning); border-color: var(--color-warning); }
+.mediador-app .alert-danger{ background: var(--color-danger-soft); color: var(--color-danger); border-color: var(--color-danger); }
+.mediador-app .alert-info{ background: var(--color-info-soft); color: var(--color-info); border-color: var(--color-info); }
+
+.mediador-app .toast-stack{
+  position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%); z-index: 200; display: flex; flex-direction: column; gap: var(--space-2);
+  width: min(360px, calc(100vw - 32px)); pointer-events: none;
+}
+.mediador-app .toast{
+  pointer-events: auto; background: var(--color-sidebar); color: var(--color-text-on-dark);
+  border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); font-size: var(--font-size-md);
+  box-shadow: var(--shadow-md); display: flex; align-items: center; gap: var(--space-2);
+  opacity: 0; transform: translateY(6px); transition: opacity var(--transition-normal), transform var(--transition-normal);
+}
+.mediador-app .toast.show{ opacity: 1; transform: none; }
+.mediador-app .toast.toast-danger{ background: var(--color-danger); }
+.mediador-app .toast.toast-success{ background: var(--color-success); }
+
+/* ================= TABS ================= */
+.mediador-app .tabs-bar{
+  display: flex; gap: var(--space-5); border-bottom: 1px solid var(--color-border);
+  overflow-x: auto; -ms-overflow-style: none; scrollbar-width: none;
+}
+.mediador-app .tabs-bar::-webkit-scrollbar{ display: none; }
+.mediador-app .tab-link{
+  flex-shrink: 0; font-size: var(--font-size-md); font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary); text-decoration: none; padding: var(--space-3) 2px;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap;
+  transition: color var(--transition-fast), border-color var(--transition-fast); cursor: pointer;
+}
+.mediador-app .tab-link:hover{ color: var(--color-text); }
+.mediador-app .tab-link.active{ color: var(--color-brand-dark); border-bottom-color: var(--color-brand); font-weight: var(--font-weight-semibold); }
+
+/* subnav del expediente — usa el mismo lenguaje visual que .tabs-bar */
+.mediador-app .detail-subnav{
+  display: flex; gap: var(--space-5); overflow-x: auto; padding: 0 2px var(--space-3);
+  margin-bottom: var(--space-2); position: sticky; top: 0; z-index: 12; background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border); -ms-overflow-style: none; scrollbar-width: none;
+}
+.mediador-app .detail-subnav::-webkit-scrollbar{ display: none; }
+.mediador-app .detail-subnav a{
+  flex-shrink: 0; font-size: var(--font-size-md); font-weight: var(--font-weight-medium); color: var(--color-text-secondary);
+  text-decoration: none; white-space: nowrap; padding: var(--space-3) 2px; border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.mediador-app .detail-subnav a:hover{ color: var(--color-text); }
+.mediador-app .detail-subnav a.active{ color: var(--color-brand-dark); border-bottom-color: var(--color-brand); font-weight: var(--font-weight-semibold); }
+
+/* ================= MODALS ================= */
+.mediador-app .modal-overlay{
+  position: fixed; inset: 0; background: rgba(15,21,23,.55); z-index: 60;
+  display: none; align-items: center; justify-content: center; padding: var(--space-5);
+}
+.mediador-app .modal-overlay.show{ display: flex; }
+.mediador-app .modal{
+  background: var(--color-surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-md);
+  width: 100%; max-width: 480px; max-height: calc(100vh - 40px); overflow-y: auto;
+}
+.mediador-app .modal-header{ display: flex; align-items: center; justify-content: space-between; padding: var(--space-5) var(--space-6); border-bottom: 1px solid var(--color-border-light); }
+.mediador-app .modal-header h3{ margin: 0; }
+.mediador-app .modal-close{ background: none; border: none; color: var(--color-text-muted); font-size: 20px; line-height: 1; cursor: pointer; padding: 4px; }
+.mediador-app .modal-body{ padding: var(--space-6); }
+.mediador-app .modal-footer{ display: flex; justify-content: flex-end; gap: var(--space-3); padding: var(--space-5) var(--space-6); border-top: 1px solid var(--color-border-light); }
+
+/* ================= EMPTY STATES ================= */
+.mediador-app .empty-state{ text-align: center; padding: var(--space-8) var(--space-5); color: var(--color-text-secondary); }
+.mediador-app .empty-state .empty-state-mark{ width: 40px; height: 40px; margin: 0 auto var(--space-4); opacity: .35; }
+.mediador-app .empty-state h3{ color: var(--color-text); margin-bottom: var(--space-2); }
+.mediador-app .empty-state p{ font-size: var(--font-size-md); max-width: 360px; margin: 0 auto var(--space-4); }
+
+/* ================= LOADING ================= */
+@keyframes mediador-spin{ to{ transform: rotate(360deg); } }
+.mediador-app .spinner{
+  width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--color-border);
+  border-top-color: var(--color-brand-dark); animation: mediador-spin .6s linear infinite; display: inline-block;
+}
+@keyframes mediador-skeleton{ 0%{ background-position: -200px 0; } 100%{ background-position: calc(200px + 100%) 0; } }
+.mediador-app .skeleton{
+  background: linear-gradient(90deg, var(--color-surface-2) 25%, var(--color-border-light) 37%, var(--color-surface-2) 63%);
+  background-size: 400% 100%; animation: mediador-skeleton 1.4s ease infinite;
+  border-radius: var(--radius-sm); display: block;
+}
+.mediador-app .skeleton-line{ height: 12px; margin-bottom: var(--space-2); }
+.mediador-app .skeleton-line.w-60{ width: 60%; }
+.mediador-app .skeleton-line.w-40{ width: 40%; }
+
+/* ================= ONBOARDING (mini-ventanas de primer uso) ================= */
+.mediador-app .onboarding-backdrop{ position: fixed; inset: 0; background: rgba(15,21,23,.55); z-index: 60; display: none; align-items: center; justify-content: center; padding: var(--space-5); }
+.mediador-app .onboarding-backdrop.show{ display: flex; }
+.mediador-app .onboarding-card{ background: var(--color-surface); border-radius: var(--radius-xl); padding: var(--space-6); max-width: 340px; width: 100%; box-shadow: var(--shadow-md); }
+.mediador-app .onboarding-card .ob-step{ font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--color-text-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: var(--space-3); }
+.mediador-app .onboarding-card h3{ margin: 0 0 var(--space-2); }
+.mediador-app .onboarding-card p{ font-size: var(--font-size-md); color: var(--color-text-secondary); line-height: 1.5; margin: 0 0 var(--space-5); }
+.mediador-app .onboarding-card .ob-dots{ display: flex; gap: 5px; justify-content: center; margin-bottom: var(--space-4); }
+.mediador-app .onboarding-card .ob-dot{ width: 6px; height: 6px; border-radius: 50%; background: var(--color-border); }
+.mediador-app .onboarding-card .ob-dot.active{ background: var(--color-brand); }
+.mediador-app .onboarding-card .ob-actions{ display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); }
+.mediador-app .onboarding-card .ob-skip{ font-size: var(--font-size-sm); color: var(--color-text-muted); cursor: pointer; background: none; border: none; padding: 6px 2px; }
+
+/* ================= ACCOUNT MENU (topbar) ================= */
+.mediador-app .account-btn{
+  display: flex; align-items: center; gap: 7px; background: none; border: 1px solid transparent;
+  border-radius: var(--radius-pill); padding: 3px 8px 3px 3px; cursor: pointer; font-family: var(--font-family);
+  color: var(--color-text-secondary); -webkit-tap-highlight-color: transparent;
+}
+.mediador-app .account-btn:hover, .mediador-app .account-btn[aria-expanded="true"]{ border-color: var(--color-border); background: var(--color-surface-2); }
+.mediador-app .account-btn .avatar{ width: 30px; height: 30px; border-radius: 50%; object-fit: cover; display: block; }
+.mediador-app .account-btn-initial{ width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--color-brand-soft); color: var(--color-brand-dark); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); flex-shrink: 0; }
+.mediador-app .account-btn .account-name{ font-size: var(--font-size-sm); color: var(--color-text); font-weight: var(--font-weight-medium); white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.mediador-app .account-btn .caret{ width: 13px; height: 13px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; color: var(--color-text-muted); transition: transform var(--transition-fast); }
+.mediador-app .account-btn[aria-expanded="true"] .caret{ transform: rotate(180deg); }
+
+.mediador-app .account-menu{
+  position: absolute; top: calc(100% + 8px); right: 0; min-width: 220px; max-width: min(280px, calc(100vw - 28px));
+  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 6px;
+  box-shadow: var(--shadow-md); z-index: 35; display: none;
+  opacity: 0; transform: translateY(-6px) scale(.98); transform-origin: top right;
+  transition: opacity .16s ease, transform .16s ease;
+}
+.mediador-app .account-menu.mounted{ display: block; }
+.mediador-app .account-menu.open{ opacity: 1; transform: none; }
+.mediador-app .account-menu-backdrop{ position: fixed; inset: 0; z-index: 15; display: none; }
+.mediador-app .account-menu-backdrop.mounted{ display: block; }
+.mediador-app .account-menu-head{ padding: 9px 11px 10px; border-bottom: 1px solid var(--color-border-light); margin-bottom: 6px; }
+.mediador-app .account-menu-head .who{ font-size: var(--font-size-md); color: var(--color-text); font-weight: var(--font-weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mediador-app .account-menu-head .sub{ font-size: var(--font-size-xs); color: var(--color-text-muted); margin-top: 3px; }
+.mediador-app .account-menu button.row{
+  display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: none;
+  color: var(--color-danger); font-family: var(--font-family); font-size: var(--font-size-md); text-align: left;
+  padding: 9px 11px; border-radius: var(--radius-sm); cursor: pointer;
+}
+.mediador-app .account-menu button.row:hover{ background: var(--color-danger-soft); }
+.mediador-app .account-menu button.row svg{ width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+/* el botón de cuenta vive en el pie de la sidebar (fondo oscuro) — mismo
+   componente, paleta invertida para legibilidad; el menú desplegable sigue
+   siendo claro, pero se abre hacia ARRIBA porque el botón está al fondo. */
+.mediador-app .sidebar-footer{ position: relative; }
+.mediador-app .sidebar-footer .account-btn{ width: 100%; color: var(--color-text-on-dark-muted); padding: 6px 8px; border-radius: var(--radius-md); }
+.mediador-app .sidebar-footer .account-btn:hover, .mediador-app .sidebar-footer .account-btn[aria-expanded="true"]{ background: var(--color-sidebar-hover); border-color: transparent; }
+.mediador-app .sidebar-footer .account-btn .account-name{ color: var(--color-text-on-dark); max-width: 130px; }
+.mediador-app .sidebar-footer .account-menu{ top: auto; bottom: calc(100% + 8px); left: 0; right: 0; transform-origin: bottom left; width: 100%; }

@@ -1,0 +1,65 @@
+/* public/styles/base.css — Bloque 20: reset + tipografía base.
+   Todo scopeado bajo .mediador-app (Bloque 20 §37): estas páginas no
+   comparten CSS con la coparentalidad (public/index.html tiene su propio
+   <style> inline y nunca carga estos archivos), pero se namespacea de
+   todos modos como capa extra de seguridad y porque lo pide la spec. */
+
+.mediador-app, .mediador-app *{ box-sizing: border-box; }
+
+.mediador-app{
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+.mediador-app h1, .mediador-app h2, .mediador-app h3{
+  font-family: var(--font-family);
+  margin: 0 0 var(--space-2);
+  color: var(--color-text);
+  font-weight: var(--font-weight-bold);
+}
+.mediador-app h1{ font-size: var(--font-size-xxl); line-height: 1.2; }
+.mediador-app h2{ font-size: var(--font-size-xl); line-height: 1.25; }
+.mediador-app h3{ font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); line-height: 1.3; }
+
+.mediador-app p{ margin: 0 0 var(--space-2); }
+
+.mediador-app label{
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+  display: block;
+  margin-bottom: var(--space-1);
+}
+
+.mediador-app small, .mediador-app .text-small{ font-size: var(--font-size-sm); color: var(--color-text-secondary); }
+
+.mediador-app a{ color: var(--color-brand-dark); }
+
+.mediador-app button{ font-family: var(--font-family); cursor: pointer; }
+
+/* eyebrow — etiqueta corta sobre un título (código de mediación, sección) */
+.mediador-app .eyebrow{
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: var(--space-1);
+}
+
+.mediador-app .empty-hint{ color: var(--color-text-muted); font-size: var(--font-size-sm); padding: var(--space-2) 0; }
+
+.mediador-app :focus-visible{
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+.mediador-app ::-webkit-scrollbar{ width: 10px; height: 10px; }
+.mediador-app ::-webkit-scrollbar-thumb{ background: var(--color-border); border-radius: var(--radius-pill); }

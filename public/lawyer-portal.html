@@ -4,43 +4,36 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Portal de Abogados</title>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="icon" type="image/svg+xml" href="/mediador-icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles/tokens.css">
+<link rel="stylesheet" href="/styles/base.css">
+<link rel="stylesheet" href="/styles/components.css">
+<link rel="stylesheet" href="/styles/layout.css">
+<link rel="stylesheet" href="/styles/responsive.css">
 <style>
-  :root{
-    --bg:#12181A; --surface:#1B2326; --surface-2:#222C30; --line:#2E393D;
-    --text:#E7EDEC; --text-dim:#93A3A2; --text-faint:#5E6E6D;
-    --calm:#5FA8A0; --calm-dim:#3E6E69; --warn:#D98C4A; --warn-dim:#5A4327;
-    --danger:#C4614A; --danger-dim:#4A2C23;
-    --serif:'Fraunces',serif; --sans:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
-  }
-  *{box-sizing:border-box;}
-  body{ margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); -webkit-font-smoothing:antialiased; }
-  .brand{ font-family:var(--serif); font-weight:700; font-size:20px; padding:16px 20px; border-bottom:1px solid var(--line); }
-  .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
-  main{ max-width:600px; margin:0 auto; padding:20px; }
-  .card{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin-bottom:14px; cursor:default; }
-  .card.clickable{ cursor:pointer; }
-  h1{ font-family:var(--serif); font-size:20px; margin:0 0 4px; }
-  h2{ font-family:var(--serif); font-size:15px; margin:0 0 10px; }
-  .eyebrow{ font-family:var(--mono); font-size:10.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px; }
-  .item{ padding:10px 0; border-bottom:1px solid var(--line); }
+  /* portal de abogados: mismo criterio que portal.html — sin sidebar,
+     solo lo que este abogado tiene autorizado ver (Bloque 20 §27). */
+  .portal-header{ display:flex; align-items:center; gap:8px; padding:14px 20px; border-bottom:1px solid var(--color-border-light); background:var(--color-surface); }
+  .portal-header .portal-subtitle{ font-size:13px; color:var(--color-text-secondary); border-left:1px solid var(--color-border); padding-left:10px; margin-left:2px; }
+  .portal-main{ max-width:600px; margin:0 auto; padding:24px 20px 60px; }
+  .item{ padding:10px 0; border-bottom:1px solid var(--color-border-light); }
   .item:last-child{ border-bottom:none; }
-  .empty-hint{ color:var(--text-faint); font-size:12.5px; }
-  button{ cursor:pointer; font-family:var(--sans); border:none; border-radius:8px; font-size:12.5px; }
-  button.primary{ background:var(--calm); color:#0E1A19; font-weight:600; padding:8px 14px; }
-  button.ghost{ background:none; border:1px solid var(--line); color:var(--text); padding:8px 14px; }
-  select, input, textarea{ background:var(--surface-2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:8px 10px; font-family:var(--sans); font-size:12.5px; width:100%; box-sizing:border-box; margin-bottom:8px; }
-  label{ font-size:11px; color:var(--text-dim); display:block; margin-bottom:4px; }
-  .pill{ font-family:var(--mono); font-size:9.5px; padding:2px 8px; border-radius:8px; text-transform:uppercase; }
-  .pill.calm{ background:var(--calm-dim); color:var(--calm); }
-  .pill.warn{ background:var(--warn-dim); color:var(--warn); }
-  .pill.danger{ background:var(--danger-dim); color:var(--danger); }
-  .back-link{ font-size:12.5px; color:var(--calm); cursor:pointer; margin-bottom:14px; display:inline-block; }
+  .card.clickable{ cursor:pointer; }
 </style>
 </head>
 <body>
-  <div class="brand">Mediador<em>digital</em> — Portal de Abogados</div>
-  <main id="main"><p class="empty-hint">Cargando…</p></main>
+  <div class="mediador-app">
+    <header class="portal-header">
+      <div class="mediador-logo on-light">
+        <img class="mediador-logo-mark" src="/mediador-icon.svg" alt="">
+        <span class="mediador-logo-text">Mediador</span>
+      </div>
+      <span class="portal-subtitle">Portal de Abogados</span>
+    </header>
+    <main class="portal-main" id="main"><p class="empty-hint">Cargando…</p></main>
+  </div>
   <script src="/lawyer-portal.js"></script>
 </body>
 </html>

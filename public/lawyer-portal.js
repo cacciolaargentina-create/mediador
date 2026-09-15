@@ -28,6 +28,24 @@ async function api(path, opts = {}){
   return data;
 }
 
+// Bloque 20 §13 — mismo helper que public/mediador.js y public/portal.js.
+function showToast(message, kind){
+  if(!message) return;
+  let stack = document.getElementById('toast-stack');
+  if(!stack){
+    stack = document.createElement('div');
+    stack.id = 'toast-stack';
+    stack.className = 'toast-stack';
+    document.body.appendChild(stack);
+  }
+  const el = document.createElement('div');
+  el.className = `toast${kind ? ' toast-' + kind : ''}`;
+  el.textContent = message;
+  stack.appendChild(el);
+  requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('show')));
+  setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 250); }, 3600);
+}
+
 const CONFIRM_LABELS = { confirma:'Confirmó', no_puede:'Avisó que no puede', pide_cambio:'Pidió un cambio' };
 const REQUEST_STATUS_LABELS = { pendiente:'Esperando respuesta del mediador/a', aceptada:'Aceptado — se reprogramó', rechazada:'No se pudo hacer el cambio', resuelta:'Resuelto sin cambio' };
 const COMMITMENT_STATUS_LABELS = { pendiente:'Pendiente', cumplido:'Cumplido', vencido:'Vencido', cancelado:'Cancelado' };
@@ -237,14 +255,14 @@ async function sendLawyerMessage(mediationId){
   try{
     await api(`/api/lawyer-portal/${token}/mediations/${mediationId}/lawyer-messages`, { method:'POST', body: JSON.stringify({ text }) });
     await loadLawyerMessages(mediationId);
-  }catch(e){ alert(e.error || 'No se pudo enviar el mensaje.'); }
+  }catch(e){ showToast(e.error || 'No se pudo enviar el mensaje.', 'danger'); }
 }
 
 async function confirmHearing(mediationId, hearingId, response){
   try{
     await api(`/api/lawyer-portal/${token}/mediations/${mediationId}/hearings/${hearingId}/confirm`, { method:'POST', body: JSON.stringify({ response }) });
     renderDetail(mediationId);
-  }catch(e){ alert(e.error || 'No se pudo registrar la respuesta.'); }
+  }catch(e){ showToast(e.error || 'No se pudo registrar la respuesta.', 'danger'); }
 }
 
 function togglePideCambioForm(hearingId){
@@ -266,12 +284,12 @@ async function submitPideCambio(mediationId, hearingId){
   try{
     await api(`/api/lawyer-portal/${token}/mediations/${mediationId}/hearings/${hearingId}/confirm`, { method:'POST', body: JSON.stringify(body) });
     renderDetail(mediationId);
-  }catch(e){ alert(e.error || 'No se pudo registrar el pedido.'); }
+  }catch(e){ showToast(e.error || 'No se pudo registrar el pedido.', 'danger'); }
 }
 
 async function uploadDocument(mediationId){
   const file = document.getElementById('doc-file').files[0];
-  if(!file){ alert('Elegí un archivo primero.'); return; }
+  if(!file){ showToast('Elegí un archivo primero.', 'danger'); return; }
   const btn = document.getElementById('doc-upload-btn');
   btn.disabled = true; btn.textContent = 'Subiendo…';
   const formData = new FormData();
@@ -282,7 +300,7 @@ async function uploadDocument(mediationId){
     if(!res.ok) throw data;
     renderDetail(mediationId);
   }catch(e){
-    alert(e.error || 'No se pudo subir el archivo.');
+    showToast(e.error || 'No se pudo subir el archivo.', 'danger');
     btn.disabled = false; btn.textContent = 'Subir documento';
   }
 }

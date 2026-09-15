@@ -201,6 +201,57 @@ async function askDashboardAI(){
   }catch(e){ box.innerHTML = `<p class="empty-hint">${escapeHtml(e.error || 'No se pudo consultar al asistente.')}</p>`; }
 }
 
+// ================= SIDEBAR (drawer en mobile) =================
+// Bloque 20 — la sidebar es fixed y se desplaza fuera de pantalla en
+// mobile (<=767px, ver responsive.css); acá solo se agrega/quita la clase
+// que la trae a la vista y el backdrop para cerrarla al tocar afuera.
+function toggleSidebar(){
+  document.getElementById('sidebar')?.classList.toggle('open');
+  document.getElementById('sidebar-backdrop')?.classList.toggle('show');
+}
+function closeSidebar(){
+  document.getElementById('sidebar')?.classList.remove('open');
+  document.getElementById('sidebar-backdrop')?.classList.remove('show');
+}
+
+// Bloque 20 §16 — reemplaza los prompt() que solo servían para copiar un
+// link (nunca pedían texto al usuario) por un copy-to-clipboard real +
+// confirmación por toast. Si el navegador no tiene Clipboard API (contexto
+// no seguro, permiso denegado), cae al prompt() de siempre — nunca deja a
+// alguien sin poder copiar el link.
+async function copyLinkToClipboard(url, successMessage){
+  try{
+    await navigator.clipboard.writeText(url);
+    showToast(successMessage || 'Link copiado al portapapeles.', 'success');
+  }catch(e){
+    prompt('Copiá este link:', url);
+  }
+}
+
+// ================= TOAST =================
+// Bloque 20 §13/16 — reemplaza showToast(, 'danger') para errores de flujo normal
+// (queda uno mostrando el mensaje corto y se apaga solo). No bloquea la
+// pantalla como showToast(, 'danger'), así que no interrumpe lo que se estaba haciendo.
+function showToast(message, kind){
+  if(!message) return;
+  let stack = document.getElementById('toast-stack');
+  if(!stack){
+    stack = document.createElement('div');
+    stack.id = 'toast-stack';
+    stack.className = 'toast-stack';
+    document.body.appendChild(stack);
+  }
+  const el = document.createElement('div');
+  el.className = `toast${kind ? ' toast-' + kind : ''}`;
+  el.textContent = message;
+  stack.appendChild(el);
+  requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('show')));
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => el.remove(), 250);
+  }, 3600);
+}
+
 // pantallas que no son pestaña propia resaltan la pestaña de la que
 // "cuelgan" — el detalle de una mediación resalta Mediaciones, las
 // solicitudes de cambio resaltan Agenda, etc. — así el nav inferior
@@ -213,9 +264,10 @@ const TAB_FOR_SCREEN = {
 function goTo(screen, id){
   currentMediationId = id || null;
   closeAccountMenu();
-  document.querySelectorAll('nav.tabs button').forEach(b => {
+  document.querySelectorAll('#tabs .sidebar-item').forEach(b => {
     b.classList.toggle('active', b.dataset.screen === TAB_FOR_SCREEN[screen]);
   });
+  closeSidebar();
   if(screen === 'dashboard') renderDashboard();
   else if(screen === 'list') renderList();
   else if(screen === 'detail') renderDetail(id);
@@ -268,8 +320,8 @@ async function renderDashboard(){
   const moreHearings = d.proximasAudiencias.length > 3;
 
   main.innerHTML = `
-    <h1>¿Qué tengo que hacer hoy?</h1>
-    <p style="color:var(--text-dim); font-size:13px; margin-bottom:18px;">Hola, ${escapeHtml(me.name)}.</p>
+    <h1>Hola, ${escapeHtml((me.name || '').split(' ')[0] || me.name)}</h1>
+    <p style="color:var(--text-dim); font-size:15px; margin-bottom:18px;">¿Qué requiere tu atención?</p>
 
     <div class="card">
       <div class="stat-row">
@@ -516,18 +568,18 @@ function applyStudioMediationFilters(){
 async function assignFromStudioView(mediationId){
   const userId = document.getElementById(`assign-sm-${mediationId}`).value;
   const role = document.getElementById(`assign-sm-role-${mediationId}`).value;
-  if(!userId){ alert('No hay nadie más del estudio para asignar.'); return; }
+  if(!userId){ showToast('No hay nadie más del estudio para asignar.', 'danger'); return; }
   try{
     await api(`/api/mediations/${mediationId}/access`, { method:'POST', body: JSON.stringify({ userId, role }) });
     renderStudioMediations();
-  }catch(e){ alert(e.error || 'No se pudo asignar.'); }
+  }catch(e){ showToast(e.error || 'No se pudo asignar.', 'danger'); }
 }
 
 async function revokeFromStudioView(mediationId, accessId){
   try{
     await api(`/api/mediations/${mediationId}/access/${accessId}`, { method:'DELETE' });
     renderStudioMediations();
-  }catch(e){ alert(e.error || 'No se pudo quitar el acceso.'); }
+  }catch(e){ showToast(e.error || 'No se pudo quitar el acceso.', 'danger'); }
 }
 
 // ================= AGENDA =================
@@ -669,9 +721,9 @@ function applyAgendaFilters(){
 async function openIcsFeedLink(){
   let data;
   try{ data = await api('/api/agenda/feed-token'); }
-  catch(e){ alert(e.error || 'No se pudo generar el link.'); return; }
+  catch(e){ showToast(e.error || 'No se pudo generar el link.', 'danger'); return; }
   const fullUrl = location.origin + data.url;
-  prompt('Copiá este link y agregalo en tu calendario como "suscribirse por URL" (en Google Calendar: Otros calendarios → Desde URL):', fullUrl);
+  copyLinkToClipboard(fullUrl, 'Link copiado — agregalo en tu calendario como "suscribirse por URL".');
 }
 
 // invalida la URL vieja — para cuando se compartió por error o el
@@ -680,8 +732,8 @@ async function regenerateIcsFeedLink(){
   if(!confirm('¿Generar un link nuevo? El anterior deja de funcionar — cualquier calendario ya suscripto con ese link va a dejar de actualizarse.')) return;
   let data;
   try{ data = await api('/api/agenda/feed-token/regenerate', { method:'POST' }); }
-  catch(e){ alert(e.error || 'No se pudo generar el link.'); return; }
-  prompt('Link nuevo — el anterior ya no funciona. Copialo y actualizá tu suscripción de calendario:', location.origin + data.url);
+  catch(e){ showToast(e.error || 'No se pudo generar el link.', 'danger'); return; }
+  copyLinkToClipboard(location.origin + data.url, 'Link nuevo copiado — el anterior ya no funciona.');
 }
 
 // ================= BANDEJA DE SOLICITUDES =================
@@ -745,14 +797,14 @@ async function resolveFromInbox(mediationId, hearingId, requestId, action){
   if(action === 'proponer'){
     body.newDate = document.getElementById(`propose-inbox-date-${requestId}`).value;
     body.newStartTime = document.getElementById(`propose-inbox-time-${requestId}`).value || null;
-    if(!body.newDate){ alert('Falta la fecha para proponer.'); return; }
+    if(!body.newDate){ showToast('Falta la fecha para proponer.', 'danger'); return; }
   }
   try{
     const result = await api(`/api/mediations/${mediationId}/hearings/${hearingId}/reschedule-requests/${requestId}/resolve`, { method:'POST', body: JSON.stringify(body) });
     const notifText = describeNotifications(result.notifications);
     if(notifText) alert(`Solicitud resuelta.\n\n${notifText}`);
     renderRequests();
-  }catch(e){ alert(e.error || 'No se pudo resolver la solicitud.'); }
+  }catch(e){ showToast(e.error || 'No se pudo resolver la solicitud.', 'danger'); }
 }
 
 async function toggleAvailabilityPanel(){
@@ -811,11 +863,11 @@ async function addAvailability(){
       endTime: document.getElementById('avail-end').value,
     })});
     loadAvailabilityPanel();
-  }catch(e){ alert(e.error || 'No se pudo agregar.'); }
+  }catch(e){ showToast(e.error || 'No se pudo agregar.', 'danger'); }
 }
 async function deleteAvailability(id){
   try{ await api(`/api/agenda/availability/${id}`, { method:'DELETE' }); loadAvailabilityPanel(); }
-  catch(e){ alert(e.error || 'No se pudo quitar.'); }
+  catch(e){ showToast(e.error || 'No se pudo quitar.', 'danger'); }
 }
 async function addBlock(){
   try{
@@ -826,11 +878,11 @@ async function addBlock(){
       reason: document.getElementById('block-reason').value.trim() || null,
     })});
     loadAvailabilityPanel();
-  }catch(e){ alert(e.error || 'No se pudo bloquear.'); }
+  }catch(e){ showToast(e.error || 'No se pudo bloquear.', 'danger'); }
 }
 async function deleteBlock(id){
   try{ await api(`/api/agenda/blocks/${id}`, { method:'DELETE' }); loadAvailabilityPanel(); }
-  catch(e){ alert(e.error || 'No se pudo quitar.'); }
+  catch(e){ showToast(e.error || 'No se pudo quitar.', 'danger'); }
 }
 
 async function renderTeam(){
@@ -947,12 +999,12 @@ async function renderTeam(){
 
 async function transferOwnership(){
   const targetId = document.getElementById('transfer-target').value;
-  if(!targetId){ alert('No hay nadie más en el estudio para transferir la propiedad.'); return; }
+  if(!targetId){ showToast('No hay nadie más en el estudio para transferir la propiedad.', 'danger'); return; }
   if(!confirm('¿Seguro que querés transferir la propiedad del estudio a esta persona? No vas a poder deshacerlo vos mismo.')) return;
   try{
     await api('/api/studios/transfer-ownership', { method:'POST', body: JSON.stringify({ newOwnerId: targetId }) });
     renderTeam();
-  }catch(e){ alert(e.error || 'No se pudo transferir la propiedad.'); }
+  }catch(e){ showToast(e.error || 'No se pudo transferir la propiedad.', 'danger'); }
 }
 
 async function deactivateStudio(){
@@ -964,7 +1016,7 @@ async function deactivateStudio(){
     if(e.mediations){
       alert('No se puede dar de baja todavía — hay mediaciones activas en el estudio:\n\n' + e.mediations.map(m => `${m.code}: ${m.object}`).join('\n'));
     } else {
-      alert(e.error || 'No se pudo dar de baja el estudio.');
+      showToast(e.error || 'No se pudo dar de baja el estudio.', 'danger');
     }
   }
 }
@@ -973,43 +1025,43 @@ async function leaveStudio(){
   if(!confirm('¿Seguro que querés abandonar el estudio?')) return;
   try{
     await api('/api/studios/leave', { method:'POST' });
-    alert('Abandonaste el estudio.');
+    showToast('Abandonaste el estudio.', 'success');
     renderTeam();
   }catch(e){
     if(e.mediations){
       alert('No podés abandonar todavía — tenés estas mediaciones activas a tu nombre, hay que reasignarlas primero:\n\n' + e.mediations.map(m => `${m.code}: ${m.object}`).join('\n'));
     } else {
-      alert(e.error || 'No se pudo abandonar el estudio.');
+      showToast(e.error || 'No se pudo abandonar el estudio.', 'danger');
     }
   }
 }
 
 async function createStudio(){
   const name = document.getElementById('new-studio-name').value.trim();
-  if(!name){ alert('Falta el nombre.'); return; }
+  if(!name){ showToast('Falta el nombre.', 'danger'); return; }
   try{
     await api('/api/studios', { method:'POST', body: JSON.stringify({ name }) });
     renderTeam();
-  }catch(e){ alert(e.error || 'No se pudo crear el estudio.'); }
+  }catch(e){ showToast(e.error || 'No se pudo crear el estudio.', 'danger'); }
 }
 
 async function inviteToStudio(){
   const email = document.getElementById('invite-email').value.trim();
   const role = document.getElementById('invite-role').value;
-  if(!email){ alert('Falta el email.'); return; }
+  if(!email){ showToast('Falta el email.', 'danger'); return; }
   try{
     const result = await api('/api/studios/invitations', { method:'POST', body: JSON.stringify({ email, role }) });
     const fullUrl = location.origin + result.invitationUrl;
-    prompt('Copiá este link y compartíselo a la persona invitada:', fullUrl);
+    copyLinkToClipboard(fullUrl, 'Link de invitación copiado.');
     renderTeam();
-  }catch(e){ alert(e.error || 'No se pudo enviar la invitación.'); }
+  }catch(e){ showToast(e.error || 'No se pudo enviar la invitación.', 'danger'); }
 }
 
 async function changeStudioRole(userId, role){
   try{
     await api(`/api/studios/members/${userId}/role`, { method:'PATCH', body: JSON.stringify({ role }) });
     renderTeam();
-  }catch(e){ alert(e.error || 'No se pudo cambiar el rol.'); renderTeam(); }
+  }catch(e){ showToast(e.error || 'No se pudo cambiar el rol.', 'danger'); renderTeam(); }
 }
 
 async function removeStudioMember(userId){
@@ -1017,7 +1069,7 @@ async function removeStudioMember(userId){
   try{
     await api(`/api/studios/members/${userId}`, { method:'DELETE' });
     renderTeam();
-  }catch(e){ alert(e.error || 'No se pudo quitar a la persona.'); }
+  }catch(e){ showToast(e.error || 'No se pudo quitar a la persona.', 'danger'); }
 }
 
 async function renderList(){
@@ -1120,7 +1172,7 @@ function renderNewForm(){
 }
 async function createMediation(){
   const object = document.getElementById('new-object').value.trim();
-  if(!object){ alert('Falta el objeto de la mediación.'); return; }
+  if(!object){ showToast('Falta el objeto de la mediación.', 'danger'); return; }
   try{
     const m = await api('/api/mediations', { method:'POST', body: JSON.stringify({
       object,
@@ -1129,7 +1181,7 @@ async function createMediation(){
       description: document.getElementById('new-description').value.trim() || null,
     })});
     goTo('detail', m.id);
-  }catch(e){ alert(e.error || 'No se pudo crear la mediación.'); }
+  }catch(e){ showToast(e.error || 'No se pudo crear la mediación.', 'danger'); }
 }
 
 // ================= EXPEDIENTE (detalle) =================
@@ -1220,18 +1272,30 @@ async function renderDetail(id){
     documentosSinRevisarCount ? `<span class="pill warn">${documentosSinRevisarCount} documento${documentosSinRevisarCount===1?'':'s'} sin revisar</span>` : '',
   ].filter(Boolean).join(' ');
 
+  const nextActionOverdue = m.nextActionDueDate && new Date(m.nextActionDueDate).getTime() < Date.now();
+
   main.innerHTML = `
     <span class="back-link" onclick="goTo('list')">← Volver a mediaciones</span>
-    <div class="eyebrow">${escapeHtml(m.code)}${m.internalNumber ? ' · ' + escapeHtml(m.internalNumber) : ''}</div>
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:4px;">
+      <div class="eyebrow" style="margin-bottom:0;">${escapeHtml(m.code)}${m.internalNumber ? ' · ' + escapeHtml(m.internalNumber) : ''}</div>
+      <span class="badge badge-neutral">${STATUS_LABELS[m.status] || m.status}</span>
+    </div>
     <h1>${escapeHtml(m.object)}</h1>
 
-    <div class="card" style="border-color:${m.nextActionDueDate && new Date(m.nextActionDueDate).getTime()<Date.now() ? 'var(--danger-dim)' : 'var(--line)'};">
-      <div style="display:flex; flex-wrap:wrap; gap:14px;">
-        <div><div class="eyebrow" style="margin-bottom:2px;">Estado</div><div style="font-size:13px; font-weight:600;">${STATUS_LABELS[m.status] || m.status}</div></div>
-        <div><div class="eyebrow" style="margin-bottom:2px;">Próxima audiencia</div><div style="font-size:13px; font-weight:600;">${proximaAudiencia ? `${fmtDate(proximaAudiencia.date)}${proximaAudiencia.startTime ? ' ' + proximaAudiencia.startTime : ''}` : '<span style="color:var(--text-faint);">Sin agendar</span>'}</div></div>
-        <div><div class="eyebrow" style="margin-bottom:2px;">Próxima acción</div><div style="font-size:13px; font-weight:600;">${m.nextActionText ? escapeHtml(m.nextActionText) : '<span style="color:var(--warn);">Sin cargar</span>'}</div></div>
-        <div><div class="eyebrow" style="margin-bottom:2px;">Responsable</div><div style="font-size:13px; font-weight:600;">${NEXT_ACTION_RESPONSIBLE_LABELS[m.nextActionResponsibleType] || '—'}</div></div>
-        <div><div class="eyebrow" style="margin-bottom:2px;">Vencimiento</div><div style="font-size:13px; font-weight:600; color:${m.nextActionDueDate && new Date(m.nextActionDueDate).getTime()<Date.now() ? 'var(--danger)' : 'var(--text)'};">${m.nextActionDueDate ? fmtDate(m.nextActionDueDate) : '—'}</div></div>
+    <div class="card-highlight${nextActionOverdue ? ' is-overdue' : ''}" style="margin-top:16px;">
+      <div class="eyebrow" style="color:inherit; opacity:.7; margin-bottom:6px;">Próxima acción</div>
+      <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:14px; flex-wrap:wrap;">
+        <div>
+          <div style="font-size:19px; font-weight:700;">${m.nextActionText ? escapeHtml(m.nextActionText) : 'Sin cargar'}</div>
+          <div style="font-size:13px; margin-top:4px; opacity:.8;">
+            ${m.nextActionDueDate ? `Vence ${fmtDate(m.nextActionDueDate)}` : 'Sin vencimiento cargado'}
+            ${m.nextActionResponsibleType ? ` · Responsable: ${NEXT_ACTION_RESPONSIBLE_LABELS[m.nextActionResponsibleType] || '—'}` : ''}
+          </div>
+        </div>
+        <a href="#section-audiencias" class="btn-secondary" style="text-decoration:none; height:36px; padding:0 14px; font-size:13px;">Ver audiencia</a>
+      </div>
+      <div style="font-size:12.5px; margin-top:10px; opacity:.75;">
+        Próxima audiencia: ${proximaAudiencia ? `${fmtDate(proximaAudiencia.date)}${proximaAudiencia.startTime ? ' ' + proximaAudiencia.startTime : ''}` : 'sin agendar'}
       </div>
       ${detailAlerts ? `<div style="margin-top:10px;">${detailAlerts}</div>` : ''}
     </div>
@@ -1625,7 +1689,7 @@ async function saveReminderSettings(id){
       upcomingDueWindowDays: Number(document.getElementById('upcoming-window-days').value),
     })});
     renderDetail(id);
-  }catch(e){ alert(e.error || 'No se pudo guardar la configuración.'); }
+  }catch(e){ showToast(e.error || 'No se pudo guardar la configuración.', 'danger'); }
 }
 
 async function showCloseChecklist(mediationId){
@@ -1640,8 +1704,8 @@ async function showCloseChecklist(mediationId){
       c.pendingCommitments.length ? `Compromisos pendientes: ${c.pendingCommitments.map(p=>p.description).join(', ')}` : 'Compromisos pendientes: ninguno',
       `Próxima acción todavía cargada: ${c.hasPendingNextAction ? 'sí' : 'no'}`,
     ];
-    alert(lines.join('\n'));
-  }catch(e){ alert(e.error || 'No se pudo cargar el checklist.'); }
+    showToast(lines.join('\n'), 'danger');
+  }catch(e){ showToast(e.error || 'No se pudo cargar el checklist.', 'danger'); }
 }
 
 async function closeMediation(id){
@@ -1658,10 +1722,10 @@ async function closeMediation(id){
         try{
           await api(`/api/mediations/${id}/close`, { method:'POST', body: JSON.stringify({ result, notes, confirmDespiteWarnings:true }) });
           renderDetail(id);
-        }catch(e2){ alert(e2.error || 'No se pudo cerrar la mediación.'); }
+        }catch(e2){ showToast(e2.error || 'No se pudo cerrar la mediación.', 'danger'); }
       }
     } else {
-      alert(e.error || 'No se pudo cerrar la mediación.');
+      showToast(e.error || 'No se pudo cerrar la mediación.', 'danger');
     }
   }
 }
@@ -1671,7 +1735,7 @@ async function changeStatus(id){
   try{
     await api(`/api/mediations/${id}/status`, { method:'POST', body: JSON.stringify({ status, note }) });
     renderDetail(id);
-  }catch(e){ alert(e.error || 'No se pudo cambiar el estado.'); }
+  }catch(e){ showToast(e.error || 'No se pudo cambiar el estado.', 'danger'); }
 }
 function toggleResponsibleIdField(){
   const type = document.getElementById('next-responsible-type').value;
@@ -1689,16 +1753,16 @@ async function saveNextAction(id){
       nextActionResponsibleId: (responsibleType === 'party' || responsibleType === 'lawyer') ? responsibleIdField.value : null,
     })});
     renderDetail(id);
-  }catch(e){ alert(e.error || 'No se pudo guardar.'); }
+  }catch(e){ showToast(e.error || 'No se pudo guardar.', 'danger'); }
 }
 async function assignMediationAccess(mediationId){
   const userId = document.getElementById('assign-user').value;
   const role = document.getElementById('assign-role').value;
-  if(!userId){ alert('No hay nadie más del estudio para asignar.'); return; }
+  if(!userId){ showToast('No hay nadie más del estudio para asignar.', 'danger'); return; }
   try{
     await api(`/api/mediations/${mediationId}/access`, { method:'POST', body: JSON.stringify({ userId, role }) });
     renderDetail(mediationId);
-  }catch(e){ alert(e.error || 'No se pudo asignar.'); }
+  }catch(e){ showToast(e.error || 'No se pudo asignar.', 'danger'); }
 }
 
 async function revokeMediationAccess(mediationId, accessId){
@@ -1706,7 +1770,7 @@ async function revokeMediationAccess(mediationId, accessId){
   try{
     await api(`/api/mediations/${mediationId}/access/${accessId}`, { method:'DELETE' });
     renderDetail(mediationId);
-  }catch(e){ alert(e.error || 'No se pudo quitar el acceso.'); }
+  }catch(e){ showToast(e.error || 'No se pudo quitar el acceso.', 'danger'); }
 }
 
 async function saveGeneralData(id){
@@ -1716,7 +1780,7 @@ async function saveGeneralData(id){
       description: document.getElementById('edit-description').value.trim(),
     })});
     renderDetail(id);
-  }catch(e){ alert(e.error || 'No se pudo guardar.'); }
+  }catch(e){ showToast(e.error || 'No se pudo guardar.', 'danger'); }
 }
 
 function toggleForm(id){
@@ -1759,7 +1823,7 @@ async function sendPartyMessage(mediationId, partyId){
   try{
     await api(`/api/mediations/${mediationId}/parties/${partyId}/messages`, { method:'POST', body: JSON.stringify({ text }) });
     await loadPartyChat(mediationId, partyId);
-  }catch(e){ alert(e.error || 'No se pudo enviar el mensaje.'); }
+  }catch(e){ showToast(e.error || 'No se pudo enviar el mensaje.', 'danger'); }
 }
 
 // ================= COMUNICACIONES (Bloque 19) =================
@@ -1776,13 +1840,16 @@ const CONVERSATION_TYPE_LABELS = { parte: 'Parte', abogado: 'Abogado', interno: 
 function renderCommunicationsList(mediationId, conversations){
   if(!conversations || !conversations.length) return `<p class="empty-hint">Todavía no hay conversaciones — invitá a una parte o a un abogado al portal para empezar una.</p>`;
   return conversations.map(c => `
-    <div class="status-history-item" style="cursor:pointer;" onclick="openConversation('${mediationId}','${c.type}',${c.participantId ? `'${c.participantId}'` : 'null'},${c.code ? `'${c.code}'` : 'null'})">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <div><strong>${escapeHtml(c.participantName)}</strong> <span class="pill calm" style="margin-left:2px;">${CONVERSATION_TYPE_LABELS[c.type] || c.type}</span></div>
-        ${c.unreadCount ? `<span class="pill warn">${c.unreadCount} nuevo${c.unreadCount===1?'':'s'}</span>` : ''}
-      </div>
-      <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">
-        ${c.lastMessage ? escapeHtml(c.lastMessage.text) + ` <span style="color:var(--text-faint);">· ${fmtDateTime(c.lastMessage.createdAt)}</span>` : '<span class="empty-hint">Sin mensajes todavía.</span>'}
+    <div class="status-history-item" style="cursor:pointer; display:flex; gap:10px; align-items:flex-start;" onclick="openConversation('${mediationId}','${c.type}',${c.participantId ? `'${c.participantId}'` : 'null'},${c.code ? `'${c.code}'` : 'null'})">
+      <div style="width:34px; height:34px; border-radius:50%; background:var(--color-brand-soft); color:var(--color-brand-dark); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:600; flex-shrink:0;">${escapeHtml((c.participantName || '?').charAt(0).toUpperCase())}</div>
+      <div style="flex:1; min-width:0;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
+          <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><strong>${escapeHtml(c.participantName)}</strong> <span class="pill calm" style="margin-left:2px;">${CONVERSATION_TYPE_LABELS[c.type] || c.type}</span></div>
+          ${c.unreadCount ? `<span class="pill warn" style="flex-shrink:0;">${c.unreadCount} nuevo${c.unreadCount===1?'':'s'}</span>` : ''}
+        </div>
+        <div style="font-size:12px; color:var(--text-dim); margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+          ${c.lastMessage ? escapeHtml(c.lastMessage.text) + ` <span style="color:var(--text-faint);">· ${fmtDateTime(c.lastMessage.createdAt)}</span>` : '<span class="empty-hint">Sin mensajes todavía.</span>'}
+        </div>
       </div>
     </div>
   `).join('');
@@ -1846,13 +1913,23 @@ async function loadConversation(){
 
 function renderConversationMessage(m){
   const isSystem = !m.sender;
+  const isMine = !isSystem && m.sender.id === me.id;
+  const isInternal = currentConversation.type === 'interno';
   const who = isSystem ? 'Sistema' : escapeHtml(m.sender.name);
   const canAct = !isSystem && (currentConversation.type === 'parte' || currentConversation.type === 'abogado');
+  // Bloque 20 §21 — mensaje propio: fondo suave de marca; recibido: blanco;
+  // interno: gris neutro discreto (que se note que no es cara a la parte).
+  // Nunca alineado tipo WhatsApp — es una lista, no burbujas flotantes.
+  const bubbleStyle = isInternal
+    ? 'background:var(--color-surface-2); border:1px solid var(--color-border-light);'
+    : isMine
+      ? 'background:var(--color-brand-soft); border:1px solid transparent;'
+      : 'background:var(--color-surface); border:1px solid var(--color-border-light);';
   return `
-    <div class="status-history-item" id="msg-${m.id}">
+    <div id="msg-${m.id}" style="border-radius:var(--radius-md); padding:8px 10px; margin-bottom:6px; ${bubbleStyle}">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px;">
         <div style="flex:1;">
-          <strong>${who}</strong> ${escapeHtml(m.text)}
+          <strong style="font-size:12.5px;">${who}</strong> <span style="font-size:13px;">${escapeHtml(m.text)}</span>
           ${m.document ? `
             <div style="margin-top:4px;">
               <a href="/api/mediations/${currentConversation.mediationId}/documents/${m.document.id}/download" class="pill calm" style="text-decoration:none;">📎 ${escapeHtml(m.document.originalFilename)}${m.document.version > 1 ? ` (v${m.document.version})` : ''}</a>
@@ -1894,7 +1971,7 @@ async function sendConversationMessage(){
     // recargar todo el expediente.
     const list = await api(`/api/mediations/${currentConversation.mediationId}/communications`);
     document.getElementById('communications-list').innerHTML = renderCommunicationsList(currentConversation.mediationId, list);
-  }catch(e){ alert(e.error || 'No se pudo enviar el mensaje.'); }
+  }catch(e){ showToast(e.error || 'No se pudo enviar el mensaje.', 'danger'); }
 }
 
 // "Convertir en tarea" — abre el formulario de Tareas YA existente,
@@ -1943,30 +2020,30 @@ async function submitRescheduleFromMessage(messageId){
   else body.lawyerId = currentConversation.participantId;
   try{
     await api(`/api/mediations/${currentConversation.mediationId}/hearings/${hearingId}/reschedule-requests`, { method:'POST', body: JSON.stringify(body) });
-    alert('Pedido de cambio registrado — lo vas a encontrar en "Solicitudes de cambio" desde Audiencias.');
+    showToast('Pedido de cambio registrado — lo vas a encontrar en "Solicitudes de cambio" desde Audiencias.', 'success');
     document.getElementById(`msg-reschedule-${messageId}`).style.display = 'none';
-  }catch(e){ alert(e.error || 'No se pudo registrar el pedido.'); }
+  }catch(e){ showToast(e.error || 'No se pudo registrar el pedido.', 'danger'); }
 }
 
 async function toggleAllowUpload(mediationId, partyId, allow){
   try{
     await api(`/api/mediations/${mediationId}/parties/${partyId}`, { method:'PATCH', body: JSON.stringify({ allowDocumentUpload: allow }) });
-  }catch(e){ alert(e.error || 'No se pudo actualizar el permiso.'); renderDetail(mediationId); }
+  }catch(e){ showToast(e.error || 'No se pudo actualizar el permiso.', 'danger'); renderDetail(mediationId); }
 }
 
 async function inviteParty(mediationId, partyId){
   try{
     const result = await api(`/api/mediations/${mediationId}/parties/${partyId}/invite`, { method:'POST' });
     const fullUrl = location.origin + result.portalUrl;
-    prompt('Copiá este link y compartíselo a la parte (WhatsApp, mail, lo que uses):', fullUrl);
+    copyLinkToClipboard(fullUrl, 'Link del portal copiado — compartíselo a la parte.');
     renderDetail(mediationId);
-  }catch(e){ alert(e.error || 'No se pudo generar la invitación.'); }
+  }catch(e){ showToast(e.error || 'No se pudo generar la invitación.', 'danger'); }
 }
 
 async function addParty(mediationId){
   const firstName = document.getElementById('party-first-name').value.trim();
   const lastName = document.getElementById('party-last-name').value.trim();
-  if(!firstName){ alert('Falta el nombre de la parte.'); return; }
+  if(!firstName){ showToast('Falta el nombre de la parte.', 'danger'); return; }
   try{
     await api(`/api/mediations/${mediationId}/parties`, { method:'POST', body: JSON.stringify({
       role: document.getElementById('party-role').value,
@@ -1976,21 +2053,21 @@ async function addParty(mediationId){
       phone: document.getElementById('party-phone').value.trim() || null,
     })});
     renderDetail(mediationId);
-  }catch(e){ alert(e.error || 'No se pudo guardar la parte.'); }
+  }catch(e){ showToast(e.error || 'No se pudo guardar la parte.', 'danger'); }
 }
 
 async function inviteLawyer(mediationId, lawyerId){
   try{
     const result = await api(`/api/mediations/${mediationId}/lawyers/${lawyerId}/invite`, { method:'POST' });
     const fullUrl = location.origin + result.portalUrl;
-    prompt('Copiá este link y compartíselo al abogado (WhatsApp, mail, lo que uses):', fullUrl);
+    copyLinkToClipboard(fullUrl, 'Link del portal copiado — compartíselo al abogado.');
     renderDetail(mediationId);
-  }catch(e){ alert(e.error || 'No se pudo generar la invitación.'); }
+  }catch(e){ showToast(e.error || 'No se pudo generar la invitación.', 'danger'); }
 }
 
 async function addLawyer(mediationId){
   const name = document.getElementById('lawyer-name').value.trim();
-  if(!name){ alert('Falta el nombre del abogado.'); return; }
+  if(!name){ showToast('Falta el nombre del abogado.', 'danger'); return; }
   try{
     await api(`/api/mediations/${mediationId}/lawyers`, { method:'POST', body: JSON.stringify({
       name,
@@ -1999,12 +2076,12 @@ async function addLawyer(mediationId){
       email: document.getElementById('lawyer-email').value.trim() || null,
     })});
     renderDetail(mediationId);
-  }catch(e){ alert(e.error || 'No se pudo guardar el abogado.'); }
+  }catch(e){ showToast(e.error || 'No se pudo guardar el abogado.', 'danger'); }
 }
 
 async function addHearing(mediationId){
   const date = document.getElementById('hearing-date').value;
-  if(!date){ alert('Falta la fecha de la audiencia.'); return; }
+  if(!date){ showToast('Falta la fecha de la audiencia.', 'danger'); return; }
   try{
     await api(`/api/mediations/${mediationId}/hearings`, { method:'POST', body: JSON.stringify({
       date,
@@ -2013,7 +2090,7 @@ async function addHearing(mediationId){
       location: document.getElementById('hearing-location').value.trim() || null,
     })});
     renderDetail(mediationId);
-  }catch(e){ alert(e.error || 'No se pudo agendar la audiencia.'); }
+  }catch(e){ showToast(e.error || 'No se pudo agendar la audiencia.', 'danger'); }
 }
 
 // Bloque 17 §4 — la audiencia necesita UNA acción principal que cambie
@@ -2148,7 +2225,7 @@ async function confirmProposal(mediationId, hearingId){
     const notifText = describeNotifications(result.notifications);
     if(notifText) alert(`Audiencia confirmada.\n\n${notifText}`);
     renderDetail(mediationId);
-  }catch(e){ alert(e.error || 'No se pudo confirmar la propuesta.'); }
+  }catch(e){ showToast(e.error || 'No se pudo confirmar la propuesta.', 'danger'); }
 }
 
 async function toggleRescheduleRequests(mediationId, hearingId){
@@ -2191,14 +2268,14 @@ async function resolveReschedule(mediationId, hearingId, requestId, action){
   if(action === 'proponer'){
     body.newDate = document.getElementById(`propose-date-${requestId}`).value;
     body.newStartTime = document.getElementById(`propose-time-${requestId}`).value || null;
-    if(!body.newDate){ alert('Falta la fecha para proponer.'); return; }
+    if(!body.newDate){ showToast('Falta la fecha para proponer.', 'danger'); return; }
   }
   try{
     const result = await api(`/api/mediations/${mediationId}/hearings/${hearingId}/reschedule-requests/${requestId}/resolve`, { method:'POST', body: JSON.stringify(body) });
     const notifText = describeNotifications(result.notifications);
     if(notifText) alert(`Solicitud resuelta.\n\n${notifText}`);
     renderDetail(mediationId);
-  }catch(e){ alert(e.error || 'No se pudo resolver la solicitud.'); }
+  }catch(e){ showToast(e.error || 'No se pudo resolver la solicitud.', 'danger'); }
 }
 
 async function changeHearingStatus(mediationId, hearingId, status){
@@ -2220,7 +2297,7 @@ async function changeHearingStatus(mediationId, hearingId, status){
         if(confirm(result.suggestion.message)) toggleForm('commitment-form');
       }, 300);
     }
-  }catch(e){ alert(e.error || 'No se pudo actualizar el estado de la audiencia.'); }
+  }catch(e){ showToast(e.error || 'No se pudo actualizar el estado de la audiencia.', 'danger'); }
 }
 
 async function recordConfirmation(mediationId, hearingId, partyId, response){
@@ -2228,7 +2305,7 @@ async function recordConfirmation(mediationId, hearingId, partyId, response){
   try{
     await api(`/api/mediations/${mediationId}/hearings/${hearingId}/confirmations/${partyId}`, { method:'POST', body: JSON.stringify({ response }) });
     renderDetail(mediationId);
-  }catch(e){ alert(e.error || 'No se pudo registrar la respuesta.'); }
+  }catch(e){ showToast(e.error || 'No se pudo registrar la respuesta.', 'danger'); }
 }
 
 function addProposeSlotRow(){
@@ -2256,7 +2333,7 @@ async function submitProposal(mediationId){
   for(let i=0; i<dates.length; i++){
     if(dates[i].value) slots.push({ date: dates[i].value, startTime: times[i].value || null, durationMinutes: 60 });
   }
-  if(!slots.length){ alert('Cargá al menos una fecha.'); return; }
+  if(!slots.length){ showToast('Cargá al menos una fecha.', 'danger'); return; }
   const targetSelect = document.getElementById('propose-target');
   const targetPartyId = targetSelect.value || null;
   const targetLabel = targetPartyId ? targetSelect.options[targetSelect.selectedIndex].text : 'todas las partes';
@@ -2266,7 +2343,7 @@ async function submitProposal(mediationId){
     const notifText = describeNotifications(result.notifications);
     if(notifText) alert(`Propuesta enviada.\n\n${notifText}`);
     renderDetail(mediationId);
-  }catch(e){ alert(e.error || 'No se pudo proponer.'); }
+  }catch(e){ showToast(e.error || 'No se pudo proponer.', 'danger'); }
 }
 
 function toggleVersionUpload(docId){
@@ -2276,7 +2353,7 @@ function toggleVersionUpload(docId){
 
 async function uploadNewVersion(mediationId, docId){
   const file = document.getElementById(`version-file-${docId}`).files[0];
-  if(!file){ alert('Elegí un archivo primero.'); return; }
+  if(!file){ showToast('Elegí un archivo primero.', 'danger'); return; }
   const formData = new FormData();
   formData.append('file', file);
   try{
@@ -2284,7 +2361,7 @@ async function uploadNewVersion(mediationId, docId){
     const data = await res.json();
     if(!res.ok) throw data;
     renderDetail(mediationId);
-  }catch(e){ alert(e.error || 'No se pudo subir la nueva versión.'); }
+  }catch(e){ showToast(e.error || 'No se pudo subir la nueva versión.', 'danger'); }
 }
 
 async function toggleVersionHistory(mediationId, docId){
@@ -2307,13 +2384,13 @@ async function changeDocumentStatus(mediationId, docId, status){
   try{
     await api(`/api/mediations/${mediationId}/documents/${docId}`, { method:'PATCH', body: JSON.stringify({ status }) });
     renderDetail(mediationId);
-  }catch(e){ alert(e.error || 'No se pudo actualizar el documento.'); }
+  }catch(e){ showToast(e.error || 'No se pudo actualizar el documento.', 'danger'); }
 }
 
 async function uploadDocument(mediationId){
   const fileInput = document.getElementById('document-file');
   const file = fileInput.files[0];
-  if(!file){ alert('Elegí un archivo primero.'); return; }
+  if(!file){ showToast('Elegí un archivo primero.', 'danger'); return; }
 
   const btn = document.getElementById('upload-btn');
   btn.disabled = true;
@@ -2333,7 +2410,7 @@ async function uploadDocument(mediationId){
     if(!res.ok) throw data;
     renderDetail(mediationId);
   }catch(e){
-    alert(e.error || 'No se pudo subir el archivo.');
+    showToast(e.error || 'No se pudo subir el archivo.', 'danger');
     btn.disabled = false;
     btn.textContent = 'Subir';
   }
@@ -2349,7 +2426,7 @@ let pendingSourceMessageId = null;
 
 async function addTask(mediationId){
   const title = document.getElementById('task-title').value.trim();
-  if(!title){ alert('Falta el título de la tarea.'); return; }
+  if(!title){ showToast('Falta el título de la tarea.', 'danger'); return; }
   try{
     await api(`/api/mediations/${mediationId}/tasks`, { method:'POST', body: JSON.stringify({
       title,
@@ -2359,21 +2436,21 @@ async function addTask(mediationId){
     })});
     pendingSourceMessageId = null;
     renderDetail(mediationId);
-  }catch(e){ alert(e.error || 'No se pudo guardar la tarea.'); }
+  }catch(e){ showToast(e.error || 'No se pudo guardar la tarea.', 'danger'); }
 }
 
 async function changeTaskStatus(mediationId, taskId, status){
   try{
     await api(`/api/mediations/${mediationId}/tasks/${taskId}`, { method:'PATCH', body: JSON.stringify({ status }) });
     renderDetail(mediationId);
-  }catch(e){ alert(e.error || 'No se pudo actualizar la tarea.'); }
+  }catch(e){ showToast(e.error || 'No se pudo actualizar la tarea.', 'danger'); }
 }
 
 async function addCommitment(mediationId){
   const description = document.getElementById('commitment-description').value.trim();
-  if(!description){ alert('Falta la descripción del compromiso.'); return; }
+  if(!description){ showToast('Falta la descripción del compromiso.', 'danger'); return; }
   const partySelect = document.getElementById('commitment-party');
-  if(!partySelect.value){ alert('Cargá al menos una parte antes de crear un compromiso.'); return; }
+  if(!partySelect.value){ showToast('Cargá al menos una parte antes de crear un compromiso.', 'danger'); return; }
   try{
     await api(`/api/mediations/${mediationId}/commitments`, { method:'POST', body: JSON.stringify({
       partyId: partySelect.value, description,
@@ -2382,12 +2459,12 @@ async function addCommitment(mediationId){
     })});
     pendingSourceMessageId = null;
     renderDetail(mediationId);
-  }catch(e){ alert(e.error || 'No se pudo guardar el compromiso.'); }
+  }catch(e){ showToast(e.error || 'No se pudo guardar el compromiso.', 'danger'); }
 }
 
 async function changeCommitmentStatus(mediationId, commitmentId, status){
   try{
     await api(`/api/mediations/${mediationId}/commitments/${commitmentId}`, { method:'PATCH', body: JSON.stringify({ status }) });
     renderDetail(mediationId);
-  }catch(e){ alert(e.error || 'No se pudo actualizar el compromiso.'); }
+  }catch(e){ showToast(e.error || 'No se pudo actualizar el compromiso.', 'danger'); }
 }

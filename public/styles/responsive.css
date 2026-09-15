@@ -1,0 +1,45 @@
+/* public/styles/responsive.css — Bloque 20: breakpoints.
+   mobile <=767px · tablet 768-1023px · desktop >=1024px */
+
+/* ---- tablet: sidebar más angosta, contenido con menos padding ---- */
+@media (max-width: 1023px){
+  .mediador-app .sidebar{ width: 220px; }
+  .mediador-app .main{ margin-left: 220px; }
+  .mediador-app .page-content{ padding: var(--space-6) var(--space-5) var(--space-8); }
+  .mediador-app .login-panel{ width: 380px; }
+}
+
+/* ---- mobile: sidebar se convierte en drawer, topbar gana botón de menú ---- */
+@media (max-width: 767px){
+  .mediador-app .sidebar{
+    transform: translateX(-100%); width: min(280px, 84vw); box-shadow: var(--shadow-md);
+  }
+  .mediador-app .sidebar.open{ transform: translateX(0); }
+  .mediador-app .main{ margin-left: 0; }
+  .mediador-app .topbar{ padding: 0 var(--space-4); }
+  .mediador-app .topbar-menu-btn{ display: inline-flex; }
+  .mediador-app .topbar-logo-mobile{ display: inline-flex; margin-left: auto; }
+  .mediador-app .page-content{ padding: var(--space-4) var(--space-4) calc(var(--space-9) + env(safe-area-inset-bottom, 0px)); }
+
+  .mediador-app .card{ padding: var(--space-4); }
+  .mediador-app h1{ font-size: var(--font-size-xl); }
+  .mediador-app h2{ font-size: var(--font-size-lg); }
+
+  .mediador-app .feature-grid{ grid-template-columns: 1fr; }
+  .mediador-app .steps-row{ flex-direction: column; }
+
+  .mediador-app .login-split{ flex-direction: column; }
+  .mediador-app .login-branding{ padding: var(--space-7) var(--space-5); min-height: 260px; }
+  .mediador-app .login-branding h1{ font-size: var(--font-size-xl); }
+  .mediador-app .login-panel{ width: 100%; padding: var(--space-6) var(--space-5); }
+
+  .mediador-app .modal{ max-width: calc(100vw - 32px); }
+  .mediador-app .modal-body, .mediador-app .modal-header, .mediador-app .modal-footer{ padding-left: var(--space-4); padding-right: var(--space-4); }
+
+  /* comunicaciones: lista + chat pasan a ancho completo, apilados */
+  .mediador-app .comms-layout{ flex-direction: column; }
+}
+
+@media (min-width: 768px) and (max-width: 1023px){
+  .mediador-app .feature-grid{ grid-template-columns: repeat(2, 1fr); }
+}

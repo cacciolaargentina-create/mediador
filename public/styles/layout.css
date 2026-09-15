@@ -1,0 +1,103 @@
+/* public/styles/layout.css — Bloque 20: app shell (sidebar/topbar), logo,
+   landing/login. Todo bajo .mediador-app. */
+
+/* ================= LOGO ================= */
+.mediador-logo{ display: inline-flex; align-items: center; gap: var(--space-2); text-decoration: none; color: inherit; }
+.mediador-logo-mark{ width: 30px; height: 30px; flex-shrink: 0; display: block; }
+.mediador-logo-text{ font-size: var(--font-size-lg); font-weight: var(--font-weight-bold); color: var(--color-text-on-dark); letter-spacing: -.01em; }
+.mediador-logo-text em{ font-style: normal; color: var(--color-brand); }
+/* variante para fondos claros (topbar del portal, login) */
+.mediador-logo.on-light .mediador-logo-text{ color: var(--color-text); }
+
+/* ================= APP SHELL ================= */
+.mediador-app .shell{ display: flex; min-height: 100vh; }
+
+.mediador-app .sidebar{
+  width: 252px; flex-shrink: 0; background: var(--color-sidebar);
+  display: flex; flex-direction: column; padding: var(--space-5) var(--space-3);
+  position: fixed; top: 0; bottom: 0; left: 0; z-index: 40;
+  transition: transform var(--transition-normal);
+}
+.mediador-app .sidebar-logo{ padding: var(--space-2) var(--space-2) var(--space-6); }
+.mediador-app .sidebar-nav{ display: flex; flex-direction: column; gap: 2px; flex: 1; overflow-y: auto; }
+.mediador-app .sidebar-item{
+  display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 var(--space-3);
+  border-radius: var(--radius-md); color: var(--color-text-on-dark-muted); text-decoration: none;
+  font-size: var(--font-size-md); font-weight: var(--font-weight-medium); cursor: pointer; border: none; background: none;
+  width: 100%; text-align: left; font-family: var(--font-family);
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+.mediador-app .sidebar-item svg{ width: 18px; height: 18px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.mediador-app .sidebar-item:hover{ background: var(--color-sidebar-hover); color: var(--color-text-on-dark); }
+.mediador-app .sidebar-item.active{ background: var(--color-sidebar-active); color: var(--color-text-on-dark); }
+.mediador-app .sidebar-item.active svg{ color: var(--color-brand); }
+
+.mediador-app .sidebar-footer{ border-top: 1px solid rgba(255,255,255,.08); padding-top: var(--space-3); margin-top: var(--space-3); }
+
+.mediador-app .main{ flex: 1; margin-left: 252px; display: flex; flex-direction: column; min-width: 0; background: var(--color-bg); }
+
+.mediador-app .topbar{
+  height: 64px; flex-shrink: 0; background: var(--color-surface); border-bottom: 1px solid var(--color-border-light);
+  display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-6);
+  position: sticky; top: 0; z-index: 20;
+}
+.mediador-app .topbar-menu-btn{ display: none; background: none; border: none; color: var(--color-text); padding: 6px; cursor: pointer; }
+.mediador-app .topbar-menu-btn svg{ width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.mediador-app .topbar-logo-mobile{ display: none; }
+
+.mediador-app .page-content{ max-width: 960px; width: 100%; margin: 0 auto; padding: var(--space-7) var(--space-6) var(--space-9); }
+
+.mediador-app .sidebar-backdrop{ position: fixed; inset: 0; background: rgba(15,21,23,.5); z-index: 39; display: none; }
+.mediador-app .sidebar-backdrop.show{ display: block; }
+
+/* ================= LANDING / LOGIN ================= */
+#login-gate.mediador-app{ min-height: 100vh; }
+.mediador-app .login-split{ display: flex; min-height: 100vh; }
+.mediador-app .login-branding{
+  flex: 1; background: var(--color-sidebar); color: var(--color-text-on-dark);
+  display: flex; flex-direction: column; justify-content: center; padding: var(--space-9);
+  position: relative; overflow: hidden;
+}
+.mediador-app .login-branding .bridge-graphic{ position: absolute; inset: 0; opacity: .5; pointer-events: none; }
+.mediador-app .login-branding-content{ position: relative; max-width: 420px; }
+.mediador-app .login-branding .mediador-logo{ margin-bottom: var(--space-7); }
+.mediador-app .login-branding h1{ color: var(--color-text-on-dark); font-size: 28px; line-height: 1.3; margin-bottom: var(--space-5); }
+.mediador-app .login-branding .tagline{ color: var(--color-text-on-dark-muted); font-size: var(--font-size-body); line-height: 1.7; }
+.mediador-app .login-branding .tagline strong{ color: var(--color-text-on-dark); font-weight: var(--font-weight-semibold); display: block; }
+
+.mediador-app .login-panel{ width: 460px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; padding: var(--space-7); background: var(--color-surface); }
+.mediador-app .login-panel-inner{ width: 100%; max-width: 320px; text-align: center; }
+.mediador-app .login-panel .eyebrow{ text-align: center; }
+.mediador-app .login-panel h2{ font-size: var(--font-size-xl); margin-bottom: var(--space-2); }
+.mediador-app .login-panel .sub{ color: var(--color-text-secondary); font-size: var(--font-size-md); margin-bottom: var(--space-6); }
+
+.mediador-app .google-btn{
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  width: 100%; background: var(--color-surface); color: var(--color-text);
+  border: 1px solid var(--color-border); border-radius: var(--radius-md); height: 44px;
+  font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); font-family: var(--font-family); cursor: pointer;
+}
+.mediador-app .google-btn:hover{ background: var(--color-surface-2); }
+.mediador-app .cta-note{ color: var(--color-text-muted); font-size: var(--font-size-xs); margin-top: var(--space-3); }
+
+.mediador-app .trust-row{ display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); margin: var(--space-6) 0 6px; }
+.mediador-app .trust-chip{ display: inline-flex; align-items: center; gap: 6px; font-size: var(--font-size-xs); color: var(--color-text-secondary); border: 1px solid var(--color-border); border-radius: var(--radius-pill); padding: 6px 12px; }
+.mediador-app .trust-chip svg{ width: 14px; height: 14px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.mediador-app .landing-section{ max-width: 960px; margin: 0 auto; padding: var(--space-8) var(--space-6); }
+.mediador-app .landing-section h2{ font-size: var(--font-size-xl); text-align: center; margin-bottom: 6px; }
+.mediador-app .landing-section .section-sub{ color: var(--color-text-secondary); font-size: var(--font-size-md); text-align: center; max-width: 520px; margin: 0 auto var(--space-7); }
+.mediador-app .feature-grid{ display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-4); }
+.mediador-app .feature-card{ background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: var(--space-5); }
+.mediador-app .feature-card .fc-ic{ width: 38px; height: 38px; border-radius: var(--radius-md); background: var(--color-brand-soft); color: var(--color-brand-dark); display: flex; align-items: center; justify-content: center; margin-bottom: var(--space-3); }
+.mediador-app .feature-card .fc-ic svg{ width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.mediador-app .feature-card h3{ font-size: var(--font-size-md); margin-bottom: 6px; }
+.mediador-app .feature-card p{ font-size: var(--font-size-sm); color: var(--color-text-secondary); line-height: 1.5; margin: 0; }
+.mediador-app .steps-row{ display: flex; gap: var(--space-5); }
+.mediador-app .step{ flex: 1; }
+.mediador-app .step .step-num{ font-size: var(--font-size-md); font-weight: var(--font-weight-bold); color: var(--color-brand-dark); width: 28px; height: 28px; border: 1px solid var(--color-brand); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: var(--space-3); }
+.mediador-app .step h3{ font-size: var(--font-size-md); margin-bottom: 5px; }
+.mediador-app .step p{ font-size: var(--font-size-sm); color: var(--color-text-secondary); line-height: 1.5; margin: 0; }
+.mediador-app .landing-cta-block{ text-align: center; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-xl); box-shadow: var(--shadow-sm); padding: var(--space-8) var(--space-6); margin: 0 auto; max-width: 720px; }
+.mediador-app .landing-cta-block h2{ font-size: var(--font-size-lg); margin-bottom: var(--space-2); }
+.mediador-app .landing-footer{ text-align: center; padding: var(--space-7) var(--space-6) var(--space-8); color: var(--color-text-muted); font-size: var(--font-size-xs); }

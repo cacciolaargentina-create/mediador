@@ -1,0 +1,114 @@
+/* public/styles/tokens.css — Bloque 20: design tokens de Mediador.
+   Única fuente de verdad de color/tipografía/espaciado/radios/sombras.
+   Cambiar un valor acá cambia todo el producto (mediador.html, portal.html,
+   lawyer-portal.html) — nunca redefinir estos valores sueltos en otro archivo.
+
+   Solo lo cargan las páginas de Mediador (nunca public/index.html, que es
+   coparentalidad y tiene su propio <style> inline) — por eso :root acá no
+   choca con nada. Los nombres --bg/--surface/--text/--calm/... son alias
+   de compatibilidad: todo mediador.js/portal.js/lawyer-portal.js ya usa
+   var(--text-dim), var(--calm), etc. dentro de miles de style="" inline, y
+   mantener esos nombres apuntando a los tokens nuevos evita tener que
+   tocar cada template para que se vea con la paleta nueva. */
+
+:root{
+  /* ============ BRAND ============ */
+  --color-brand: #22C7B8;
+  --color-brand-dark: #159B91;
+  --color-brand-soft: #E6FAF7;
+
+  /* ============ BACKGROUNDS ============ */
+  --color-bg: #F5F8F8;
+  --color-surface: #FFFFFF;
+  --color-surface-2: #F2F6F6;
+  --color-sidebar: #0F1517;
+  --color-sidebar-hover: #172326;
+  --color-sidebar-active: #193033;
+
+  /* ============ TEXT ============ */
+  --color-text: #172124;
+  --color-text-secondary: #667477;
+  --color-text-muted: #8A989A;
+  --color-text-on-dark: #F4F7F7;
+  --color-text-on-dark-muted: #93A3A2;
+
+  /* ============ BORDER ============ */
+  --color-border: #DDE5E6;
+  --color-border-light: #EAF0F0;
+
+  /* ============ STATUS ============ */
+  --color-success: #20A36A;
+  --color-success-soft: #E8F7F0;
+  --color-warning: #D79B2B;
+  --color-warning-soft: #FFF6DF;
+  --color-danger: #D95353;
+  --color-danger-soft: #FCEBEC;
+  --color-info: #4F8EDB;
+  --color-info-soft: #EDF4FD;
+
+  /* ============ TYPOGRAPHY ============ */
+  --font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-md: 14px;
+  --font-size-body: 15px;
+  --font-size-lg: 18px;
+  --font-size-xl: 24px;
+  --font-size-xxl: 30px;
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* ============ SPACING ============ */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --space-9: 48px;
+
+  /* ============ RADIUS ============ */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+
+  /* ============ SHADOW ============ */
+  --shadow-sm: 0 1px 4px rgba(15,21,23,.04);
+  --shadow-md: 0 4px 16px rgba(15,21,23,.06);
+
+  /* ============ TRANSITIONS ============ */
+  --transition-fast: 150ms ease;
+  --transition-normal: 200ms ease;
+
+  /* ============ ALIAS DE COMPATIBILIDAD ============
+     Nombres históricos (Puente Digital / Mediador pre-Bloque 20) que
+     siguen usados en cientos de style="" inline dentro de mediador.js,
+     portal.js y lawyer-portal.js. Reasignarlos acá — en vez de ir a buscar
+     cada var(--text-dim) del código — es lo que hace que TODA la UI
+     adopte la paleta clara nueva sin reescribir cada pantalla. */
+  --bg: var(--color-bg);
+  --surface: var(--color-surface);
+  --surface-2: var(--color-surface-2);
+  --line: var(--color-border);
+  --text: var(--color-text);
+  --text-dim: var(--color-text-secondary);
+  --text-faint: var(--color-text-muted);
+  --calm: var(--color-brand-dark);
+  --calm-dim: var(--color-brand-soft);
+  --warn: var(--color-warning);
+  --warn-dim: var(--color-warning-soft);
+  --danger: var(--color-danger);
+  --danger-dim: var(--color-danger-soft);
+  --serif: var(--font-family);
+  --sans: var(--font-family);
+  --mono: var(--font-mono);
+}
