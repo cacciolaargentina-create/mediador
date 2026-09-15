@@ -10,6 +10,13 @@ const { sendPushToUser } = require('./push');
 const { accessLinkFor } = require('./messaging');
 const { logMediationEvent } = require('./mediationEvents');
 
+// Bloque 17 §14/15 — "YYYY-MM-DD" a "DD/MM/YYYY" para texto pensado para
+// una persona (recordatorios push/WhatsApp), mismo formato que fmtDate()
+// en el frontend.
+function fmtDateEs(ymd) {
+  return ymd.split('-').reverse().join('/');
+}
+
 const REMINDER_AFTER_MS = 3 * 24 * 60 * 60 * 1000; // 3 días sin que se una la otra parte
 const SUMMARY_PERIOD_MS = 7 * 24 * 60 * 60 * 1000; // resumen semanal
 
@@ -229,13 +236,13 @@ async function checkMediationDeadlines() {
         const alertEvent = logMediationEvent(db, {
           mediationId: hearing.mediationId, type: 'HEARING_CONFIRMATION_MISSING', actorId: null,
           entityType: 'hearing', entityId: hearing.id,
-          title: `Audiencia del ${hearing.date} con confirmaciones pendientes`,
+          title: `Audiencia del ${fmtDateEs(hearing.date)} con confirmaciones pendientes`,
         });
         // Bloque 15 (Parte 3) §10 — tercer ejemplo de tarea operativa
         // determinista: "audiencia próxima sin confirmación → revisar confirmaciones".
         const reviewTask = {
           id: nanoid(), mediationId: hearing.mediationId, assignedTo: mediation.mediatorUserId,
-          title: `Revisar confirmaciones: audiencia del ${hearing.date}`, description: null,
+          title: `Revisar confirmaciones: audiencia del ${fmtDateEs(hearing.date)}`, description: null,
           dueDate: null, priority: 'alta', status: 'pendiente',
           createdBy: null, completedAt: null, createdAt: Date.now(),
         };
@@ -247,7 +254,7 @@ async function checkMediationDeadlines() {
         });
         await notifyMediator(db, mediation, {
           title: 'Confirmación pendiente — Mediador',
-          body: `${mediation.code}: hay partes sin confirmar la audiencia del ${hearing.date}.`,
+          body: `${mediation.code}: hay partes sin confirmar la audiencia del ${fmtDateEs(hearing.date)}.`,
           url: '/mediador.html',
         });
         hearingAlertsLogged++;
@@ -262,11 +269,11 @@ async function checkMediationDeadlines() {
       logMediationEvent(db, {
         mediationId: hearing.mediationId, type: 'HEARING_REMINDER', actorId: null,
         entityType: 'hearing', entityId: hearing.id,
-        title: `Recordatorio: audiencia del ${hearing.date}`,
+        title: `Recordatorio: audiencia del ${fmtDateEs(hearing.date)}`,
       });
       await notifyMediator(db, mediation, {
         title: 'Audiencia próxima — Mediador',
-        body: `${mediation.code}: audiencia el ${hearing.date}${hearing.startTime ? ' a las ' + hearing.startTime : ''}.`,
+        body: `${mediation.code}: audiencia el ${fmtDateEs(hearing.date)}${hearing.startTime ? ' a las ' + hearing.startTime : ''}.`,
         url: '/mediador.html',
       });
       hearingRemindersLogged++;

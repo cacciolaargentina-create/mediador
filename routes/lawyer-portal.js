@@ -21,6 +21,12 @@ const { getDB, commit } = require('../db');
 const { logMediationEvent } = require('../mediationEvents');
 const { notifyMediator } = require('../jobs');
 
+// Bloque 17 §14/15 — "YYYY-MM-DD" a "DD/MM/YYYY" para la notificación que
+// recibe el mediador, mismo formato que fmtDate() en el frontend.
+function fmtDateEs(ymd) {
+  return ymd.split('-').reverse().join('/');
+}
+
 const portalLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false,
   message: { error: 'Demasiados intentos — esperá unos minutos.' },
@@ -247,7 +253,7 @@ module.exports = function () {
     if (hearingForConfirm && hearingForConfirm.status === 'propuesta' && response !== 'pide_cambio') {
       await notifyMediator(db, req.mediation, {
         title: 'Respuesta a propuesta de audiencia',
-        body: `${req.mediation.code}: ${req.lawyer.name} respondió "${response}" a la propuesta del ${hearingForConfirm.date}${hearingForConfirm.startTime ? ' ' + hearingForConfirm.startTime : ''}, en representación de ${partyDisplayName(db, req.party.id)}.`,
+        body: `${req.mediation.code}: ${req.lawyer.name} respondió "${response}" a la propuesta del ${fmtDateEs(hearingForConfirm.date)}${hearingForConfirm.startTime ? ' ' + hearingForConfirm.startTime : ''}, en representación de ${partyDisplayName(db, req.party.id)}.`,
         url: '/mediador.html',
       });
     }
@@ -265,7 +271,7 @@ module.exports = function () {
     },
     (req, res, next) => {
       uploadLawyerDocument.single('file')(req, res, (err) => {
-        if (err) return res.status(400).json({ error: err.message || 'No se pudo subir el archivo' });
+        if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? `El archivo supera el tamaño máximo permitido (${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))}MB)` : (err.message || 'No se pudo subir el archivo') });
         next();
       });
     },

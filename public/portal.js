@@ -69,8 +69,24 @@ async function render(){
               : `
                 <button class="primary" onclick="confirmHearing('${h.id}','confirma')">Confirmo</button>
                 <button class="ghost" onclick="confirmHearing('${h.id}','no_puede')">No puedo</button>
-                <button class="ghost" onclick="confirmHearing('${h.id}','pide_cambio')">Pedir cambio</button>
+                <button class="ghost" onclick="togglePideCambioForm('${h.id}')">Pedir cambio</button>
               `}
+          </div>
+          <div id="pide-cambio-${h.id}" style="display:none; margin-top:10px; background:var(--surface-2); border-radius:8px; padding:12px;">
+            <label>¿Por qué necesitás cambiar la audiencia? (opcional)</label>
+            <textarea id="pc-reason-${h.id}" rows="2" placeholder="Ej: tengo un turno médico ese día"></textarea>
+            <label>¿Qué día te vendría mejor? (opcional)</label>
+            <input id="pc-day-${h.id}" placeholder="Ej: un jueves, después del 20">
+            <label>¿Qué horario preferís? (opcional)</label>
+            <input id="pc-time-${h.id}" placeholder="Ej: por la tarde">
+            <label>¿Tenés una fecha exacta que te venga mejor? (opcional)</label>
+            <input id="pc-date-${h.id}" type="date">
+            <label>Algo más que quieras agregar (opcional)</label>
+            <textarea id="pc-comment-${h.id}" rows="2"></textarea>
+            <div style="display:flex; gap:6px; margin-top:4px;">
+              <button class="primary" style="flex:1;" onclick="submitPideCambio('${h.id}')">Enviar pedido</button>
+              <button class="ghost" onclick="togglePideCambioForm('${h.id}')">Cancelar</button>
+            </div>
           </div>
           ${h.myRescheduleRequestStatus ? `<p class="empty-hint" style="margin-top:6px;">Tu pedido de cambio: ${REQUEST_STATUS_LABELS[h.myRescheduleRequestStatus] || h.myRescheduleRequestStatus}</p>` : ''}
         </div>
@@ -141,19 +157,32 @@ async function sendMessage(){
 }
 
 async function confirmHearing(hearingId, response){
-  const body = { response };
-  if(response === 'pide_cambio'){
-    body.reason = prompt('¿Por qué necesitás cambiar la audiencia? (opcional)') || null;
-    body.comment = prompt('¿Algo más que quieras agregar? (opcional)') || null;
-    body.preferredDayText = prompt('¿Qué día te vendría mejor? (opcional, ej: "un jueves")') || null;
-    body.preferredTimeText = prompt('¿Qué horario preferís? (opcional, ej: "por la tarde")') || null;
-    const proposedDate = prompt('¿Tenés una fecha exacta que te venga mejor? (opcional, formato AAAA-MM-DD)');
-    if(proposedDate) body.proposedDate = proposedDate;
-  }
+  try{
+    await api(`/api/party-portal/${token}/hearings/${hearingId}/confirm`, { method:'POST', body: JSON.stringify({ response }) });
+    render();
+  }catch(e){ alert(e.error || 'No se pudo registrar tu respuesta.'); }
+}
+
+function togglePideCambioForm(hearingId){
+  const box = document.getElementById(`pide-cambio-${hearingId}`);
+  if(!box) return;
+  box.style.display = box.style.display === 'block' ? 'none' : 'block';
+}
+
+async function submitPideCambio(hearingId){
+  const body = {
+    response: 'pide_cambio',
+    reason: document.getElementById(`pc-reason-${hearingId}`).value.trim() || null,
+    preferredDayText: document.getElementById(`pc-day-${hearingId}`).value.trim() || null,
+    preferredTimeText: document.getElementById(`pc-time-${hearingId}`).value.trim() || null,
+    comment: document.getElementById(`pc-comment-${hearingId}`).value.trim() || null,
+  };
+  const proposedDate = document.getElementById(`pc-date-${hearingId}`).value;
+  if(proposedDate) body.proposedDate = proposedDate;
   try{
     await api(`/api/party-portal/${token}/hearings/${hearingId}/confirm`, { method:'POST', body: JSON.stringify(body) });
     render();
-  }catch(e){ alert(e.error || 'No se pudo registrar tu respuesta.'); }
+  }catch(e){ alert(e.error || 'No se pudo registrar tu pedido.'); }
 }
 
 async function uploadDocument(){

@@ -91,7 +91,22 @@
   @media (min-width:700px){
     nav.tabs{ left:50%; right:auto; transform:translateX(-50%); width:min(calc(100% - 48px), 520px); }
   }
-  .card{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin-bottom:14px; }
+  .card{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin-bottom:14px; scroll-margin-top:52px; }
+  /* ---- sub-menú del expediente: salta directo a una sección en vez de
+     scrollear a mano por un expediente largo (Partes/Abogados/Audiencias/
+     Documentos/Tareas/Compromisos/Timeline/Administración). Se pega arriba
+     al scrollear — igual que un índice de documento largo. ---- */
+  .detail-subnav{
+    display:flex; gap:6px; overflow-x:auto; padding:8px 2px 12px; margin-bottom:4px;
+    position:sticky; top:0; z-index:12; background:var(--bg);
+    -ms-overflow-style:none; scrollbar-width:none;
+  }
+  .detail-subnav::-webkit-scrollbar{ display:none; }
+  .detail-subnav a{
+    flex-shrink:0; font-size:11.5px; color:var(--text-dim); text-decoration:none; white-space:nowrap;
+    background:var(--surface); border:1px solid var(--line); border-radius:999px; padding:6px 12px;
+  }
+  .detail-subnav a:hover{ border-color:var(--calm-dim); color:var(--text); }
   .eyebrow{ font-family:var(--mono); font-size:10.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px; }
   h1{ font-family:var(--serif); font-size:22px; margin:0 0 4px; }
   h2{ font-family:var(--serif); font-size:16px; margin:0 0 10px; }
@@ -117,6 +132,30 @@
   .status-history-item{ font-size:12px; color:var(--text-dim); padding:6px 0; border-bottom:1px solid var(--line); }
   .status-history-item:last-child{ border-bottom:none; }
   .back-link{ font-size:12.5px; color:var(--calm); cursor:pointer; margin-bottom:14px; display:inline-block; }
+
+  /* ================= GUÍA DE PRIMER USO =================
+     4 pasos cortos, se muestra una sola vez (localStorage) la primera vez
+     que alguien entra al panel. Nada de recorrido con flechas apuntando a
+     elementos — eso es fragil (se rompe con cualquier cambio de layout) y
+     es más de lo que pide "mini ventanas que expliquen". Es simplemente
+     una tarjeta central, chica, que se puede saltear en cualquier momento. */
+  .onboarding-backdrop{
+    position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:60; display:none;
+    align-items:center; justify-content:center; padding:20px;
+  }
+  .onboarding-backdrop.show{ display:flex; }
+  .onboarding-card{
+    background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:22px;
+    max-width:340px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.4);
+  }
+  .onboarding-card .ob-step{ font-family:var(--mono); font-size:10.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:10px; }
+  .onboarding-card h3{ font-family:var(--serif); font-size:18px; margin:0 0 8px; }
+  .onboarding-card p{ font-size:13px; color:var(--text-dim); line-height:1.5; margin:0 0 18px; }
+  .onboarding-card .ob-dots{ display:flex; gap:5px; justify-content:center; margin-bottom:16px; }
+  .onboarding-card .ob-dot{ width:6px; height:6px; border-radius:50%; background:var(--line); }
+  .onboarding-card .ob-dot.active{ background:var(--calm); }
+  .onboarding-card .ob-actions{ display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .onboarding-card .ob-skip{ font-size:12px; color:var(--text-faint); cursor:pointer; background:none; border:none; padding:6px 2px; }
 
   /* ================= LANDING (usuario sin sesión) =================
      Antes esto era solo un botón centrado en la pantalla — funcionaba
@@ -290,6 +329,10 @@
     <button data-screen="team" onclick="goTo('team')"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17.5" cy="9.5" r="2.3"/><path d="M15.8 14c2.4.4 4.2 2.5 4.2 5"/></svg><span class="tab-label">Equipo</span></button>
     <button data-screen="agenda" onclick="goTo('agenda')"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/></svg><span class="tab-label">Agenda</span></button>
   </nav>
+</div>
+
+<div class="onboarding-backdrop" id="onboarding-backdrop">
+  <div class="onboarding-card" id="onboarding-card"></div>
 </div>
 
 <script src="/mediador.js"></script>

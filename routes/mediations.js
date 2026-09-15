@@ -23,6 +23,14 @@ const archiver = require('archiver');
 const { postMessage } = require('../messaging');
 const { serializeMessage } = require('../serializers');
 
+// Bloque 17 §14/15 — "YYYY-MM-DD" a "DD/MM/YYYY", mismo formato que ya
+// usa fmtDate() en todo el frontend. Sin esto, texto pensado para una
+// persona (timeline, WhatsApp a partes/abogados) mostraba la fecha en
+// formato de base de datos.
+function fmtDateEs(ymd) {
+  return ymd.split('-').reverse().join('/');
+}
+
 // código de canal de 6 caracteres, mismo alfabeto que ya usa
 // routes/channels.js (sin 0/O/1/I para no confundir al leerlo en voz alta)
 const genCode = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 6);
@@ -1108,6 +1116,11 @@ module.exports = function (io, presence) {
   // documentos, tareas, compromisos, solicitudes) — nunca una tabla
   // nueva de checklist. "pendiente porque falta acción" se distingue de
   // "no corresponde" (ej. no hay abogados vinculados, no es un problema).
+  const PREPARATION_ITEM_LABELS_ES = {
+    partesIdentificadas: 'Partes identificadas', datosDeContacto: 'Datos de contacto', abogadosVinculados: 'Abogados vinculados',
+    confirmaciones: 'Confirmaciones', documentosPendientesRevision: 'Documentos sin revisar', tareasPendientes: 'Tareas pendientes',
+    compromisosPendientes: 'Compromisos pendientes', modalidadDatos: 'Datos de modalidad', solicitudesDeCambio: 'Solicitudes de cambio',
+  };
   function buildHearingPreparation(db, mediation, hearing) {
     const parties = db.parties.filter((p) => p.mediationId === mediation.id && p.status === 'activa');
     const lawyers = db.lawyers.filter((l) => l.mediationId === mediation.id);
@@ -1134,14 +1147,19 @@ module.exports = function (io, presence) {
     const pendingKeys = Object.keys(items).filter((k) => items[k].status === 'pendiente');
     const criticalKeys = ['confirmaciones', 'modalidadDatos', 'solicitudesDeCambio'].filter((k) => items[k].status === 'pendiente');
     const daysUntil = (new Date(hearing.date).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+    // Bloque 17 §14/15 — "motivo" es texto para el mediador, no puede
+    // traer las claves internas del objeto (mismas etiquetas que ya usa
+    // el frontend en PREPARATION_ITEM_LABELS, acá server-side porque la
+    // frase se arma acá).
+    const itemLabel = (k) => PREPARATION_ITEM_LABELS_ES[k] || k;
 
     let estado, motivo;
     if (pendingKeys.length === 0) {
       estado = 'preparada'; motivo = 'No existen bloqueos operativos relevantes.';
     } else if (daysUntil <= 2 && criticalKeys.length > 0) {
-      estado = 'critica'; motivo = `La audiencia es en ${Math.max(0, Math.round(daysUntil))} día(s) y hay pendientes importantes: ${criticalKeys.join(', ')}.`;
+      estado = 'critica'; motivo = `La audiencia es en ${Math.max(0, Math.round(daysUntil))} día(s) y hay pendientes importantes: ${criticalKeys.map(itemLabel).join(', ')}.`;
     } else {
-      estado = 'pendiente'; motivo = `Hay elementos que todavía requieren revisión: ${pendingKeys.join(', ')}.`;
+      estado = 'pendiente'; motivo = `Hay elementos que todavía requieren revisión: ${pendingKeys.map(itemLabel).join(', ')}.`;
     }
     return { items, estado, motivo };
   }
@@ -1266,7 +1284,7 @@ module.exports = function (io, presence) {
     logMediationEvent(db, {
       mediationId: req.mediation.id, type: 'HEARING_SCHEDULED', actorId: req.user.id,
       entityType: 'hearing', entityId: hearing.id,
-      title: `Audiencia agendada: ${hearing.date}${hearing.startTime ? ' ' + hearing.startTime : ''}`,
+      title: `Audiencia agendada: ${fmtDateEs(hearing.date)}${hearing.startTime ? ' ' + hearing.startTime : ''}`,
       description: `Se generaron ${confirmations.length} confirmación(es) pendiente(s)`,
     });
 
@@ -1275,7 +1293,9 @@ module.exports = function (io, presence) {
     // hardening (nextActionSetBy) — hasta ahora sin ningún llamador real;
     // esta es la primera automatización que efectivamente lo usa.
     if (req.mediation.nextActionSetBy !== 'manual') {
-      req.mediation.nextActionText = `Preparar audiencia del ${hearing.date}`;
+      // Bloque 17 §14 — texto de negocio, no ISO crudo: mismo formato
+      // DD/MM/YYYY que ya usa fmtDate() en todo el frontend.
+      req.mediation.nextActionText = `Preparar audiencia del ${hearing.date.split('-').reverse().join('/')}`;
       req.mediation.nextActionDueDate = hearing.date;
       req.mediation.nextActionResponsibleType = 'mediador';
       req.mediation.nextActionSetBy = 'auto';
@@ -1371,7 +1391,7 @@ module.exports = function (io, presence) {
     // Bloque 16 §1 — notificación real, UNA por destinatario aunque haya
     // varios horarios candidatos (no generar ruido innecesario). El
     // contenido lista las opciones, no una por mensaje.
-    const optionsText = created.map((h) => `${h.date}${h.startTime ? ' ' + h.startTime : ''}`).join(', ');
+    const optionsText = created.map((h) => `${fmtDateEs(h.date)}${h.startTime ? ' ' + h.startTime : ''}`).join(', ');
     const notifyText = `${req.mediation.code}: te proponemos audiencia (${req.mediation.type || 'mediación'}, ${modality || 'presencial'}). Opciones: ${optionsText}. Ingresá al portal para confirmar cuál te sirve.`;
     const notificationResults = [];
     for (const party of targetParties) {
@@ -1413,21 +1433,21 @@ module.exports = function (io, presence) {
     logMediationEvent(db, {
       mediationId: req.mediation.id, type: 'HEARING_SCHEDULED', actorId: req.user.id,
       entityType: 'hearing', entityId: hearing.id,
-      title: `Propuesta confirmada como audiencia: ${hearing.date}${hearing.startTime ? ' ' + hearing.startTime : ''}`,
+      title: `Propuesta confirmada como audiencia: ${fmtDateEs(hearing.date)}${hearing.startTime ? ' ' + hearing.startTime : ''}`,
       description: cancelledSiblings.length ? `Se descartaron ${cancelledSiblings.length} otra(s) propuesta(s) del mismo grupo` : null,
     });
 
     // Bloque 16 §2 — "indicar claramente que la audiencia quedó
     // confirmada", a todas las partes involucradas y sus abogados.
     const involvedParties = db.parties.filter((p) => confirmations.some((c) => c.partyId === p.id));
-    const confirmNotifyText = `${req.mediation.code}: tu audiencia quedó confirmada para el ${hearing.date}${hearing.startTime ? ' ' + hearing.startTime : ''} (${hearing.modality}). Ingresá al portal para volver a confirmar tu asistencia.`;
+    const confirmNotifyText = `${req.mediation.code}: tu audiencia quedó confirmada para el ${fmtDateEs(hearing.date)}${hearing.startTime ? ' ' + hearing.startTime : ''} (${hearing.modality}). Ingresá al portal para volver a confirmar tu asistencia.`;
     const confirmNotifications = [];
     for (const party of involvedParties) {
       const n = await notifyPartyAboutHearing(db, party, confirmNotifyText);
       confirmNotifications.push({ recipient: 'party', partyId: party.id, status: n.status });
       const partyLawyers = db.lawyers.filter((l) => l.mediationId === req.mediation.id && l.partyId === party.id);
       for (const lawyer of partyLawyers) {
-        const nl = await notifyLawyerAboutHearing(db, lawyer, `${req.mediation.code}: quedó confirmada la audiencia para el ${hearing.date}${hearing.startTime ? ' ' + hearing.startTime : ''}.`);
+        const nl = await notifyLawyerAboutHearing(db, lawyer, `${req.mediation.code}: quedó confirmada la audiencia para el ${fmtDateEs(hearing.date)}${hearing.startTime ? ' ' + hearing.startTime : ''}.`);
         confirmNotifications.push({ recipient: 'lawyer', lawyerId: lawyer.id, status: nl.status });
       }
     }
@@ -1465,7 +1485,7 @@ module.exports = function (io, presence) {
       hearingEvent = logMediationEvent(db, {
         mediationId: req.mediation.id, type: HEARING_STATUS_EVENT_TYPE[status], actorId: req.user.id,
         entityType: 'hearing', entityId: hearing.id,
-        title: `Audiencia ${status}: ${hearing.date}`,
+        title: `Audiencia ${status}: ${fmtDateEs(hearing.date)}`,
         // Bloque 15 — motivo, cuando corresponde (típicamente al cancelar)
         description: note || null,
       });
@@ -1478,7 +1498,7 @@ module.exports = function (io, presence) {
     if (status === 'cancelada') {
       const confirmations = db.hearingConfirmations.filter((c) => c.hearingId === hearing.id);
       const involvedParties = db.parties.filter((p) => confirmations.some((c) => c.partyId === p.id));
-      const cancelText = `${req.mediation.code}: se canceló la audiencia del ${hearing.date}${hearing.startTime ? ' ' + hearing.startTime : ''}${note ? '. Motivo: ' + note : ''}.`;
+      const cancelText = `${req.mediation.code}: se canceló la audiencia del ${fmtDateEs(hearing.date)}${hearing.startTime ? ' ' + hearing.startTime : ''}${note ? '. Motivo: ' + note : ''}.`;
       for (const party of involvedParties) {
         const n = await notifyPartyAboutHearing(db, party, cancelText);
         cancelNotifications.push({ recipient: 'party', partyId: party.id, status: n.status });
@@ -1624,7 +1644,7 @@ module.exports = function (io, presence) {
     const rescheduleEvent = logMediationEvent(db, {
       mediationId: req.mediation.id, type: 'HEARING_RESCHEDULED', actorId: req.user.id,
       entityType: 'hearing', entityId: hearing.id,
-      title: `Audiencia reprogramada: ${fromDate} → ${targetDate}`,
+      title: `Audiencia reprogramada: ${fmtDateEs(fromDate)} → ${fmtDateEs(targetDate)}`,
       description: note || null,
       metadata: { fromDate, fromStartTime, toDate: targetDate, toStartTime: targetStartTime, resolvedRequestId: request.id },
       causedByEventId: null,
@@ -1632,14 +1652,14 @@ module.exports = function (io, presence) {
     // Bloque 16 §3 — a TODAS las partes afectadas y sus abogados, no solo
     // a quien pidió el cambio (antes solo se avisaba al solicitante).
     const involvedPartiesForReschedule = db.parties.filter((p) => resetConfirmations.some((c) => c.partyId === p.id));
-    const rescheduleNotifyText = `${req.mediation.code}: tu audiencia fue reprogramada. Nueva fecha: ${targetDate}${targetStartTime ? ' ' + targetStartTime : ''}. Hace falta que vuelvas a confirmar en el portal.`;
+    const rescheduleNotifyText = `${req.mediation.code}: tu audiencia fue reprogramada. Nueva fecha: ${fmtDateEs(targetDate)}${targetStartTime ? ' ' + targetStartTime : ''}. Hace falta que vuelvas a confirmar en el portal.`;
     const rescheduleNotifications = [];
     for (const party of involvedPartiesForReschedule) {
       const n = await notifyPartyAboutHearing(db, party, rescheduleNotifyText);
       rescheduleNotifications.push({ recipient: 'party', partyId: party.id, status: n.status });
       const partyLawyers = db.lawyers.filter((l) => l.mediationId === req.mediation.id && l.partyId === party.id);
       for (const lawyer of partyLawyers) {
-        const nl = await notifyLawyerAboutHearing(db, lawyer, `${req.mediation.code}: se reprogramó la audiencia de tu representado/a. Nueva fecha: ${targetDate}${targetStartTime ? ' ' + targetStartTime : ''}.`);
+        const nl = await notifyLawyerAboutHearing(db, lawyer, `${req.mediation.code}: se reprogramó la audiencia de tu representado/a. Nueva fecha: ${fmtDateEs(targetDate)}${targetStartTime ? ' ' + targetStartTime : ''}.`);
         rescheduleNotifications.push({ recipient: 'lawyer', lawyerId: lawyer.id, status: nl.status });
       }
     }
@@ -1699,7 +1719,7 @@ module.exports = function (io, presence) {
   router.post('/:id/documents', requireAuth, requireMediationAccess, requireEditAccess,
     (req, res, next) => {
       uploadDocument.single('file')(req, res, (err) => {
-        if (err) return res.status(400).json({ error: err.message || 'No se pudo subir el archivo' });
+        if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? `El archivo supera el tamaño máximo permitido (${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))}MB)` : (err.message || 'No se pudo subir el archivo') });
         next();
       });
     },
@@ -1773,7 +1793,7 @@ module.exports = function (io, presence) {
   router.post('/:id/documents/:docId/versions', requireAuth, requireMediationAccess, requireEditAccess,
     (req, res, next) => {
       uploadDocument.single('file')(req, res, (err) => {
-        if (err) return res.status(400).json({ error: err.message || 'No se pudo subir el archivo' });
+        if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? `El archivo supera el tamaño máximo permitido (${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))}MB)` : (err.message || 'No se pudo subir el archivo') });
         next();
       });
     },

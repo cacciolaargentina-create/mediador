@@ -23,6 +23,13 @@ const { notifyMediator } = require('../jobs');
 const { postMessage } = require('../messaging');
 const { serializeMessage } = require('../serializers');
 
+// Bloque 17 §14/15 — "YYYY-MM-DD" a "DD/MM/YYYY" para texto que lee la
+// parte (portal) o el mediador (notificación), mismo formato que fmtDate()
+// en los frontends.
+function fmtDateEs(ymd) {
+  return ymd.split('-').reverse().join('/');
+}
+
 // mismo throttle liviano que guest.js — el token de 24 caracteres no es
 // adivinable por fuerza bruta, esto es más que nada contra loops del cliente.
 const portalLimiter = rateLimit({
@@ -121,7 +128,7 @@ module.exports = function (io) {
     const commitmentPending = commitments.find((c) => c.status === 'pendiente' || c.status === 'vencido');
     let pendiente = null;
     if (hearingNeedingConfirmation) {
-      pendiente = `Confirmar tu asistencia a la audiencia del ${hearingNeedingConfirmation.date}`;
+      pendiente = `Confirmar tu asistencia a la audiencia del ${fmtDateEs(hearingNeedingConfirmation.date)}`;
     } else if (commitmentPending) {
       pendiente = `${commitmentPending.description}${commitmentPending.dueDate ? ' — vence ' + commitmentPending.dueDate : ''}`;
     }
@@ -227,7 +234,7 @@ module.exports = function (io) {
     if (hearingForConfirm && hearingForConfirm.status === 'propuesta' && response !== 'pide_cambio') {
       await notifyMediator(db, req.mediation, {
         title: 'Respuesta a propuesta de audiencia',
-        body: `${req.mediation.code}: ${req.party.firstName || 'una parte'} respondió "${response}" a la propuesta del ${hearingForConfirm.date}${hearingForConfirm.startTime ? ' ' + hearingForConfirm.startTime : ''}.`,
+        body: `${req.mediation.code}: ${req.party.firstName || 'una parte'} respondió "${response}" a la propuesta del ${fmtDateEs(hearingForConfirm.date)}${hearingForConfirm.startTime ? ' ' + hearingForConfirm.startTime : ''}.`,
         url: '/mediador.html',
       });
     }
@@ -247,7 +254,7 @@ module.exports = function (io) {
     },
     (req, res, next) => {
       uploadPortalDocument.single('file')(req, res, (err) => {
-        if (err) return res.status(400).json({ error: err.message || 'No se pudo subir el archivo' });
+        if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? `El archivo supera el tamaño máximo permitido (${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))}MB)` : (err.message || 'No se pudo subir el archivo') });
         next();
       });
     },

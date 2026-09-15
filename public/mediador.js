@@ -31,10 +31,6 @@ const STATUS_LABELS = {
   en_mediacion:'En mediación', acuerdo:'Acuerdo', acuerdo_parcial:'Acuerdo parcial',
   sin_acuerdo:'Sin acuerdo', incomparecencia:'Incomparecencia', cerrada:'Cerrada',
 };
-const DESGLOSE_LABELS = {
-  audienciasSinConfirmar: 'audiencias sin confirmar', documentosPendientesRevision: 'documento(s) pendiente(s) de revisión',
-  compromisosVencidos: 'compromiso(s) vencido(s)', tareasVencidas: 'tarea(s) vencida(s)', sinProximaAccion: 'mediación(es) sin próxima acción',
-};
 const NEXT_ACTION_RESPONSIBLE_LABELS = { mediador: 'Mediador/a', party: 'Una parte', lawyer: 'Un abogado' };
 
 (async function boot(){
@@ -47,7 +43,66 @@ const NEXT_ACTION_RESPONSIBLE_LABELS = { mediador: 'Mediador/a', party: 'Una par
   document.getElementById('app').style.display = 'block';
   renderAccountButton();
   goTo('dashboard');
+  maybeShowOnboarding();
 })();
+
+// ================= GUÍA DE PRIMER USO =================
+// 4 pasos cortos, una sola vez por navegador (localStorage) — no es un
+// recorrido con flechas apuntando a botones (eso se rompe con cualquier
+// cambio de layout futuro): es una tarjeta chica y salteable en cualquier
+// momento, con lo mínimo para no perderse las primeras veces.
+const ONBOARDING_KEY = 'pd_mediador_onboarding_seen';
+const ONBOARDING_STEPS = [
+  {
+    title: 'Bienvenido/a a Mediador',
+    body: 'Acá gestionás tus mediaciones: expedientes, audiencias, documentos y comunicación con las partes y sus abogados, todo en un solo lugar.',
+  },
+  {
+    title: 'Para empezar',
+    body: '"+ Nueva mediación" crea un caso en segundos. Después, desde el expediente, cargás partes, abogados y programás (o proponés) la primera audiencia.',
+  },
+  {
+    title: 'Qué tengo que hacer',
+    body: 'El Dashboard prioriza lo urgente — vencimientos, audiencias próximas, solicitudes de cambio — para que no tengas que andar buscando qué falta.',
+  },
+  {
+    title: 'Agenda y equipo',
+    body: 'Desde el menú de abajo accedés a tu agenda completa. Si trabajás con otros mediadores, armá un estudio desde "Equipo" para compartir el trabajo.',
+  },
+];
+let onboardingStep = 0;
+
+function maybeShowOnboarding(){
+  let seen;
+  try{ seen = localStorage.getItem(ONBOARDING_KEY); }catch(e){ return; } // modo privado sin storage — no insistir
+  if(seen) return;
+  onboardingStep = 0;
+  renderOnboardingStep();
+  document.getElementById('onboarding-backdrop').classList.add('show');
+}
+
+function renderOnboardingStep(){
+  const step = ONBOARDING_STEPS[onboardingStep];
+  const isLast = onboardingStep === ONBOARDING_STEPS.length - 1;
+  document.getElementById('onboarding-card').innerHTML = `
+    <div class="ob-step">Paso ${onboardingStep + 1} de ${ONBOARDING_STEPS.length}</div>
+    <h3>${escapeHtml(step.title)}</h3>
+    <p>${escapeHtml(step.body)}</p>
+    <div class="ob-dots">${ONBOARDING_STEPS.map((_, i) => `<span class="ob-dot ${i===onboardingStep?'active':''}"></span>`).join('')}</div>
+    <div class="ob-actions">
+      <button class="ob-skip" onclick="closeOnboarding()">Saltear</button>
+      <div style="display:flex; gap:8px;">
+        ${onboardingStep > 0 ? `<button class="ghost" onclick="onboardingStep--; renderOnboardingStep();">Atrás</button>` : ''}
+        <button class="primary" onclick="${isLast ? 'closeOnboarding()' : 'onboardingStep++; renderOnboardingStep();'}">${isLast ? 'Entendido' : 'Siguiente'}</button>
+      </div>
+    </div>
+  `;
+}
+
+function closeOnboarding(){
+  document.getElementById('onboarding-backdrop').classList.remove('show');
+  try{ localStorage.setItem(ONBOARDING_KEY, '1'); }catch(e){ /* sin storage, se volverá a mostrar la próxima vez — no rompe nada */ }
+}
 
 // ================= CUENTA (avatar + menú) =================
 // Antes esto era un <span id="user-name"> suelto en el header, sin forma
@@ -174,12 +229,43 @@ function goTo(screen, id){
 }
 
 // ================= DASHBOARD =================
+// ================= DASHBOARD =================
+// Prioridad única (Bloque 17 §2): "¿qué tengo que hacer ahora?" — una
+// sola lista ordenada por urgencia real, no una por cada fuente de datos
+// como antes (eso hacía que un aviso meramente informativo — "audiencia
+// confirmada recientemente" — compitiera visualmente con algo urgente
+// como una solicitud de cambio sin resolver, y encima se repetía dos
+// veces: acá Y en "Qué pasó"). El orden es fijo, no por fecha:
+//   1 vencimientos críticos  2 audiencias próximas  3 solicitudes de
+//   cambio  4 confirmaciones pendientes  5 tareas vencidas
+//   6 compromisos vencidos  7 el resto de las alertas
+function buildDashboardPriorityItems(d){
+  return [
+    ...d.necesitanAtencion.accionesVencidas.map(m => ({ rank:1, mediationId:m.id, mediationCode:m.code, label: m.object, badge: `<span class="pill danger">próxima acción vencida · ${fmtDate(m.nextActionDueDate)}</span>` })),
+    ...d.proximasAudiencias.slice(0, 3).map(h => ({ rank:2, mediationId:h.mediationId, mediationCode:h.mediationCode, label: `Audiencia ${fmtDate(h.date)}${h.startTime ? ' ' + h.startTime : ''}`, badge: `<span class="pill calm">próxima</span>` })),
+    ...d.alertasAgenda.solicitudesCambioPendientes.map(r => ({ rank:3, mediationId:r.mediationId, mediationCode:r.mediationCode, label: 'Solicitud de cambio sin resolver', badge: `<span class="pill warn">pendiente</span>` })),
+    ...d.necesitanAtencion.audienciasSinConfirmar.map(h => ({ rank:4, mediationId:h.mediationId, mediationCode:h.mediationCode, label: `Audiencia ${fmtDate(h.date)} sin confirmar`, badge: `<span class="pill warn">confirmación pendiente</span>` })),
+    ...d.necesitanAtencion.tareasVencidas.map(t => ({ rank:5, mediationId:t.mediationId, mediationCode:t.mediationCode, label: t.title, badge: `<span class="pill danger">tarea vencida</span>` })),
+    ...d.necesitanAtencion.compromisosVencidos.map(c => ({ rank:6, mediationId:c.mediationId, mediationCode:c.mediationCode, label: `${c.partyName}: ${c.description}`, badge: `<span class="pill danger">compromiso vencido</span>` })),
+    ...d.necesitanAtencion.sinProximaAccion.map(m => ({ rank:7, mediationId:m.id, mediationCode:m.code, label: m.object, badge: `<span class="pill warn">sin próxima acción</span>` })),
+    ...d.necesitanAtencion.documentosPendientesRevision.map(doc => ({ rank:7, mediationId:doc.mediationId, mediationCode:doc.mediationCode, label: doc.originalFilename, badge: `<span class="pill warn">documento sin revisar</span>` })),
+    ...d.alertasAgenda.audienciasSinResultado.map(h => ({ rank:7, mediationId:h.mediationId, mediationCode:h.mediationCode, label: `Audiencia ${fmtDate(h.date)} sin resultado registrado`, badge: `<span class="pill danger">sin registrar</span>` })),
+    ...d.alertasAgenda.audienciasRealizadasSinProximaAccion.map(h => ({ rank:7, mediationId:h.mediationId, mediationCode:h.mediationCode, label: 'Audiencia realizada sin próxima acción cargada', badge: `<span class="pill warn">revisar</span>` })),
+    ...d.alertasAgenda.propuestasPendientes.map(h => ({ rank:7, mediationId:h.mediationId, mediationCode:h.mediationCode, label: `Propuesta del ${fmtDate(h.date)} sin respuesta`, badge: `<span class="pill warn">propuesta</span>` })),
+    ...d.alertasAgenda.audienciasCanceladasRecientemente.map(h => ({ rank:7, mediationId:h.mediationId, mediationCode:h.mediationCode, label: `Audiencia cancelada · ${fmtDate(h.date)}`, badge: `<span class="pill danger">revisar</span>` })),
+    ...d.alertasAgenda.fallosNotificacion.map(f => ({ rank:7, mediationId:f.mediationId, mediationCode:f.mediationCode, label: `Notificación a ${escapeHtml(f.userName || 'alguien')} no llegó`, badge: `<span class="pill danger">revisar</span>` })),
+  ].sort((a, b) => a.rank - b.rank);
+}
+
 async function renderDashboard(){
   const main = document.getElementById('main');
   main.innerHTML = `<p class="empty-hint">Cargando…</p>`;
   let d;
   try{ d = await api('/api/mediations/dashboard'); }
   catch(e){ main.innerHTML = `<p class="empty-hint">No se pudo cargar el dashboard.</p>`; return; }
+
+  const priorityItems = buildDashboardPriorityItems(d);
+  const moreHearings = d.proximasAudiencias.length > 3;
 
   main.innerHTML = `
     <h1>¿Qué tengo que hacer hoy?</h1>
@@ -193,25 +279,9 @@ async function renderDashboard(){
       </div>
     </div>
 
-    ${d.requierenAtencion.totalMediaciones > 0 ? `
-    <div class="card" style="border-color:var(--warn-dim);">
-      <h2 style="color:var(--warn);">${d.requierenAtencion.totalMediaciones} mediación${d.requierenAtencion.totalMediaciones===1?'':'es'} requiere${d.requierenAtencion.totalMediaciones===1?'':'n'} atención</h2>
-      ${Object.entries(d.requierenAtencion.desglose).filter(([,n]) => n>0).map(([k,n]) => `
-        <div style="font-size:12.5px; color:var(--text-dim); padding:3px 0;">- ${n} ${DESGLOSE_LABELS[k] || k}</div>
-      `).join('')}
-    </div>
-    ` : ''}
-
     <div class="card">
-      <h2>Necesitan atención</h2>
-      ${[
-        ...d.necesitanAtencion.accionesVencidas.map(m => ({ mediationId:m.id, mediationCode:m.code, label: m.object, badge: `<span class="pill danger">próxima acción vencida ${fmtDate(m.nextActionDueDate)}</span>` })),
-        ...d.necesitanAtencion.sinProximaAccion.map(m => ({ mediationId:m.id, mediationCode:m.code, label: m.object, badge: `<span class="pill warn">sin próxima acción</span>` })),
-        ...d.necesitanAtencion.tareasVencidas.map(t => ({ mediationId:t.mediationId, mediationCode:t.mediationCode, label: t.title, badge: `<span class="pill danger">tarea vencida</span>` })),
-        ...d.necesitanAtencion.compromisosVencidos.map(c => ({ mediationId:c.mediationId, mediationCode:c.mediationCode, label: `${c.partyName}: ${c.description}`, badge: `<span class="pill danger">compromiso vencido</span>` })),
-        ...d.necesitanAtencion.audienciasSinConfirmar.map(h => ({ mediationId:h.mediationId, mediationCode:h.mediationCode, label: `Audiencia ${fmtDate(h.date)}`, badge: `<span class="pill warn">confirmación pendiente</span>` })),
-        ...d.necesitanAtencion.documentosPendientesRevision.map(doc => ({ mediationId:doc.mediationId, mediationCode:doc.mediationCode, label: doc.originalFilename, badge: `<span class="pill warn">documento sin revisar</span>` })),
-      ].map(item => `
+      <h2>Qué tengo que hacer${priorityItems.length ? ` <span class="pill warn" style="font-weight:400;">${priorityItems.length}</span>` : ''}</h2>
+      ${priorityItems.length ? priorityItems.map(item => `
         <div class="alert-row" onclick="goTo('detail','${item.mediationId}')">
           <div>
             <div style="font-weight:600; font-size:13.5px;">${escapeHtml(item.label)}</div>
@@ -219,62 +289,9 @@ async function renderDashboard(){
           </div>
           ${item.badge}
         </div>
-      `).join('') || `<p class="empty-hint">Nada pendiente por ahora.</p>`}
+      `).join('') : `<p class="empty-hint">Estás al día — nada pendiente por ahora. Podés crear una mediación nueva o revisar la agenda.</p>`}
+      ${moreHearings ? `<p class="empty-hint" style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); goTo('agenda');" style="color:var(--calm);">Ver todas las audiencias en la agenda</a></p>` : ''}
     </div>
-
-    ${(d.alertasAgenda.solicitudesCambioPendientes.length || d.alertasAgenda.audienciasReprogramadasRecientemente.length || d.alertasAgenda.audienciasSinResultado.length || d.alertasAgenda.audienciasRealizadasSinProximaAccion.length || d.alertasAgenda.propuestasPendientes.length || d.alertasAgenda.audienciasConfirmadasRecientemente.length || d.alertasAgenda.audienciasCanceladasRecientemente.length || d.alertasAgenda.fallosNotificacion.length) ? `
-    <div class="card">
-      <h2>Agenda</h2>
-      ${d.alertasAgenda.propuestasPendientes.map(h => `
-        <div class="alert-row" onclick="goTo('detail','${h.mediationId}')">
-          <div><div style="font-weight:600; font-size:13.5px;">Propuesta del ${fmtDate(h.date)} sin respuesta</div><div class="code">${escapeHtml(h.mediationCode)}</div></div>
-          <span class="pill warn">propuesta</span>
-        </div>
-      `).join('')}
-      ${d.alertasAgenda.solicitudesCambioPendientes.map(r => `
-        <div class="alert-row" onclick="goTo('detail','${r.mediationId}')">
-          <div><div style="font-weight:600; font-size:13.5px;">Solicitud de cambio sin resolver</div><div class="code">${escapeHtml(r.mediationCode)}</div></div>
-          <span class="pill warn">pendiente</span>
-        </div>
-      `).join('')}
-      ${d.alertasAgenda.audienciasSinResultado.map(h => `
-        <div class="alert-row" onclick="goTo('detail','${h.mediationId}')">
-          <div><div style="font-weight:600; font-size:13.5px;">Audiencia del ${fmtDate(h.date)} sin resultado registrado</div><div class="code">${escapeHtml(h.mediationCode)}</div></div>
-          <span class="pill danger">sin registrar</span>
-        </div>
-      `).join('')}
-      ${d.alertasAgenda.audienciasReprogramadasRecientemente.map(h => `
-        <div class="alert-row" onclick="goTo('detail','${h.mediationId}')">
-          <div><div style="font-weight:600; font-size:13.5px;">Audiencia reprogramada recientemente</div><div class="code">${escapeHtml(h.mediationCode)}</div></div>
-          <span class="pill calm">${fmtDate(h.date)}</span>
-        </div>
-      `).join('')}
-      ${d.alertasAgenda.audienciasConfirmadasRecientemente.map(h => `
-        <div class="alert-row" onclick="goTo('detail','${h.mediationId}')">
-          <div><div style="font-weight:600; font-size:13.5px;">Audiencia confirmada recientemente</div><div class="code">${escapeHtml(h.mediationCode)}</div></div>
-          <span class="pill calm">${fmtDate(h.date)}</span>
-        </div>
-      `).join('')}
-      ${d.alertasAgenda.audienciasCanceladasRecientemente.map(h => `
-        <div class="alert-row" onclick="goTo('detail','${h.mediationId}')">
-          <div><div style="font-weight:600; font-size:13.5px;">Audiencia cancelada recientemente</div><div class="code">${escapeHtml(h.mediationCode)}</div></div>
-          <span class="pill danger">${fmtDate(h.date)}</span>
-        </div>
-      `).join('')}
-      ${d.alertasAgenda.audienciasRealizadasSinProximaAccion.map(h => `
-        <div class="alert-row" onclick="goTo('detail','${h.mediationId}')">
-          <div><div style="font-weight:600; font-size:13.5px;">Audiencia realizada sin próxima acción cargada</div><div class="code">${escapeHtml(h.mediationCode)}</div></div>
-          <span class="pill warn">revisar</span>
-        </div>
-      `).join('')}
-      ${d.alertasAgenda.fallosNotificacion.map(f => `
-        <div class="alert-row" onclick="goTo('detail','${f.mediationId}')">
-          <div><div style="font-weight:600; font-size:13.5px;">Notificación a ${escapeHtml(f.userName || 'alguien')} no llegó (${f.kind === 'notification_error' ? 'error' : 'sin canal disponible'})</div><div class="code">${escapeHtml(f.mediationCode)}</div></div>
-          <span class="pill danger">revisar</span>
-        </div>
-      `).join('')}
-    </div>
-    ` : ''}
 
     ${(d.vencenProximamente.tareas.length || d.vencenProximamente.compromisos.length) ? `
     <div class="card">
@@ -422,7 +439,7 @@ async function renderStudioMediations(){
     <h1>Mediaciones del estudio</h1>
 
     <div class="card">
-      <label>Mediador/a propietario</label>
+      <label>Mediador/a responsable</label>
       <select id="filter-sm-mediador" onchange="applyStudioMediationFilters()">
         <option value="">Todos</option>
         ${studio.members.map(m => `<option value="${m.id}" ${studioMediationFilters.mediador===m.id?'selected':''}>${escapeHtml(m.name)}</option>`).join('')}
@@ -558,7 +575,7 @@ async function renderAgenda(){
 
     <div class="card">
       ${studio ? `
-        <label>Mediador/a</label>
+        <label>Mediador/a responsable</label>
         <select id="filter-ag-mediador" onchange="applyAgendaFilters()">
           <option value="">Todos</option>
           ${studio.members.map(m => `<option value="${m.id}" ${agendaState.mediador===m.id?'selected':''}>${escapeHtml(m.name)}</option>`).join('')}
@@ -1170,6 +1187,25 @@ async function renderDetail(id){
     `<option value="${s}" ${s === m.status ? 'selected' : ''}>${STATUS_LABELS[s]}</option>`
   ).join('');
 
+  // Bloque 17 §3 — "entro a esta mediación, ¿sé en menos de 10 segundos
+  // qué está pasando?". Antes el encabezado solo tenía estado/próxima
+  // acción/responsable/vencimiento — faltaba lo primero que un mediador
+  // busca al abrir un caso: cuándo es la próxima audiencia, y si hay algo
+  // puntual que atender ACÁ (no solo en el dashboard general). Todo esto
+  // sale de datos que ya se pidieron arriba — no hace falta otro endpoint.
+  const now = Date.now();
+  const proximaAudiencia = hearings
+    .filter(h => ['programada','confirmada'].includes(h.status) && h.date >= new Date(now).toISOString().slice(0,10))
+    .sort((a,b) => a.date.localeCompare(b.date) || (a.startTime||'').localeCompare(b.startTime||''))[0] || null;
+  const audienciasSinConfirmarCount = hearings.filter(h =>
+    ['programada','confirmada'].includes(h.status) && h.confirmations.some(c => c.response === 'pendiente')
+  ).length;
+  const documentosSinRevisarCount = documents.filter(d => d.status === 'recibido').length;
+  const detailAlerts = [
+    audienciasSinConfirmarCount ? `<span class="pill warn">${audienciasSinConfirmarCount} audiencia${audienciasSinConfirmarCount===1?'':'s'} sin confirmar</span>` : '',
+    documentosSinRevisarCount ? `<span class="pill warn">${documentosSinRevisarCount} documento${documentosSinRevisarCount===1?'':'s'} sin revisar</span>` : '',
+  ].filter(Boolean).join(' ');
+
   main.innerHTML = `
     <span class="back-link" onclick="goTo('list')">← Volver a mediaciones</span>
     <div class="eyebrow">${escapeHtml(m.code)}${m.internalNumber ? ' · ' + escapeHtml(m.internalNumber) : ''}</div>
@@ -1178,11 +1214,260 @@ async function renderDetail(id){
     <div class="card" style="border-color:${m.nextActionDueDate && new Date(m.nextActionDueDate).getTime()<Date.now() ? 'var(--danger-dim)' : 'var(--line)'};">
       <div style="display:flex; flex-wrap:wrap; gap:14px;">
         <div><div class="eyebrow" style="margin-bottom:2px;">Estado</div><div style="font-size:13px; font-weight:600;">${STATUS_LABELS[m.status] || m.status}</div></div>
+        <div><div class="eyebrow" style="margin-bottom:2px;">Próxima audiencia</div><div style="font-size:13px; font-weight:600;">${proximaAudiencia ? `${fmtDate(proximaAudiencia.date)}${proximaAudiencia.startTime ? ' ' + proximaAudiencia.startTime : ''}` : '<span style="color:var(--text-faint);">Sin agendar</span>'}</div></div>
         <div><div class="eyebrow" style="margin-bottom:2px;">Próxima acción</div><div style="font-size:13px; font-weight:600;">${m.nextActionText ? escapeHtml(m.nextActionText) : '<span style="color:var(--warn);">Sin cargar</span>'}</div></div>
         <div><div class="eyebrow" style="margin-bottom:2px;">Responsable</div><div style="font-size:13px; font-weight:600;">${NEXT_ACTION_RESPONSIBLE_LABELS[m.nextActionResponsibleType] || '—'}</div></div>
         <div><div class="eyebrow" style="margin-bottom:2px;">Vencimiento</div><div style="font-size:13px; font-weight:600; color:${m.nextActionDueDate && new Date(m.nextActionDueDate).getTime()<Date.now() ? 'var(--danger)' : 'var(--text)'};">${m.nextActionDueDate ? fmtDate(m.nextActionDueDate) : '—'}</div></div>
       </div>
+      ${detailAlerts ? `<div style="margin-top:10px;">${detailAlerts}</div>` : ''}
     </div>
+
+    <nav class="detail-subnav">
+      <a href="#section-partes">Partes</a>
+      <a href="#section-abogados">Abogados</a>
+      <a href="#section-audiencias">Audiencias</a>
+      <a href="#section-documentos">Documentos</a>
+      <a href="#section-tareas">Tareas</a>
+      <a href="#section-compromisos">Compromisos</a>
+      <a href="#section-timeline">Timeline</a>
+      <a href="#section-admin">Administración</a>
+    </nav>
+
+    <div class="card" id="section-partes">
+      <h2>Partes</h2>
+      ${parties.length ? parties.map(p => `
+        <div class="status-history-item">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <strong>${escapeHtml(partyName(p.id))}</strong> — ${PARTY_ROLE_LABELS[p.role] || p.role}
+              ${p.documentNumber ? ` · ${escapeHtml(p.documentType || 'Doc.')} ${escapeHtml(p.documentNumber)}` : ''}
+              ${p.email ? `<br><span style="color:var(--text-faint);">${escapeHtml(p.email)}</span>` : ''}
+            </div>
+            <div style="display:flex; gap:6px; flex-shrink:0;">
+              ${p.portalToken ? `<button class="ghost" style="padding:6px 10px; font-size:11px;" onclick="openPartyChat('${m.id}','${p.id}')">Mensajes</button>` : ''}
+              <button class="ghost" style="padding:6px 10px; font-size:11px;" onclick="inviteParty('${m.id}','${p.id}')">
+                ${p.portalToken ? 'Reenviar portal' : 'Invitar al portal'}
+              </button>
+            </div>
+          </div>
+          ${p.portalToken ? `
+            <label style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:11px; color:var(--text-dim);">
+              <input type="checkbox" style="width:auto;" ${p.allowDocumentUpload?'checked':''} onchange="toggleAllowUpload('${m.id}','${p.id}',this.checked)">
+              Permitir que suba documentos desde el portal
+            </label>
+          ` : ''}
+          <div id="chat-${p.id}" style="display:none; margin-top:10px;"></div>
+        </div>
+      `).join('') : `<p class="empty-hint">Todavía no hay partes cargadas — agregá al menos una para poder programar audiencias.</p>`}
+      <button class="ghost" style="width:100%; margin-top:8px;" onclick="toggleForm('party-form')">+ Agregar parte</button>
+      <div id="party-form" style="display:none; margin-top:10px;">
+        <label>Rol</label>
+        <select id="party-role">
+          <option value="requirente">Requirente</option>
+          <option value="requerido">Requerido</option>
+          <option value="otro">Otro</option>
+        </select>
+        <label>Nombre</label>
+        <input id="party-first-name" placeholder="Nombre">
+        <label>Apellido</label>
+        <input id="party-last-name" placeholder="Apellido">
+        <label>Documento</label>
+        <input id="party-document" placeholder="Ej: 30111222">
+        <label>Email (opcional)</label>
+        <input id="party-email" placeholder="nombre@correo.com">
+        <label>Teléfono (opcional)</label>
+        <input id="party-phone">
+        <button class="primary" style="width:100%;" onclick="addParty('${m.id}')">Guardar parte</button>
+      </div>
+    </div>
+
+    <div class="card" id="section-abogados">
+      <h2>Abogados</h2>
+      ${lawyers.length ? lawyers.map(l => `
+        <div class="status-history-item">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <strong>${escapeHtml(l.name)}</strong>${l.enrollmentNumber ? ` · Matrícula ${escapeHtml(l.enrollmentNumber)}` : ''}
+              ${l.partyId ? `<br><span style="color:var(--text-faint);">Representa a ${escapeHtml(partyName(l.partyId))}</span>` : ''}
+            </div>
+            <button class="ghost" style="flex-shrink:0; padding:6px 10px; font-size:11px;" onclick="inviteLawyer('${m.id}','${l.id}')">
+              ${l.portalToken ? 'Reenviar portal' : 'Invitar al portal'}
+            </button>
+          </div>
+        </div>
+      `).join('') : `<p class="empty-hint">Todavía no hay abogados cargados.</p>`}
+      <button class="ghost" style="width:100%; margin-top:8px;" onclick="toggleForm('lawyer-form')">+ Agregar abogado</button>
+      <div id="lawyer-form" style="display:none; margin-top:10px;">
+        <label>Email (opcional — si el mismo abogado ya tiene portal en otra mediación, se reusa su acceso)</label>
+        <input id="lawyer-email" placeholder="abogado@estudio.com">
+        <label>Nombre</label>
+        <input id="lawyer-name" placeholder="Ej: Dr. Rodríguez">
+        <label>Matrícula (opcional)</label>
+        <input id="lawyer-enrollment">
+        <label>Representa a</label>
+        <select id="lawyer-party">
+          <option value="">— Sin asignar —</option>
+          ${parties.map(p => `<option value="${p.id}">${escapeHtml(partyName(p.id))}</option>`).join('')}
+        </select>
+        <button class="primary" style="width:100%;" onclick="addLawyer('${m.id}')">Guardar abogado</button>
+      </div>
+    </div>
+
+    <div class="card" id="section-audiencias">
+      <h2>Audiencias</h2>
+      ${hearings.length ? hearings.map(h => renderHearingRow(m, h, timeline)).join('') : `<p class="empty-hint">Todavía no hay audiencias agendadas — agendá una fecha o proponé varios horarios para que las partes elijan.</p>`}
+      <button class="ghost" style="width:100%; margin-top:8px;" onclick="toggleForm('hearing-form')">+ Agendar audiencia</button>
+      <button class="ghost" style="width:100%; margin-top:6px;" onclick="toggleForm('propose-form')">+ Proponer varios horarios</button>
+      <div id="propose-form" style="display:none; margin-top:10px;">
+        <p class="empty-hint">Cargá una o más opciones — la parte puede confirmar la que le sirva, y vos elegís cuál queda.</p>
+        <label>¿A quién se le propone?</label>
+        <select id="propose-target">
+          <option value="">Todas las partes</option>
+          ${parties.map(p => `<option value="${p.id}">${escapeHtml(partyName(p.id))} (solo a esta parte)</option>`).join('')}
+        </select>
+        <div id="propose-slots">
+          <div class="propose-slot-row" style="display:flex; gap:6px; margin-bottom:6px;">
+            <input type="date" class="propose-slot-date" style="flex:1;">
+            <input type="time" class="propose-slot-time" style="flex:1;">
+          </div>
+        </div>
+        <button class="ghost" style="padding:6px 10px; font-size:11px;" onclick="addProposeSlotRow()">+ Otra opción</button>
+        <button class="primary" style="width:100%; margin-top:8px;" onclick="submitProposal('${m.id}')">Proponer</button>
+      </div>
+      <div id="hearing-form" style="display:none; margin-top:10px;">
+        <label>Fecha</label>
+        <input id="hearing-date" type="date">
+        <label>Hora (opcional)</label>
+        <input id="hearing-time" type="time">
+        <label>Modalidad</label>
+        <select id="hearing-modality">
+          <option value="presencial">Presencial</option>
+          <option value="virtual">Virtual</option>
+          <option value="hibrida">Híbrida</option>
+        </select>
+        <label>Lugar o link de reunión (opcional)</label>
+        <input id="hearing-location" placeholder="Dirección o URL">
+        <button class="primary" style="width:100%;" onclick="addHearing('${m.id}')">Guardar audiencia</button>
+      </div>
+    </div>
+
+    <div class="card" id="section-documentos">
+      <h2>Documentos</h2>
+      ${documents.length ? documents.map(d => `
+        <div class="status-history-item">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <strong>${escapeHtml(d.originalFilename)}</strong> ${d.version > 1 ? `<span class="pill calm">v${d.version}</span>` : ''}
+              <br><span style="color:var(--text-faint);">${DOCUMENT_TYPE_LABELS[d.type] || d.type} · ${fmtFileSize(d.size)} · ${fmtDateTime(d.createdAt)}${d.uploadedByName ? ' · subido por ' + escapeHtml(d.uploadedByName) : ''}</span>
+            </div>
+            <a href="/api/mediations/${m.id}/documents/${d.id}/download" class="ghost" style="padding:6px 12px; font-size:11.5px; text-decoration:none; color:var(--text); flex-shrink:0;">Descargar</a>
+          </div>
+          <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+            <select onchange="changeDocumentStatus('${m.id}','${d.id}',this.value)" style="width:auto; margin:0;">
+              ${Object.keys(DOCUMENT_STATUS_LABELS).map(s => `<option value="${s}" ${s===d.status?'selected':''}>${DOCUMENT_STATUS_LABELS[s]}</option>`).join('')}
+            </select>
+            <button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="toggleVersionUpload('${d.id}')">Subir nueva versión</button>
+            <button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="toggleVersionHistory('${m.id}','${d.id}')">Ver versiones</button>
+          </div>
+          <div id="version-upload-${d.id}" style="display:none; margin-top:8px;">
+            <input id="version-file-${d.id}" type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
+            <button class="primary" style="margin-top:6px;" onclick="uploadNewVersion('${m.id}','${d.id}')">Subir</button>
+          </div>
+          <div id="version-history-${d.id}" style="display:none; margin-top:8px;"></div>
+        </div>
+      `).join('') : `<p class="empty-hint">Todavía no hay documentos cargados.</p>`}
+      <button class="ghost" style="width:100%; margin-top:8px;" onclick="toggleForm('document-form')">+ Subir documento</button>
+      <div id="document-form" style="display:none; margin-top:10px;">
+        <label>Archivo (PDF, JPG, PNG, DOC o DOCX — hasta 15MB)</label>
+        <input id="document-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
+        <label>Tipo de documento</label>
+        <select id="document-type">
+          ${Object.keys(DOCUMENT_TYPE_LABELS).map(t => `<option value="${t}">${DOCUMENT_TYPE_LABELS[t]}</option>`).join('')}
+        </select>
+        <button class="primary" style="width:100%;" onclick="uploadDocument('${m.id}')" id="upload-btn">Subir</button>
+      </div>
+    </div>
+
+    <div class="card" id="section-tareas">
+      <h2>Tareas</h2>
+      ${tasks.length ? tasks.map(t => `
+        <div class="status-history-item">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <strong>${escapeHtml(t.title)}</strong>
+              ${t.dueDate ? ` · vence ${fmtDate(t.dueDate)}` : ''}
+              <br><span class="pill ${t.priority === 'urgente' || t.priority === 'alta' ? 'danger' : 'calm'}">${TASK_PRIORITY_LABELS[t.priority]}</span>
+            </div>
+            <select onchange="changeTaskStatus('${m.id}','${t.id}',this.value)" style="width:auto; margin:0;">
+              ${Object.keys(TASK_STATUS_LABELS).map(s => `<option value="${s}" ${s===t.status?'selected':''}>${TASK_STATUS_LABELS[s]}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+      `).join('') : `<p class="empty-hint">Sin tareas cargadas.</p>`}
+      <button class="ghost" style="width:100%; margin-top:8px;" onclick="toggleForm('task-form')">+ Nueva tarea</button>
+      <div id="task-form" style="display:none; margin-top:10px;">
+        <label>Título</label>
+        <input id="task-title" placeholder="Ej: Llamar al requerido">
+        <label>Vencimiento (opcional)</label>
+        <input id="task-due" type="date">
+        <label>Prioridad</label>
+        <select id="task-priority">
+          ${Object.keys(TASK_PRIORITY_LABELS).map(p => `<option value="${p}" ${p==='media'?'selected':''}>${TASK_PRIORITY_LABELS[p]}</option>`).join('')}
+        </select>
+        <button class="primary" style="width:100%;" onclick="addTask('${m.id}')">Guardar tarea</button>
+      </div>
+    </div>
+
+    <div class="card" id="section-compromisos">
+      <h2>Compromisos</h2>
+      ${commitments.length ? commitments.map(c => `
+        <div class="status-history-item">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <strong>${escapeHtml(partyName(c.partyId))}</strong>: ${escapeHtml(c.description)}
+              ${c.dueDate ? ` · vence ${fmtDate(c.dueDate)}` : ''}
+            </div>
+            <select onchange="changeCommitmentStatus('${m.id}','${c.id}',this.value)" style="width:auto; margin:0;">
+              ${Object.keys(COMMITMENT_STATUS_LABELS).map(s => `<option value="${s}" ${s===c.status?'selected':''}>${COMMITMENT_STATUS_LABELS[s]}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+      `).join('') : `<p class="empty-hint">Sin compromisos cargados.</p>`}
+      <button class="ghost" style="width:100%; margin-top:8px;" onclick="toggleForm('commitment-form')">+ Nuevo compromiso</button>
+      <div id="commitment-form" style="display:none; margin-top:10px;">
+        <label>Parte responsable</label>
+        <select id="commitment-party">
+          ${parties.map(p => `<option value="${p.id}">${escapeHtml(partyName(p.id))}</option>`).join('')}
+        </select>
+        <label>Descripción</label>
+        <input id="commitment-description" placeholder="Ej: Enviar presupuesto">
+        <label>Vencimiento</label>
+        <input id="commitment-due" type="date">
+        <button class="primary" style="width:100%;" onclick="addCommitment('${m.id}')">Guardar compromiso</button>
+      </div>
+    </div>
+
+    <div class="card" id="section-timeline">
+      <h2>Timeline</h2>
+      ${timeline.length ? timeline.map(e => `
+        <div class="status-history-item" style="${e.causedByEventId ? 'padding-left:16px; border-left:2px solid var(--calm-dim);' : ''}">
+          <strong>${EVENT_TYPE_LABELS[e.type] || e.type}</strong>${e.title ? ': ' + escapeHtml(e.title) : ''}
+          ${e.description ? `<br><span style="color:var(--text-faint);">${escapeHtml(e.description)}</span>` : ''}
+          <br><span style="color:var(--text-faint);">${fmtDateTime(e.createdAt)}</span>
+        </div>
+      `).join('') : `<p class="empty-hint">Sin actividad todavía.</p>`}
+    </div>
+
+    <div class="card">
+      <h2>Preguntale al asistente</h2>
+      <div id="mediation-assistant-answer" style="margin-bottom:8px;"></div>
+      <div style="display:flex; gap:6px;">
+        <input id="mediation-assistant-question" placeholder="Ej: preparame un resumen de esta mediación" style="flex:1; margin:0;">
+        <button class="primary" style="flex-shrink:0;" onclick="askMediationAI('${m.id}')">Preguntar</button>
+      </div>
+    </div>
+
+    <div class="eyebrow" style="margin:22px 2px 6px; scroll-margin-top:52px;" id="section-admin">Administración del caso</div>
 
     <div class="card">
       <h2>Estado</h2>
@@ -1249,274 +1534,6 @@ async function renderDetail(id){
           <button class="ghost" style="width:100%;" onclick="assignMediationAccess('${m.id}')">Asignar</button>
         </div>
       ` : ''}
-    </div>
-
-    <div class="card">
-      <h2>Partes</h2>
-      ${parties.length ? parties.map(p => `
-        <div class="status-history-item">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
-              <strong>${escapeHtml(partyName(p.id))}</strong> — ${PARTY_ROLE_LABELS[p.role] || p.role}
-              ${p.documentNumber ? ` · ${escapeHtml(p.documentType || 'Doc.')} ${escapeHtml(p.documentNumber)}` : ''}
-              ${p.email ? `<br><span style="color:var(--text-faint);">${escapeHtml(p.email)}</span>` : ''}
-            </div>
-            <div style="display:flex; gap:6px; flex-shrink:0;">
-              ${p.portalToken ? `<button class="ghost" style="padding:6px 10px; font-size:11px;" onclick="openPartyChat('${m.id}','${p.id}')">Mensajes</button>` : ''}
-              <button class="ghost" style="padding:6px 10px; font-size:11px;" onclick="inviteParty('${m.id}','${p.id}')">
-                ${p.portalToken ? 'Reenviar portal' : 'Invitar al portal'}
-              </button>
-            </div>
-          </div>
-          ${p.portalToken ? `
-            <label style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:11px; color:var(--text-dim);">
-              <input type="checkbox" style="width:auto;" ${p.allowDocumentUpload?'checked':''} onchange="toggleAllowUpload('${m.id}','${p.id}',this.checked)">
-              Permitir que suba documentos desde el portal
-            </label>
-          ` : ''}
-          <div id="chat-${p.id}" style="display:none; margin-top:10px;"></div>
-        </div>
-      `).join('') : `<p class="empty-hint">Todavía no hay partes cargadas.</p>`}
-      <button class="ghost" style="width:100%; margin-top:8px;" onclick="toggleForm('party-form')">+ Agregar parte</button>
-      <div id="party-form" style="display:none; margin-top:10px;">
-        <label>Rol</label>
-        <select id="party-role">
-          <option value="requirente">Requirente</option>
-          <option value="requerido">Requerido</option>
-          <option value="otro">Otro</option>
-        </select>
-        <label>Nombre</label>
-        <input id="party-first-name" placeholder="Nombre">
-        <label>Apellido</label>
-        <input id="party-last-name" placeholder="Apellido">
-        <label>Documento</label>
-        <input id="party-document" placeholder="Ej: 30111222">
-        <label>Email (opcional)</label>
-        <input id="party-email" placeholder="nombre@correo.com">
-        <label>Teléfono (opcional)</label>
-        <input id="party-phone">
-        <button class="primary" style="width:100%;" onclick="addParty('${m.id}')">Guardar parte</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Abogados</h2>
-      ${lawyers.length ? lawyers.map(l => `
-        <div class="status-history-item">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
-              <strong>${escapeHtml(l.name)}</strong>${l.enrollmentNumber ? ` · Matrícula ${escapeHtml(l.enrollmentNumber)}` : ''}
-              ${l.partyId ? `<br><span style="color:var(--text-faint);">Representa a ${escapeHtml(partyName(l.partyId))}</span>` : ''}
-            </div>
-            <button class="ghost" style="flex-shrink:0; padding:6px 10px; font-size:11px;" onclick="inviteLawyer('${m.id}','${l.id}')">
-              ${l.portalToken ? 'Reenviar portal' : 'Invitar al portal'}
-            </button>
-          </div>
-        </div>
-      `).join('') : `<p class="empty-hint">Todavía no hay abogados cargados.</p>`}
-      <button class="ghost" style="width:100%; margin-top:8px;" onclick="toggleForm('lawyer-form')">+ Agregar abogado</button>
-      <div id="lawyer-form" style="display:none; margin-top:10px;">
-        <label>Email (opcional — si el mismo abogado ya tiene portal en otra mediación, se reusa su acceso)</label>
-        <input id="lawyer-email" placeholder="abogado@estudio.com">
-        <label>Nombre</label>
-        <input id="lawyer-name" placeholder="Ej: Dr. Rodríguez">
-        <label>Matrícula (opcional)</label>
-        <input id="lawyer-enrollment">
-        <label>Representa a</label>
-        <select id="lawyer-party">
-          <option value="">— Sin asignar —</option>
-          ${parties.map(p => `<option value="${p.id}">${escapeHtml(partyName(p.id))}</option>`).join('')}
-        </select>
-        <button class="primary" style="width:100%;" onclick="addLawyer('${m.id}')">Guardar abogado</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Audiencias</h2>
-      ${hearings.length ? hearings.map(h => `
-        <div class="status-history-item">
-          <strong>${fmtDate(h.date)}${h.startTime ? ' ' + h.startTime : ''}</strong> —
-          ${HEARING_MODALITY_LABELS[h.modality] || h.modality} · <span class="pill ${h.status==='propuesta'?'warn':'calm'}">${h.status==='propuesta'?'Propuesta':(HEARING_STATUS_LABELS[h.status] || h.status)}</span>
-          <div style="margin-top:4px;">
-            ${h.confirmations.map(c => `
-              <span class="pill ${c.response === 'confirma' ? 'calm' : c.response === 'no_puede' ? 'danger' : 'warn'}" style="margin-right:4px;">
-                ${escapeHtml(partyName(c.partyId))}: ${CONFIRMATION_LABELS[c.response] || c.response}
-              </span>
-            `).join('')}
-          </div>
-          <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">
-            ${h.status === 'propuesta' ? `
-              <button class="primary" style="padding:6px 10px; font-size:11px;" onclick="confirmProposal('${m.id}','${h.id}')">Confirmar esta propuesta</button>
-            ` : `
-              <select onchange="changeHearingStatus('${m.id}','${h.id}',this.value)" style="width:auto; margin:0;">
-                ${Object.keys(HEARING_STATUS_LABELS).map(s => `<option value="${s}" ${s===h.status?'selected':''}>${HEARING_STATUS_LABELS[s]}</option>`).join('')}
-              </select>
-            `}
-            ${h.confirmations.map(c => `
-              <select onchange="recordConfirmation('${m.id}','${h.id}','${c.partyId}',this.value)" style="width:auto; margin:0;">
-                <option value="">${escapeHtml(partyName(c.partyId))} responde…</option>
-                ${Object.keys(CONFIRMATION_LABELS).map(r => `<option value="${r}">${CONFIRMATION_LABELS[r]}</option>`).join('')}
-              </select>
-            `).join('')}
-            <button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="toggleRescheduleRequests('${m.id}','${h.id}')">Solicitudes de cambio</button>
-            ${h.meetingUrl ? `<a href="${escapeHtml(h.meetingUrl)}" target="_blank" class="ghost" style="padding:4px 10px; font-size:11px; text-decoration:none; color:var(--calm);">Entrar a audiencia</a>` : ''}
-            <button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="togglePreparation('${m.id}','${h.id}')">Preparación</button>
-            <button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="toggleSummary('${m.id}','${h.id}')">Resumen</button>
-          </div>
-          <div id="reschedule-${h.id}" style="display:none; margin-top:8px;"></div>
-          <div id="preparation-${h.id}" style="display:none; margin-top:8px;"></div>
-          <div id="summary-${h.id}" style="display:none; margin-top:8px;"></div>
-        </div>
-      `).join('') : `<p class="empty-hint">Todavía no hay audiencias agendadas.</p>`}
-      <button class="ghost" style="width:100%; margin-top:8px;" onclick="toggleForm('hearing-form')">+ Agendar audiencia</button>
-      <button class="ghost" style="width:100%; margin-top:6px;" onclick="toggleForm('propose-form')">+ Proponer varios horarios</button>
-      <div id="propose-form" style="display:none; margin-top:10px;">
-        <p class="empty-hint">Cargá una o más opciones — la parte puede confirmar la que le sirva, y vos elegís cuál queda.</p>
-        <label>¿A quién se le propone?</label>
-        <select id="propose-target">
-          <option value="">Todas las partes</option>
-          ${parties.map(p => `<option value="${p.id}">${escapeHtml(partyName(p.id))} (solo a esta parte)</option>`).join('')}
-        </select>
-        <div id="propose-slots">
-          <div class="propose-slot-row" style="display:flex; gap:6px; margin-bottom:6px;">
-            <input type="date" class="propose-slot-date" style="flex:1;">
-            <input type="time" class="propose-slot-time" style="flex:1;">
-          </div>
-        </div>
-        <button class="ghost" style="padding:6px 10px; font-size:11px;" onclick="addProposeSlotRow()">+ Otra opción</button>
-        <button class="primary" style="width:100%; margin-top:8px;" onclick="submitProposal('${m.id}')">Proponer</button>
-      </div>
-      <div id="hearing-form" style="display:none; margin-top:10px;">
-        <label>Fecha</label>
-        <input id="hearing-date" type="date">
-        <label>Hora (opcional)</label>
-        <input id="hearing-time" type="time">
-        <label>Modalidad</label>
-        <select id="hearing-modality">
-          <option value="presencial">Presencial</option>
-          <option value="virtual">Virtual</option>
-          <option value="hibrida">Híbrida</option>
-        </select>
-        <label>Lugar o link de reunión (opcional)</label>
-        <input id="hearing-location" placeholder="Dirección o URL">
-        <button class="primary" style="width:100%;" onclick="addHearing('${m.id}')">Guardar audiencia</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Documentos</h2>
-      ${documents.length ? documents.map(d => `
-        <div class="status-history-item">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
-              <strong>${escapeHtml(d.originalFilename)}</strong> ${d.version > 1 ? `<span class="pill calm">v${d.version}</span>` : ''}
-              <br><span style="color:var(--text-faint);">${DOCUMENT_TYPE_LABELS[d.type] || d.type} · ${fmtFileSize(d.size)} · ${fmtDateTime(d.createdAt)}${d.uploadedByName ? ' · subido por ' + escapeHtml(d.uploadedByName) : ''}</span>
-            </div>
-            <a href="/api/mediations/${m.id}/documents/${d.id}/download" class="ghost" style="padding:6px 12px; font-size:11.5px; text-decoration:none; color:var(--text); flex-shrink:0;">Descargar</a>
-          </div>
-          <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
-            <select onchange="changeDocumentStatus('${m.id}','${d.id}',this.value)" style="width:auto; margin:0;">
-              ${Object.keys(DOCUMENT_STATUS_LABELS).map(s => `<option value="${s}" ${s===d.status?'selected':''}>${DOCUMENT_STATUS_LABELS[s]}</option>`).join('')}
-            </select>
-            <button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="toggleVersionUpload('${d.id}')">Subir nueva versión</button>
-            <button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="toggleVersionHistory('${m.id}','${d.id}')">Ver versiones</button>
-          </div>
-          <div id="version-upload-${d.id}" style="display:none; margin-top:8px;">
-            <input id="version-file-${d.id}" type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
-            <button class="primary" style="margin-top:6px;" onclick="uploadNewVersion('${m.id}','${d.id}')">Subir</button>
-          </div>
-          <div id="version-history-${d.id}" style="display:none; margin-top:8px;"></div>
-        </div>
-      `).join('') : `<p class="empty-hint">Todavía no hay documentos cargados.</p>`}
-      <button class="ghost" style="width:100%; margin-top:8px;" onclick="toggleForm('document-form')">+ Subir documento</button>
-      <div id="document-form" style="display:none; margin-top:10px;">
-        <label>Archivo (PDF, JPG, PNG, DOC o DOCX — hasta 15MB)</label>
-        <input id="document-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
-        <label>Tipo de documento</label>
-        <select id="document-type">
-          ${Object.keys(DOCUMENT_TYPE_LABELS).map(t => `<option value="${t}">${DOCUMENT_TYPE_LABELS[t]}</option>`).join('')}
-        </select>
-        <button class="primary" style="width:100%;" onclick="uploadDocument('${m.id}')" id="upload-btn">Subir</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Tareas</h2>
-      ${tasks.length ? tasks.map(t => `
-        <div class="status-history-item">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
-              <strong>${escapeHtml(t.title)}</strong>
-              ${t.dueDate ? ` · vence ${fmtDate(t.dueDate)}` : ''}
-              <br><span class="pill ${t.priority === 'urgente' || t.priority === 'alta' ? 'danger' : 'calm'}">${TASK_PRIORITY_LABELS[t.priority]}</span>
-            </div>
-            <select onchange="changeTaskStatus('${m.id}','${t.id}',this.value)" style="width:auto; margin:0;">
-              ${Object.keys(TASK_STATUS_LABELS).map(s => `<option value="${s}" ${s===t.status?'selected':''}>${TASK_STATUS_LABELS[s]}</option>`).join('')}
-            </select>
-          </div>
-        </div>
-      `).join('') : `<p class="empty-hint">Sin tareas cargadas.</p>`}
-      <button class="ghost" style="width:100%; margin-top:8px;" onclick="toggleForm('task-form')">+ Nueva tarea</button>
-      <div id="task-form" style="display:none; margin-top:10px;">
-        <label>Título</label>
-        <input id="task-title" placeholder="Ej: Llamar al requerido">
-        <label>Vencimiento (opcional)</label>
-        <input id="task-due" type="date">
-        <label>Prioridad</label>
-        <select id="task-priority">
-          ${Object.keys(TASK_PRIORITY_LABELS).map(p => `<option value="${p}" ${p==='media'?'selected':''}>${TASK_PRIORITY_LABELS[p]}</option>`).join('')}
-        </select>
-        <button class="primary" style="width:100%;" onclick="addTask('${m.id}')">Guardar tarea</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Compromisos</h2>
-      ${commitments.length ? commitments.map(c => `
-        <div class="status-history-item">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
-              <strong>${escapeHtml(partyName(c.partyId))}</strong>: ${escapeHtml(c.description)}
-              ${c.dueDate ? ` · vence ${fmtDate(c.dueDate)}` : ''}
-            </div>
-            <select onchange="changeCommitmentStatus('${m.id}','${c.id}',this.value)" style="width:auto; margin:0;">
-              ${Object.keys(COMMITMENT_STATUS_LABELS).map(s => `<option value="${s}" ${s===c.status?'selected':''}>${COMMITMENT_STATUS_LABELS[s]}</option>`).join('')}
-            </select>
-          </div>
-        </div>
-      `).join('') : `<p class="empty-hint">Sin compromisos cargados.</p>`}
-      <button class="ghost" style="width:100%; margin-top:8px;" onclick="toggleForm('commitment-form')">+ Nuevo compromiso</button>
-      <div id="commitment-form" style="display:none; margin-top:10px;">
-        <label>Parte responsable</label>
-        <select id="commitment-party">
-          ${parties.map(p => `<option value="${p.id}">${escapeHtml(partyName(p.id))}</option>`).join('')}
-        </select>
-        <label>Descripción</label>
-        <input id="commitment-description" placeholder="Ej: Enviar presupuesto">
-        <label>Vencimiento</label>
-        <input id="commitment-due" type="date">
-        <button class="primary" style="width:100%;" onclick="addCommitment('${m.id}')">Guardar compromiso</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Timeline</h2>
-      ${timeline.length ? timeline.map(e => `
-        <div class="status-history-item" style="${e.causedByEventId ? 'padding-left:16px; border-left:2px solid var(--calm-dim);' : ''}">
-          <strong>${EVENT_TYPE_LABELS[e.type] || e.type}</strong>${e.title ? ': ' + escapeHtml(e.title) : ''}
-          ${e.description ? `<br><span style="color:var(--text-faint);">${escapeHtml(e.description)}</span>` : ''}
-          <br><span style="color:var(--text-faint);">${fmtDateTime(e.createdAt)}</span>
-        </div>
-      `).join('') : `<p class="empty-hint">Sin actividad todavía.</p>`}
-    </div>
-
-    <div class="card">
-      <h2>Preguntale al asistente</h2>
-      <div id="mediation-assistant-answer" style="margin-bottom:8px;"></div>
-      <div style="display:flex; gap:6px;">
-        <input id="mediation-assistant-question" placeholder="Ej: preparame un resumen de esta mediación" style="flex:1; margin:0;">
-        <button class="primary" style="flex-shrink:0;" onclick="askMediationAI('${m.id}')">Preguntar</button>
-      </div>
     </div>
 
     <div class="card">
@@ -1608,6 +1625,7 @@ async function showCloseChecklist(mediationId){
 async function closeMediation(id){
   const result = document.getElementById('close-result').value;
   const notes = document.getElementById('close-notes').value.trim() || undefined;
+  if(!confirm(`¿Cerrar esta mediación con resultado "${CLOSE_RESULT_LABELS[result] || result}"? No hay forma de reabrirla después desde acá.`)) return;
   try{
     await api(`/api/mediations/${id}/close`, { method:'POST', body: JSON.stringify({ result, notes }) });
     renderDetail(id);
@@ -1790,6 +1808,70 @@ async function addHearing(mediationId){
   }catch(e){ alert(e.error || 'No se pudo agendar la audiencia.'); }
 }
 
+// Bloque 17 §4 — la audiencia necesita UNA acción principal que cambie
+// según el estado, no siempre la misma fila de controles. El resto
+// (cambiar estado a mano, registrar confirmaciones por teléfono,
+// solicitudes de cambio) sigue existiendo, pero como fila secundaria
+// debajo — no compite en peso visual con la acción principal.
+function renderHearingRow(m, h, timelineList){
+  const now = Date.now();
+  const hearingMs = new Date(h.date + 'T' + (h.startTime || '00:00')).getTime();
+  const within48h = !isNaN(hearingMs) && (hearingMs - now) <= 48*60*60*1000 && (hearingMs - now) > -24*60*60*1000;
+
+  let primaryHtml = '';
+  let motivoHtml = '';
+  if(h.status === 'propuesta'){
+    primaryHtml = `<button class="primary" style="padding:6px 10px; font-size:11px;" onclick="confirmProposal('${m.id}','${h.id}')">Elegir este horario</button>`;
+  } else if(h.status === 'realizada'){
+    primaryHtml = `<button class="primary" style="padding:6px 10px; font-size:11px;" onclick="toggleSummary('${m.id}','${h.id}')">Ver resumen</button>`;
+  } else if(h.status === 'cancelada' || h.status === 'no_realizada'){
+    const ev = (timelineList||[]).find(e => ['HEARING_CANCELLED','HEARING_NOT_HELD'].includes(e.type) && e.entityId === h.id);
+    if(ev && ev.description) motivoHtml = `<p class="empty-hint" style="margin-top:4px;">Motivo: ${escapeHtml(ev.description)}</p>`;
+    primaryHtml = `<button class="primary" style="padding:6px 10px; font-size:11px;" onclick="toggleForm('propose-form')">+ Proponer de nuevo</button>`;
+  } else if(h.modality === 'virtual' && h.meetingUrl && within48h){
+    primaryHtml = `<a href="${escapeHtml(h.meetingUrl)}" target="_blank" class="primary" style="padding:6px 10px; font-size:11px; text-decoration:none; display:inline-block;">Entrar a audiencia</a>`;
+  } else {
+    primaryHtml = `<button class="primary" style="padding:6px 10px; font-size:11px;" onclick="togglePreparation('${m.id}','${h.id}')">Preparar audiencia</button>`;
+  }
+  const primaryIsPreparacion = primaryHtml.includes('togglePreparation');
+  const primaryIsResumen = primaryHtml.includes('toggleSummary');
+  const showMeetingLinkSecondary = h.meetingUrl && !primaryHtml.includes(escapeHtml(h.meetingUrl));
+
+  return `
+    <div class="status-history-item">
+      <strong>${fmtDate(h.date)}${h.startTime ? ' ' + h.startTime : ''}</strong> —
+      ${HEARING_MODALITY_LABELS[h.modality] || h.modality} · <span class="pill ${h.status==='propuesta'?'warn':(h.status==='cancelada'||h.status==='no_realizada')?'danger':'calm'}">${h.status==='propuesta'?'Propuesta':(HEARING_STATUS_LABELS[h.status] || h.status)}</span>
+      ${motivoHtml}
+      <div style="margin-top:4px;">
+        ${h.confirmations.map(c => `
+          <span class="pill ${c.response === 'confirma' ? 'calm' : c.response === 'no_puede' ? 'danger' : 'warn'}" style="margin-right:4px;">
+            ${escapeHtml(partyName(c.partyId))}: ${CONFIRMATION_LABELS[c.response] || c.response}
+          </span>
+        `).join('')}
+      </div>
+      <div style="margin-top:8px;">${primaryHtml}</div>
+      <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+        <select onchange="changeHearingStatus('${m.id}','${h.id}',this.value)" style="width:auto; margin:0; font-size:11px; color:var(--text-faint);" title="Cambiar estado manualmente">
+          ${Object.keys(HEARING_STATUS_LABELS).map(s => `<option value="${s}" ${s===h.status?'selected':''}>${HEARING_STATUS_LABELS[s]}</option>`).join('')}
+        </select>
+        ${h.confirmations.map(c => `
+          <select onchange="recordConfirmation('${m.id}','${h.id}','${c.partyId}',this.value)" style="width:auto; margin:0; font-size:11px;">
+            <option value="">${escapeHtml(partyName(c.partyId))} responde…</option>
+            ${Object.keys(CONFIRMATION_LABELS).map(r => `<option value="${r}">${CONFIRMATION_LABELS[r]}</option>`).join('')}
+          </select>
+        `).join('')}
+        <button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="toggleRescheduleRequests('${m.id}','${h.id}')">Solicitudes de cambio</button>
+        ${showMeetingLinkSecondary ? `<a href="${escapeHtml(h.meetingUrl)}" target="_blank" class="ghost" style="padding:4px 10px; font-size:11px; text-decoration:none; color:var(--calm);">Link de la reunión</a>` : ''}
+        ${!primaryIsPreparacion && h.status !== 'propuesta' ? `<button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="togglePreparation('${m.id}','${h.id}')">Preparación</button>` : ''}
+        ${!primaryIsResumen && h.status !== 'propuesta' ? `<button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="toggleSummary('${m.id}','${h.id}')">Resumen</button>` : ''}
+      </div>
+      <div id="reschedule-${h.id}" style="display:none; margin-top:8px;"></div>
+      <div id="preparation-${h.id}" style="display:none; margin-top:8px;"></div>
+      <div id="summary-${h.id}" style="display:none; margin-top:8px;"></div>
+    </div>
+  `;
+}
+
 const PREPARATION_ITEM_LABELS = {
   partesIdentificadas: 'Partes identificadas', datosDeContacto: 'Datos de contacto', abogadosVinculados: 'Abogados vinculados',
   confirmaciones: 'Confirmaciones', documentosPendientesRevision: 'Documentos sin revisar', tareasPendientes: 'Tareas pendientes',
@@ -1912,6 +1994,11 @@ async function resolveReschedule(mediationId, hearingId, requestId, action){
 }
 
 async function changeHearingStatus(mediationId, hearingId, status){
+  // cancelar/marcar no realizada avisa por WhatsApp a partes y abogados y
+  // no tiene vuelta atrás desde acá (Bloque 17 §17: confirmar acciones
+  // consecuentes, no solo las que borran datos).
+  if(status === 'cancelada' && !confirm('¿Cancelar esta audiencia? Se les va a avisar a las partes y abogados por WhatsApp.')){ renderDetail(mediationId); return; }
+  if(status === 'no_realizada' && !confirm('¿Marcar esta audiencia como no realizada?')){ renderDetail(mediationId); return; }
   try{
     const result = await api(`/api/mediations/${mediationId}/hearings/${hearingId}/status`, { method:'POST', body: JSON.stringify({ status }) });
     renderDetail(mediationId);
