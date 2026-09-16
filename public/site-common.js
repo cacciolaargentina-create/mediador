@@ -67,7 +67,7 @@ function applyTheme(theme, persist){
   else document.documentElement.removeAttribute('data-theme');
   if(persist){ try{ localStorage.setItem('pd_theme', theme); }catch(e){ /* sin storage disponible */ } }
   const metaTheme = document.querySelector('meta[name=theme-color]');
-  if(metaTheme) metaTheme.content = theme === 'light' ? '#F4F7F6' : '#12181A';
+  if(metaTheme) metaTheme.content = theme === 'light' ? '#F5F8F8' : '#0F1517';
   document.querySelectorAll('.theme-btn').forEach(b => {
     b.textContent = theme === 'light' ? '🌙' : '☀️';
     b.title = theme === 'light' ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro';
@@ -98,7 +98,7 @@ function toggleTheme(){
 
 // ---- "baño": mismo efecto que en app.js (ver ahí el comentario completo)
 // para el botón "Apariencia" del drawer de la hamburguesa. ----
-const THEME_BG = { dark: '#12181A', light: '#F4F7F6' };
+const THEME_BG = { dark: '#0F1517', light: '#F5F8F8' };
 function toggleThemeWash(event){
   const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if(prefersReduced || !document.body.animate){ toggleTheme(); return; }

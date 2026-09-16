@@ -213,7 +213,7 @@ function applyTheme(theme, persist){
   else document.documentElement.removeAttribute('data-theme');
   if(persist){ try{ localStorage.setItem('pd_theme', theme); }catch(e){ /* modo privado sin storage — el toggle sigue andando, solo no se recuerda */ } }
   const metaTheme = document.querySelector('meta[name=theme-color]');
-  if(metaTheme) metaTheme.content = theme === 'light' ? '#F4F7F6' : '#12181A';
+  if(metaTheme) metaTheme.content = theme === 'light' ? '#F5F8F8' : '#0F1517';
   // .theme-btn del header: SVG, no emoji. En el drawer del landing (legal.html
   // y la home deslogueada) el ícono sigue siendo un emoji dentro de un <span
   // class="ic">, que se actualiza más abajo — son dos superficies distintas.
@@ -260,7 +260,7 @@ function toggleTheme(){
 // animación, no un cambio de color instantáneo. Con reduced-motion, cae
 // directo al toggle de siempre (sin el círculo).
 // ==================================================================
-const THEME_BG = { dark: '#12181A', light: '#F4F7F6' };
+const THEME_BG = { dark: '#0F1517', light: '#F5F8F8' };
 function toggleThemeWash(event){
   const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if(prefersReduced || !document.body.animate){ toggleTheme(); return; }

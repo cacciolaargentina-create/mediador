@@ -7,7 +7,7 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<meta name="theme-color" content="#12181A">
+<meta name="theme-color" content="#0F1517">
 <!-- Sin esto, iOS abre el ícono agregado a la pantalla de inicio dentro de
      Safari con toda su interfaz — con esto, abre "standalone" (como una app
      de verdad, sin barra de navegador), que es requisito además para que
@@ -19,37 +19,45 @@
      (el tema por default) hasta que app.js carga al final del body. -->
 <script>(function(){try{var t=localStorage.getItem('pd_theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <style>
   :root{
-    --bg:#12181A; --surface:#1B2326; --surface-2:#222C30; --line:#2E393D;
-    --text:#E7EDEC; --text-dim:#93A3A2; --text-faint:#5E6E6D;
-    --calm:#5FA8A0; --calm-dim:#3E6E69; --warn:#D98C4A; --warn-dim:#5A4327;
-    --danger:#C4614A; --danger-dim:#4A2C23; --header-bg:rgba(18,24,26,0.92);
+    /* Bloque 23 — mismo branding que Mediador (design system del Bloque 20):
+       paleta y tipografía alineadas a los valores exactos de tokens.css, sin
+       tocar la estructura de esta app ni sacar el toggle claro/oscuro (algo
+       que Mediador ni siquiera tiene). Se mantienen los mismos NOMBRES de
+       variable de siempre — todo el resto de la hoja y de app.js sigue
+       funcionando sin cambios, solo cambia a qué color apunta cada una. */
+    --bg:#0F1517; --surface:#172326; --surface-2:#193033; --line:#2A3A3D;
+    --text:#F4F7F7; --text-dim:#93A3A2; --text-faint:#5E6E6D;
+    --calm:#22C7B8; --calm-dim:#123B38; --warn:#D79B2B; --warn-dim:#4A3712;
+    --danger:#D95353; --danger-dim:#4A1F1F; --header-bg:rgba(15,21,23,0.92);
     /* fondo de la pastilla activa del nav inferior y de las filas del menú de
        cuenta: --calm-dim acá no sirve porque en oscuro es un teal sólido que
        pinta un bloque duro; esto es el mismo color de marca pero apenas
        insinuado, que es lo que hace iOS con el ítem seleccionado. */
-    --tab-active-bg:rgba(95,168,160,0.16); --menu-hover-bg:rgba(255,255,255,0.06);
+    --tab-active-bg:rgba(34,199,184,0.16); --menu-hover-bg:rgba(255,255,255,0.06);
     --float-shadow:0 8px 30px rgba(0,0,0,0.34), 0 2px 8px rgba(0,0,0,0.18);
-    --serif:'Fraunces',serif; --sans:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
+    --serif:'Inter',sans-serif; --sans:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
     /* colores de burbuja del chat, aparte de --calm — WhatsApp usa un verde
        propio para "mis" mensajes que no es el --calm de marca del resto de
        la app; se separan en variables propias para poder pedir "que se vea
-       como WhatsApp" sin desteñir el resto de la interfaz. */
+       como WhatsApp" sin desteñir el resto de la interfaz. No son parte del
+       branding (es un color funcional, no de marca) — sin cambios. */
     --wa-me-bg:#005c4b; --wa-them-bg:#202c33; --wa-tick-read:#53bdeb;
   }
   /* ---- modo claro: mismos tokens, otros valores — todo el resto de la hoja
      de estilos usa var(--...), así que alcanza con redefinirlos acá para
-     retemar la app entera (landing y dashboard incluidos). ---- */
+     retemar la app entera (landing y dashboard incluidos). Valores exactos
+     de la paleta clara de Mediador (Bloque 20). ---- */
   :root[data-theme="light"]{
-    --bg:#F4F7F6; --surface:#FFFFFF; --surface-2:#EBF0EF; --line:#DCE4E2;
-    --text:#16211F; --text-dim:#4C5C59; --text-faint:#7C8C89;
-    --calm:#2E7A72; --calm-dim:#D9EDE9; --warn:#A85A1D; --warn-dim:#FBE8D2;
-    --danger:#B23A24; --danger-dim:#F8DFD8; --header-bg:rgba(244,247,246,0.92);
-    --tab-active-bg:rgba(46,122,114,0.12); --menu-hover-bg:rgba(22,33,31,0.05);
-    --float-shadow:0 8px 30px rgba(31,45,43,0.14), 0 2px 8px rgba(31,45,43,0.08);
+    --bg:#F5F8F8; --surface:#FFFFFF; --surface-2:#F2F6F6; --line:#DDE5E6;
+    --text:#172124; --text-dim:#667477; --text-faint:#8A989A;
+    --calm:#159B91; --calm-dim:#E6FAF7; --warn:#D79B2B; --warn-dim:#FFF6DF;
+    --danger:#D95353; --danger-dim:#FCEBEC; --header-bg:rgba(245,248,248,0.92);
+    --tab-active-bg:rgba(21,155,145,0.12); --menu-hover-bg:rgba(23,33,36,0.05);
+    --float-shadow:0 8px 30px rgba(15,21,23,0.14), 0 2px 8px rgba(15,21,23,0.08);
     --wa-me-bg:#d9fdd3; --wa-them-bg:#ffffff; --wa-tick-read:#53bdeb;
   }
   *{box-sizing:border-box; margin:0; padding:0;}

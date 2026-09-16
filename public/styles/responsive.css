@@ -28,10 +28,13 @@
   .mediador-app .feature-grid{ grid-template-columns: 1fr; }
   .mediador-app .steps-row{ flex-direction: column; }
 
-  .mediador-app .login-split{ flex-direction: column; }
-  .mediador-app .login-branding{ padding: var(--space-7) var(--space-5); min-height: 260px; }
+  /* la burbuja sigue siendo una burbuja en mobile — apilada debajo del
+     branding, pero con margen a los costados (nunca de punta a punta)
+     para que la foto se siga viendo alrededor. */
+  .mediador-app .login-split{ flex-direction: column; align-items: stretch; }
+  .mediador-app .login-branding{ padding: var(--space-6) var(--space-5) var(--space-4); min-height: 200px; justify-content: flex-end; }
   .mediador-app .login-branding h1{ font-size: var(--font-size-xl); }
-  .mediador-app .login-panel{ width: 100%; padding: var(--space-6) var(--space-5); }
+  .mediador-app .login-panel{ width: auto; margin: var(--space-4); padding: var(--space-6) var(--space-5); max-height: none; }
 
   .mediador-app .modal{ max-width: calc(100vw - 32px); }
   .mediador-app .modal-body, .mediador-app .modal-header, .mediador-app .modal-footer{ padding-left: var(--space-4); padding-right: var(--space-4); }

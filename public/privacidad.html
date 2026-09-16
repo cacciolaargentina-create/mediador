@@ -7,25 +7,25 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<meta name="theme-color" content="#12181A">
+<meta name="theme-color" content="#0F1517">
 <!-- corre ANTES de pintar: si no, quien eligió modo claro ve un flash oscuro
      (el tema por default) hasta que site-common.js carga al final del body. -->
 <script>(function(){try{var t=localStorage.getItem('pd_theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#12181A; --surface:#1B2326; --surface-2:#222C30; --line:#2E393D;
-    --text:#E7EDEC; --text-dim:#93A3A2; --text-faint:#5E6E6D;
-    --calm:#5FA8A0; --calm-dim:#3E6E69; --warn:#D98C4A; --warn-dim:#5A4327;
-    --danger:#C4614A; --danger-dim:#4A2C23; --header-bg:rgba(18,24,26,0.92);
-    --serif:'Fraunces',serif; --sans:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
+    --bg:#0F1517; --surface:#172326; --surface-2:#193033; --line:#2A3A3D;
+    --text:#F4F7F7; --text-dim:#93A3A2; --text-faint:#5E6E6D;
+    --calm:#22C7B8; --calm-dim:#123B38; --warn:#D79B2B; --warn-dim:#4A3712;
+    --danger:#D95353; --danger-dim:#4A1F1F; --header-bg:rgba(15,21,23,0.92);
+    --serif:'Inter',sans-serif; --sans:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
   }
   :root[data-theme="light"]{
-    --bg:#F4F7F6; --surface:#FFFFFF; --surface-2:#EBF0EF; --line:#DCE4E2;
-    --text:#16211F; --text-dim:#4C5C59; --text-faint:#7C8C89;
-    --calm:#2E7A72; --calm-dim:#D9EDE9; --warn:#A85A1D; --warn-dim:#FBE8D2;
-    --danger:#B23A24; --danger-dim:#F8DFD8; --header-bg:rgba(244,247,246,0.92);
+    --bg:#F5F8F8; --surface:#FFFFFF; --surface-2:#F2F6F6; --line:#DDE5E6;
+    --text:#172124; --text-dim:#667477; --text-faint:#8A989A;
+    --calm:#159B91; --calm-dim:#E6FAF7; --warn:#D79B2B; --warn-dim:#FFF6DF;
+    --danger:#D95353; --danger-dim:#FCEBEC; --header-bg:rgba(245,248,248,0.92);
   }
   *{ box-sizing:border-box; margin:0; padding:0; }
   html,body{ height:100%; }

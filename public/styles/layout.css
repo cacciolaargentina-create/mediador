@@ -10,7 +10,10 @@
 .mediador-logo.on-light .mediador-logo-text{ color: var(--color-text); }
 
 /* ================= APP SHELL ================= */
-.mediador-app .shell{ display: flex; min-height: 100vh; }
+/* #app lleva .mediador-app Y .shell en el mismo elemento (mismo caso que
+   el backdrop del onboarding, ver components.css) — selector compuesto,
+   no descendiente. */
+.mediador-app.shell{ display: flex; min-height: 100vh; }
 
 .mediador-app .sidebar{
   width: 252px; flex-shrink: 0; background: var(--color-sidebar);
@@ -52,20 +55,46 @@
 
 /* ================= LANDING / LOGIN ================= */
 #login-gate.mediador-app{ min-height: 100vh; }
-.mediador-app .login-split{ display: flex; min-height: 100vh; }
-.mediador-app .login-branding{
-  flex: 1; background: var(--color-sidebar); color: var(--color-text-on-dark);
-  display: flex; flex-direction: column; justify-content: center; padding: var(--space-9);
-  position: relative; overflow: hidden;
+/* la foto (public/images/bridge.jpeg) es el fondo de TODA la pantalla —
+   branding y tarjeta de login flotan arriba de ella, no cada uno con su
+   propio panel de color sólido como antes. El degradé oscurece la
+   izquierda (donde va el texto de marca, que si no quedaría ilegible
+   sobre la foto) y se aclara hacia la derecha para que la foto se vea
+   de verdad detrás de la tarjeta flotante. */
+.mediador-app .login-split{
+  position: relative; display: flex; align-items: center; min-height: 100vh;
+  background: url('/images/bridge.jpeg') center / cover no-repeat;
 }
-.mediador-app .login-branding .bridge-graphic{ position: absolute; inset: 0; opacity: .5; pointer-events: none; }
+.mediador-app .login-split::before{
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(100deg, rgba(15,21,23,.85) 0%, rgba(15,21,23,.6) 40%, rgba(15,21,23,.25) 75%);
+}
+.mediador-app .login-branding{
+  flex: 1; color: var(--color-text-on-dark);
+  display: flex; flex-direction: column; justify-content: center; padding: var(--space-9);
+  position: relative; z-index: 1;
+}
 .mediador-app .login-branding-content{ position: relative; max-width: 420px; }
 .mediador-app .login-branding .mediador-logo{ margin-bottom: var(--space-7); }
 .mediador-app .login-branding h1{ color: var(--color-text-on-dark); font-size: 28px; line-height: 1.3; margin-bottom: var(--space-5); }
 .mediador-app .login-branding .tagline{ color: var(--color-text-on-dark-muted); font-size: var(--font-size-body); line-height: 1.7; }
 .mediador-app .login-branding .tagline strong{ color: var(--color-text-on-dark); font-weight: var(--font-weight-semibold); display: block; }
 
-.mediador-app .login-panel{ width: 460px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; padding: var(--space-7); background: var(--color-surface); }
+/* la "burbuja" — tarjeta flotante de vidrio esmerilado, nunca pegada a
+   los bordes ni de alto completo como un panel: el margen alrededor es
+   lo que deja ver la foto "pasando por debajo" en los cuatro lados. */
+.mediador-app .login-panel{
+  width: 440px; flex-shrink: 0; position: relative; z-index: 1;
+  display: flex; align-items: center; justify-content: center;
+  margin: var(--space-8); padding: var(--space-7);
+  background: rgba(255,255,255,.90);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4); backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid rgba(255,255,255,.5);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 24px 60px rgba(15,21,23,.35), 0 4px 20px rgba(15,21,23,.18);
+  max-height: calc(100vh - var(--space-8) * 2);
+  overflow-y: auto;
+}
 .mediador-app .login-panel-inner{ width: 100%; max-width: 320px; text-align: center; }
 .mediador-app .login-panel .eyebrow{ text-align: center; }
 .mediador-app .login-panel h2{ font-size: var(--font-size-xl); margin-bottom: var(--space-2); }
