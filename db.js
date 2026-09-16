@@ -43,7 +43,7 @@ const EMPTY_DB = {
   reports: [], // { id, channelId, messageId|null, reporterId, reason, createdAt, status:'pendiente'|'revisado', reviewedBy, reviewedAt } — "Reportar" desde el chat, para cuando lo que preocupa es un mensaje del OTRO lado (la moderación de IA solo filtra lo que uno mismo manda)
 
   // ===== Mediador (B2B) — Bloque 1. Ver IMPLEMENTATION_PLAN.md §3 para el resto de las tablas (Bloques 4-6, todavía no creadas) =====
-  mediations: [], // { id, code, internalNumber, mediatorUserId, channelId, type, object, description, status:'borrador'|'iniciada'|'contactando_partes'|'notificaciones'|'audiencia_programada'|'en_mediacion'|'acuerdo'|'acuerdo_parcial'|'sin_acuerdo'|'incomparecencia'|'cerrada', nextActionText, nextActionResponsibleType:'mediador'|'party'|'lawyer', nextActionResponsibleId, nextActionDueDate, closedAt, closedResult, closedNotes, createdAt }
+  mediations: [], // { id, code, internalNumber, mediatorUserId, channelId, type, object, description, status:'borrador'|'iniciada'|'contactando_partes'|'notificaciones'|'audiencia_programada'|'en_mediacion'|'acuerdo'|'acuerdo_parcial'|'sin_acuerdo'|'incomparecencia'|'cerrada', nextActionText, nextActionResponsibleType:'mediador'|'party'|'lawyer', nextActionResponsibleId, nextActionDueDate, closedAt, closedResult, closedNotes, createdAt, inactivityThresholdDays|null, partyNoResponseThresholdDays|null } — inactivityThresholdDays/partyNoResponseThresholdDays (Bloque 22 automatización): ventanas configurables por mediación para el centro de atención, default en código (21 y 5 días) si son null — mismo patrón que upcomingDueWindowDays
   mediationStatusHistory: [], // { id, mediationId, fromStatus, toStatus, changedBy, note, createdAt } — nunca se borra una fila, solo se agregan
   mediationAccess: [], // { id, mediationId, userId, role:'mediador'|'asistente'|'abogado'|'admin', partyId|null, grantedBy, grantedAt } — el mediador titular vive en mediations.mediatorUserId, esta tabla es para accesos ADICIONALES (ver §3.2b del plan)
 
@@ -67,7 +67,8 @@ const EMPTY_DB = {
 
   // ===== Bloque 6. Ver IMPLEMENTATION_PLAN.md §3.10/3.11/3.8/3.9 =====
   mediationEvents: [], // { id, mediationId, type, actorId|null, visibility:'public'|'mediator_only', entityType, entityId, title, description, metadata|null, causedByEventId|null, createdAt }
-  tasks: [], // { id, mediationId, assignedTo, title, description, dueDate, priority:'baja'|'media'|'alta'|'urgente', status:'pendiente'|'en_proceso'|'completada'|'cancelada', createdBy, completedAt, createdAt, sourceMessageId|null }
+  tasks: [], // { id, mediationId, assignedTo, title, description, dueDate, priority:'baja'|'media'|'alta'|'urgente', status:'pendiente'|'en_proceso'|'completada'|'cancelada', createdBy, completedAt, createdAt, sourceMessageId|null, sourceDocumentId|null } — sourceDocumentId (Bloque 22 automatización): igual que sourceMessageId pero para "documento recibido → ¿crear tarea de revisión?"; sirve para no duplicar la sugerencia si ya existe una tarea activa para ese documento
+  attentionDismissals: [], // { id, mediationId, alertType, refId, dismissedBy, dismissedAt } — "descartar alerta" del centro de atención (Bloque 22 automatización). alertType+refId identifican la situación puntual (ej. alertType:'partyNoResponse', refId:partyId) — nunca borra el dato subyacente, solo oculta la alerta hasta que la situación cambie de verdad (ver automationEngine.js)
   commitments: [], // { id, mediationId, partyId, description, dueDate, status:'pendiente'|'cumplido'|'vencido'|'cancelado', createdFromEventId|null, completedAt, createdAt, sourceMessageId|null }
 };
 
@@ -266,6 +267,14 @@ CREATE TABLE IF NOT EXISTS commitments (
   id TEXT PRIMARY KEY, mediationId TEXT, partyId TEXT, description TEXT, dueDate TEXT,
   status TEXT DEFAULT 'pendiente', createdFromEventId TEXT, completedAt INTEGER, createdAt INTEGER
 );
+-- Bloque 22 (automatización) — "descartar alerta" del centro de atención,
+-- solo para las alertas que no tienen un registro propio que cambiar de
+-- estado (a diferencia de una tarea o un compromiso, que se resuelven
+-- marcándolos completados). Nunca borra el dato de origen.
+CREATE TABLE IF NOT EXISTS attention_dismissals (
+  id TEXT PRIMARY KEY, mediationId TEXT, alertType TEXT, refId TEXT,
+  dismissedBy TEXT, dismissedAt INTEGER
+);
 CREATE INDEX IF NOT EXISTS idx_certified_exports_hash ON certified_exports(hash);
 CREATE INDEX IF NOT EXISTS idx_professional_applications_user ON professional_applications(userId);
 CREATE INDEX IF NOT EXISTS idx_moderation_stats_date ON moderation_stats(date);
@@ -342,6 +351,7 @@ const TABLE_NAMES = {
   mediatorAvailability: 'mediator_availability', mediatorScheduleBlocks: 'mediator_schedule_blocks',
   documents: 'documents',
   mediationEvents: 'mediation_events', tasks: 'tasks', commitments: 'commitments',
+  attentionDismissals: 'attention_dismissals',
 };
 
 function rowToRecord(collectionKey, row) {
@@ -453,6 +463,15 @@ function openDb() {
   ensureColumns(sqlite, 'tasks', { sourceMessageId: 'TEXT' });
   ensureColumns(sqlite, 'commitments', { sourceMessageId: 'TEXT' });
   ensureColumns(sqlite, 'hearing_reschedule_requests', { sourceMessageId: 'TEXT' });
+  // Bloque 22 (automatización) — mismo criterio que sourceMessageId, pero
+  // para "documento recibido → ¿crear tarea de revisión?" (ver §6 de la
+  // spec): sirve para no sugerir/duplicar la tarea si ya existe una
+  // activa para ESE documento puntual.
+  ensureColumns(sqlite, 'tasks', { sourceDocumentId: 'TEXT' });
+  // ventanas configurables del centro de atención, mismo patrón que
+  // upcomingDueWindowDays (Bloque 11) — NULL usa el default del código
+  // (21 días de inactividad, 5 días sin respuesta de una parte).
+  ensureColumns(sqlite, 'mediations', { inactivityThresholdDays: 'INTEGER', partyNoResponseThresholdDays: 'INTEGER' });
   if (isNew && fs.existsSync(LEGACY_JSON_PATH)) {
     migrateFromJson(sqlite, LEGACY_JSON_PATH);
   }

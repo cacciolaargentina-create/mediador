@@ -20,6 +20,8 @@ const { checkHearingConflicts, toMinutes } = require('../agenda');
 const { notifyPartyAboutHearing, notifyLawyerAboutHearing } = require('../messaging');
 const { askMediationAssistant, askDashboardAssistant, askMediationAssistantAboutDocument, suggestTasksFromNote } = require('../assistant');
 const { buildDraftMinutesPDF, buildConvocationLetterPDF } = require('../workingDocuments');
+const automationEngine = require('../automationEngine');
+const { getHearingPreparationState, getDashboardAttentionItems, getMediationAttentionItems, isAlertDismissed } = automationEngine;
 const archiver = require('archiver');
 const { postMessage } = require('../messaging');
 const { serializeMessage } = require('../serializers');
@@ -153,6 +155,8 @@ function serializeMediation(m) {
     closedByName: m.closedBy ? (getDB().users.find((u) => u.id === m.closedBy)?.name || null) : null,
     reminderHoursBefore: m.reminderHoursBefore ?? 48, reminderChannels: m.reminderChannels || 'push,whatsapp',
     upcomingDueWindowDays: m.upcomingDueWindowDays ?? 7,
+    inactivityThresholdDays: m.inactivityThresholdDays ?? automationEngine.DEFAULT_INACTIVITY_THRESHOLD_DAYS,
+    partyNoResponseThresholdDays: m.partyNoResponseThresholdDays ?? automationEngine.DEFAULT_PARTY_NO_RESPONSE_THRESHOLD_DAYS,
     createdAt: m.createdAt,
   };
 }
@@ -561,6 +565,22 @@ module.exports = function (io, presence) {
       // un buzón de mensajes, solo dice cuántas conversaciones tienen
       // algo sin leer.
       comunicacionesPendientes,
+      // Bloque 22 — "¿Qué requiere tu atención?": el mismo criterio que
+      // los bloques de arriba, pero unificado en una sola lista plana y
+      // priorizada (vencido > crítico > próximo > pendiente, sin ranking
+      // ni puntaje), con la acción sugerida para cada situación. Incluye
+      // además las detecciones nuevas de este bloque (mediación inactiva,
+      // comunicación sin acción, parte sin respuesta, mediación que
+      // parece lista para cerrarse) que los campos de arriba no cubrían.
+      // se suman acá (en vez de adentro de automationEngine) porque ya
+      // estaban calculadas arriba para alertasAgenda — no tiene sentido
+      // recorrer hearings/whatsappLog una segunda vez para lo mismo.
+      centroAtencion: [
+        ...getDashboardAttentionItems(db, mine),
+        ...propuestasPendientes.map((h) => ({ type: 'propuestaPendiente', mediationId: h.mediationId, mediationCode: h.mediationCode, title: `Propuesta de audiencia del ${h.date} sin respuesta`, detail: null, priority: 'pendiente', dueDate: h.date, refId: h.id, suggestedActions: ['verMediacion'] })),
+        ...audienciasCanceladasRecientemente.map((h) => ({ type: 'audienciaCancelada', mediationId: h.mediationId, mediationCode: h.mediationCode, title: `Audiencia cancelada · ${h.date}`, detail: 'Revisar si corresponde reagendar.', priority: 'pendiente', dueDate: null, refId: h.id, suggestedActions: ['verMediacion'] })),
+        ...fallosNotificacion.map((f) => ({ type: 'falloNotificacion', mediationId: f.mediationId, mediationCode: f.mediationCode, title: `Notificación a ${f.userName || 'alguien'} no llegó`, detail: null, priority: 'pendiente', dueDate: null, refId: f.mediationId, suggestedActions: ['verMediacion'] })),
+      ].sort((a, b) => ({ vencido: 1, critico: 2, proximo: 3, pendiente: 4 }[a.priority] - { vencido: 1, critico: 2, proximo: 3, pendiente: 4 }[b.priority])),
     });
   });
 
@@ -759,6 +779,23 @@ module.exports = function (io, presence) {
       }
       mediation.upcomingDueWindowDays = days;
     }
+    // Bloque 22 — ventanas configurables del centro de atención (§10/§14
+    // de la spec: "el período debe ser configurable"). Mismo patrón de
+    // validación que upcomingDueWindowDays de arriba.
+    if (req.body?.inactivityThresholdDays !== undefined) {
+      const days = Number(req.body.inactivityThresholdDays);
+      if (!Number.isFinite(days) || days < 1 || days > 180) {
+        return res.status(400).json({ error: 'El umbral de inactividad tiene que ser entre 1 y 180 días' });
+      }
+      mediation.inactivityThresholdDays = days;
+    }
+    if (req.body?.partyNoResponseThresholdDays !== undefined) {
+      const days = Number(req.body.partyNoResponseThresholdDays);
+      if (!Number.isFinite(days) || days < 1 || days > 60) {
+        return res.status(400).json({ error: 'El umbral de "sin respuesta" tiene que ser entre 1 y 60 días' });
+      }
+      mediation.partyNoResponseThresholdDays = days;
+    }
 
     await commit();
     res.json(serializeMediation(mediation));
@@ -898,6 +935,32 @@ module.exports = function (io, presence) {
       .filter((h) => h.mediationId === req.mediation.id)
       .sort((a, b) => a.createdAt - b.createdAt);
     res.json(history);
+  });
+
+  // Bloque 22 §1/§2 — mismo feed del centro de atención del dashboard,
+  // acotado a ESTA mediación puntual (para mostrarlo en el expediente).
+  router.get('/:id/attention', requireAuth, requireMediationAccess, (req, res) => {
+    const db = getDB();
+    res.json(getMediationAttentionItems(db, req.mediation));
+  });
+
+  // "descartar alerta" — solo tiene sentido para las situaciones que no
+  // tienen un registro propio para resolver (a diferencia de una tarea o
+  // un compromiso, que se marcan completados). Nunca borra el dato de
+  // origen — solo oculta la alerta hasta que la situación cambie de
+  // verdad (ver isAlertDismissed en automationEngine.js).
+  const DISMISSABLE_ALERT_TYPES = ['mediacionInactiva', 'parteSinRespuesta'];
+  router.post('/:id/attention/:alertType/:refId/dismiss', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    if (!DISMISSABLE_ALERT_TYPES.includes(req.params.alertType)) {
+      return res.status(400).json({ error: 'Este tipo de alerta no se puede descartar — resolvela desde su propia acción (tarea, compromiso, etc.)' });
+    }
+    const db = getDB();
+    db.attentionDismissals.push({
+      id: nanoid(), mediationId: req.mediation.id, alertType: req.params.alertType, refId: req.params.refId,
+      dismissedBy: req.user.id, dismissedAt: Date.now(),
+    });
+    await commit();
+    res.json({ ok: true });
   });
 
   // Bloque 12 — asistente de ESTA mediación puntual ("¿qué pasó en esta
@@ -1370,63 +1433,15 @@ module.exports = function (io, presence) {
 
   // ---------- audiencias ----------
   // Bloque 15 (Parte 3) §1-3 — checklist de preparación, calculado en
-  // vivo desde datos existentes (partes, abogados, confirmaciones,
-  // documentos, tareas, compromisos, solicitudes) — nunca una tabla
-  // nueva de checklist. "pendiente porque falta acción" se distingue de
-  // "no corresponde" (ej. no hay abogados vinculados, no es un problema).
-  const PREPARATION_ITEM_LABELS_ES = {
-    partesIdentificadas: 'Partes identificadas', datosDeContacto: 'Datos de contacto', abogadosVinculados: 'Abogados vinculados',
-    confirmaciones: 'Confirmaciones', documentosPendientesRevision: 'Documentos sin revisar', tareasPendientes: 'Tareas pendientes',
-    compromisosPendientes: 'Compromisos pendientes', modalidadDatos: 'Datos de modalidad', solicitudesDeCambio: 'Solicitudes de cambio',
-  };
-  function buildHearingPreparation(db, mediation, hearing) {
-    const parties = db.parties.filter((p) => p.mediationId === mediation.id && p.status === 'activa');
-    const lawyers = db.lawyers.filter((l) => l.mediationId === mediation.id);
-    const confirmations = db.hearingConfirmations.filter((c) => c.hearingId === hearing.id);
-    const allConfirmed = confirmations.length > 0 && confirmations.every((c) => c.response === 'confirma');
-    const documentsPendingReview = db.documents.filter((d) => d.mediationId === mediation.id && d.status === 'recibido');
-    const pendingTasks = db.tasks.filter((t) => t.mediationId === mediation.id && ['pendiente', 'en_proceso'].includes(t.status));
-    const pendingCommitments = db.commitments.filter((c) => c.mediationId === mediation.id && ['pendiente', 'vencido'].includes(c.status));
-    const pendingRequests = db.hearingRescheduleRequests.filter((r) => r.hearingId === hearing.id && r.status === 'pendiente');
-    const modalityIssue = validateModalityData(hearing.modality, hearing.location, hearing.meetingUrl);
-
-    const items = {
-      partesIdentificadas: { status: parties.length > 0 ? 'realizado' : 'pendiente', detail: `${parties.length} parte(s)` },
-      datosDeContacto: { status: parties.length > 0 && parties.every((p) => p.email || p.phone) ? 'realizado' : (parties.length ? 'pendiente' : 'no_corresponde') },
-      abogadosVinculados: { status: lawyers.length > 0 ? 'realizado' : 'no_corresponde', detail: `${lawyers.length} abogado(s)` },
-      confirmaciones: { status: confirmations.length === 0 ? 'no_corresponde' : (allConfirmed ? 'realizado' : 'pendiente'), detail: `${confirmations.filter((c) => c.response === 'confirma').length}/${confirmations.length} confirmaron` },
-      documentosPendientesRevision: { status: documentsPendingReview.length === 0 ? 'realizado' : 'pendiente', detail: `${documentsPendingReview.length} sin revisar` },
-      tareasPendientes: { status: pendingTasks.length === 0 ? 'realizado' : 'pendiente', detail: `${pendingTasks.length} pendiente(s)` },
-      compromisosPendientes: { status: pendingCommitments.length === 0 ? 'realizado' : 'pendiente', detail: `${pendingCommitments.length} pendiente(s)` },
-      modalidadDatos: { status: modalityIssue ? 'pendiente' : 'realizado', detail: modalityIssue || 'Datos completos para la modalidad' },
-      solicitudesDeCambio: { status: pendingRequests.length === 0 ? 'realizado' : 'pendiente', detail: `${pendingRequests.length} sin resolver` },
-    };
-
-    const pendingKeys = Object.keys(items).filter((k) => items[k].status === 'pendiente');
-    const criticalKeys = ['confirmaciones', 'modalidadDatos', 'solicitudesDeCambio'].filter((k) => items[k].status === 'pendiente');
-    const daysUntil = (new Date(hearing.date).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-    // Bloque 17 §14/15 — "motivo" es texto para el mediador, no puede
-    // traer las claves internas del objeto (mismas etiquetas que ya usa
-    // el frontend en PREPARATION_ITEM_LABELS, acá server-side porque la
-    // frase se arma acá).
-    const itemLabel = (k) => PREPARATION_ITEM_LABELS_ES[k] || k;
-
-    let estado, motivo;
-    if (pendingKeys.length === 0) {
-      estado = 'preparada'; motivo = 'No existen bloqueos operativos relevantes.';
-    } else if (daysUntil <= 2 && criticalKeys.length > 0) {
-      estado = 'critica'; motivo = `La audiencia es en ${Math.max(0, Math.round(daysUntil))} día(s) y hay pendientes importantes: ${criticalKeys.map(itemLabel).join(', ')}.`;
-    } else {
-      estado = 'pendiente'; motivo = `Hay elementos que todavía requieren revisión: ${pendingKeys.map(itemLabel).join(', ')}.`;
-    }
-    return { items, estado, motivo };
-  }
-
+  // vivo desde datos existentes. Bloque 22 — la función se movió a
+  // automationEngine.js (getHearingPreparationState) para poder
+  // reutilizarla desde el centro de atención del dashboard sin duplicar
+  // el criterio acá; esta ruta ahora solo la llama.
   router.get('/:id/hearings/:hearingId/preparation', requireAuth, requireMediationAccess, (req, res) => {
     const db = getDB();
     const hearing = db.hearings.find((h) => h.id === req.params.hearingId && h.mediationId === req.mediation.id);
     if (!hearing) return res.status(404).json({ error: 'Audiencia no encontrada en esta mediación' });
-    res.json(buildHearingPreparation(db, req.mediation, hearing));
+    res.json(getHearingPreparationState(db, req.mediation, hearing));
   });
 
   // Bloque 15 (Parte 3) §15 — resumen accionable, no todo el expediente.
@@ -1457,7 +1472,7 @@ module.exports = function (io, presence) {
 
     res.json({
       hearing: serializeHearing(hearing, confirmations),
-      preparation: buildHearingPreparation(db, mediation, hearing),
+      preparation: getHearingPreparationState(db, mediation, hearing),
       perParty,
       documentosRelevantes: relevantDocuments,
       tareasPendientes: pendingTasks,
@@ -2189,7 +2204,7 @@ module.exports = function (io, presence) {
       id: t.id, mediationId: t.mediationId, assignedTo: t.assignedTo,
       title: t.title, description: t.description, dueDate: t.dueDate, priority: t.priority,
       status: t.status, createdBy: t.createdBy, completedAt: t.completedAt, createdAt: t.createdAt,
-      sourceMessageId: t.sourceMessageId || null,
+      sourceMessageId: t.sourceMessageId || null, sourceDocumentId: t.sourceDocumentId || null,
     };
   }
   function serializeCommitment(c) {
@@ -2257,23 +2272,41 @@ module.exports = function (io, presence) {
     return channel ? msg.id : null;
   }
 
+  // Bloque 22 §6 — mismo criterio que resolveSourceMessage: valida que el
+  // documento sea de ESTA mediación antes de guardarlo como referencia,
+  // nunca confía en el id que manda el frontend.
+  function resolveSourceDocument(db, mediationId, sourceDocumentId) {
+    if (!sourceDocumentId) return null;
+    const doc = db.documents.find((d) => d.id === sourceDocumentId && d.mediationId === mediationId);
+    return doc ? doc.id : null;
+  }
+
   router.post('/:id/tasks', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
-    const { title, description, dueDate, priority, sourceMessageId } = req.body || {};
+    const { title, description, dueDate, priority, sourceMessageId, sourceDocumentId } = req.body || {};
     if (!title || !title.trim()) return res.status(400).json({ error: 'Falta el título de la tarea' });
     const db = getDB();
+    const resolvedSourceDocumentId = resolveSourceDocument(db, req.mediation.id, sourceDocumentId);
+    // Bloque 22 §6 — "si ya existe una tarea activa de revisión para ese
+    // documento, no duplicarla": en vez de crear una segunda, devolvemos
+    // la que ya existe (misma idea que el guard de "doble click" que ya
+    // usa el cambio de estado de audiencia/mediación).
+    if (resolvedSourceDocumentId) {
+      const existing = db.tasks.find((t) => t.mediationId === req.mediation.id && t.sourceDocumentId === resolvedSourceDocumentId && ['pendiente', 'en_proceso'].includes(t.status));
+      if (existing) return res.json({ ...serializeTask(existing), alreadyExisted: true });
+    }
     const resolvedSourceMessageId = resolveSourceMessage(db, req.mediation.id, sourceMessageId);
     const task = {
       id: nanoid(), mediationId: req.mediation.id, assignedTo: req.user.id,
       title: title.trim(), description: description || null, dueDate: dueDate || null,
       priority: ['baja', 'media', 'alta', 'urgente'].includes(priority) ? priority : 'media',
       status: 'pendiente', createdBy: req.user.id, completedAt: null, createdAt: Date.now(),
-      sourceMessageId: resolvedSourceMessageId,
+      sourceMessageId: resolvedSourceMessageId, sourceDocumentId: resolvedSourceDocumentId,
     };
     db.tasks.push(task);
     logMediationEvent(db, {
       mediationId: req.mediation.id, type: 'TASK_CREATED', actorId: req.user.id,
       entityType: 'task', entityId: task.id, title: `Tarea creada: ${task.title}`,
-      metadata: resolvedSourceMessageId ? { sourceMessageId: resolvedSourceMessageId } : null,
+      metadata: (resolvedSourceMessageId || resolvedSourceDocumentId) ? { sourceMessageId: resolvedSourceMessageId, sourceDocumentId: resolvedSourceDocumentId } : null,
     });
     await commit();
     res.json(serializeTask(task));

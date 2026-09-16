@@ -268,45 +268,145 @@ function goTo(screen, id){
     b.classList.toggle('active', b.dataset.screen === TAB_FOR_SCREEN[screen]);
   });
   closeSidebar();
-  if(screen === 'dashboard') renderDashboard();
-  else if(screen === 'list') renderList();
-  else if(screen === 'detail') renderDetail(id);
-  else if(screen === 'new') renderNewForm();
-  else if(screen === 'stats') renderStats();
-  else if(screen === 'team') renderTeam();
-  else if(screen === 'studioMediations') renderStudioMediations();
-  else if(screen === 'agenda') renderAgenda();
-  else if(screen === 'requests') renderRequests();
+  // Bloque 22 — devuelve la promesa del render para que quien necesite
+  // hacer algo DESPUÉS de que la pantalla esté lista (ej. bajar a una
+  // sección puntual) pueda hacer `await goTo(...)` — los llamados
+  // existentes que no usan el valor de retorno siguen funcionando igual.
+  let renderPromise;
+  if(screen === 'dashboard') renderPromise = renderDashboard();
+  else if(screen === 'list') renderPromise = renderList();
+  else if(screen === 'detail') renderPromise = renderDetail(id);
+  else if(screen === 'new') renderPromise = renderNewForm();
+  else if(screen === 'stats') renderPromise = renderStats();
+  else if(screen === 'team') renderPromise = renderTeam();
+  else if(screen === 'studioMediations') renderPromise = renderStudioMediations();
+  else if(screen === 'agenda') renderPromise = renderAgenda();
+  else if(screen === 'requests') renderPromise = renderRequests();
   window.scrollTo(0, 0);
+  return renderPromise;
 }
 
 // ================= DASHBOARD =================
 // ================= DASHBOARD =================
-// Prioridad única (Bloque 17 §2): "¿qué tengo que hacer ahora?" — una
-// sola lista ordenada por urgencia real, no una por cada fuente de datos
-// como antes (eso hacía que un aviso meramente informativo — "audiencia
-// confirmada recientemente" — compitiera visualmente con algo urgente
-// como una solicitud de cambio sin resolver, y encima se repetía dos
-// veces: acá Y en "Qué pasó"). El orden es fijo, no por fecha:
-//   1 vencimientos críticos  2 audiencias próximas  3 solicitudes de
-//   cambio  4 confirmaciones pendientes  5 tareas vencidas
-//   6 compromisos vencidos  7 el resto de las alertas
-function buildDashboardPriorityItems(d){
-  return [
-    ...d.necesitanAtencion.accionesVencidas.map(m => ({ rank:1, mediationId:m.id, mediationCode:m.code, label: m.object, badge: `<span class="pill danger">próxima acción vencida · ${fmtDate(m.nextActionDueDate)}</span>` })),
-    ...d.proximasAudiencias.slice(0, 3).map(h => ({ rank:2, mediationId:h.mediationId, mediationCode:h.mediationCode, label: `Audiencia ${fmtDate(h.date)}${h.startTime ? ' ' + h.startTime : ''}`, badge: `<span class="pill calm">próxima</span>` })),
-    ...d.alertasAgenda.solicitudesCambioPendientes.map(r => ({ rank:3, mediationId:r.mediationId, mediationCode:r.mediationCode, label: 'Solicitud de cambio sin resolver', badge: `<span class="pill warn">pendiente</span>` })),
-    ...d.necesitanAtencion.audienciasSinConfirmar.map(h => ({ rank:4, mediationId:h.mediationId, mediationCode:h.mediationCode, label: `Audiencia ${fmtDate(h.date)} sin confirmar`, badge: `<span class="pill warn">confirmación pendiente</span>` })),
-    ...d.necesitanAtencion.tareasVencidas.map(t => ({ rank:5, mediationId:t.mediationId, mediationCode:t.mediationCode, label: t.title, badge: `<span class="pill danger">tarea vencida</span>` })),
-    ...d.necesitanAtencion.compromisosVencidos.map(c => ({ rank:6, mediationId:c.mediationId, mediationCode:c.mediationCode, label: `${c.partyName}: ${c.description}`, badge: `<span class="pill danger">compromiso vencido</span>` })),
-    ...d.necesitanAtencion.sinProximaAccion.map(m => ({ rank:7, mediationId:m.id, mediationCode:m.code, label: m.object, badge: `<span class="pill warn">sin próxima acción</span>` })),
-    ...d.necesitanAtencion.documentosPendientesRevision.map(doc => ({ rank:7, mediationId:doc.mediationId, mediationCode:doc.mediationCode, label: doc.originalFilename, badge: `<span class="pill warn">documento sin revisar</span>` })),
-    ...d.alertasAgenda.audienciasSinResultado.map(h => ({ rank:7, mediationId:h.mediationId, mediationCode:h.mediationCode, label: `Audiencia ${fmtDate(h.date)} sin resultado registrado`, badge: `<span class="pill danger">sin registrar</span>` })),
-    ...d.alertasAgenda.audienciasRealizadasSinProximaAccion.map(h => ({ rank:7, mediationId:h.mediationId, mediationCode:h.mediationCode, label: 'Audiencia realizada sin próxima acción cargada', badge: `<span class="pill warn">revisar</span>` })),
-    ...d.alertasAgenda.propuestasPendientes.map(h => ({ rank:7, mediationId:h.mediationId, mediationCode:h.mediationCode, label: `Propuesta del ${fmtDate(h.date)} sin respuesta`, badge: `<span class="pill warn">propuesta</span>` })),
-    ...d.alertasAgenda.audienciasCanceladasRecientemente.map(h => ({ rank:7, mediationId:h.mediationId, mediationCode:h.mediationCode, label: `Audiencia cancelada · ${fmtDate(h.date)}`, badge: `<span class="pill danger">revisar</span>` })),
-    ...d.alertasAgenda.fallosNotificacion.map(f => ({ rank:7, mediationId:f.mediationId, mediationCode:f.mediationCode, label: `Notificación a ${escapeHtml(f.userName || 'alguien')} no llegó`, badge: `<span class="pill danger">revisar</span>` })),
-  ].sort((a, b) => a.rank - b.rank);
+// Bloque 22 — "¿Qué requiere tu atención?" ahora es el centro de
+// atención calculado en el SERVIDOR (automationEngine.js vía
+// GET /api/mediations/dashboard → centroAtencion), no un armado del
+// lado del cliente — el motor central es el único lugar que decide qué
+// cuenta como "requiere atención", para no tener dos criterios distintos
+// si mañana se agrega otra pantalla que también necesite esta lista
+// (ej. un widget dentro del expediente, que usa el mismo shape).
+let currentAttentionItems = [];
+
+const ATTENTION_PRIORITY_LABELS = { vencido: 'Vencido', critico: 'Crítico', proximo: 'Próximo', pendiente: 'Pendiente' };
+const ATTENTION_PRIORITY_BADGE_CLASS = { vencido: 'danger', critico: 'danger', proximo: 'warn', pendiente: 'calm' };
+const ATTENTION_ACTION_LABELS = {
+  verMediacion: 'Ver mediación', ver: 'Ver', definirProximaAccion: 'Definir próxima acción',
+  completarTarea: 'Completar', editarTarea: 'Editar', contactarParte: 'Contactar parte',
+  marcarCompletado: 'Marcar completado', enviarAviso: 'Enviar aviso', resolver: 'Resolver',
+  crearTarea: 'Crear tarea', verDocumento: 'Ver documento', registrarResultado: 'Registrar resultado',
+  verComunicacion: 'Ver comunicación', crearCompromiso: 'Crear compromiso', cerrarMediacion: 'Cerrar mediación',
+  registrarActividad: 'Registrar actividad', descartar: 'Descartar', contactar: 'Contactar',
+};
+// a qué sección del expediente saltar según de dónde salió la alerta —
+// mismos anchors (#section-xxx) que ya usa el subnav del expediente.
+const ATTENTION_ACTION_SECTION = {
+  completarTarea: 'section-tareas', editarTarea: 'section-tareas', crearTarea: 'section-tareas',
+  contactarParte: 'section-comunicaciones', verComunicacion: 'section-comunicaciones', contactar: 'section-comunicaciones', crearCompromiso: 'section-compromisos',
+  marcarCompletado: 'section-compromisos', verDocumento: 'section-documentos',
+  registrarResultado: 'section-audiencias', enviarAviso: 'section-audiencias', resolver: 'section-audiencias',
+  cerrarMediacion: 'section-admin',
+};
+
+// Bloque 22 §15 — "Tu día en Mediador": panorama rápido, ordenado por
+// urgencia operativa (audiencias de hoy primero), sin rankings ni
+// puntajes — son conteos y una lista corta, nada más. Separado del
+// centro de atención: esto es "qué tenés en el radar hoy", no "qué está
+// mal" (una audiencia de hoy ya confirmada no es un problema, pero sigue
+// siendo relevante saber que es hoy).
+function renderTuDiaCard(d){
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const hoy = d.proximasAudiencias.filter(h => h.date === todayStr);
+  const proximas = d.proximasAudiencias.filter(h => h.date !== todayStr).slice(0, 3);
+  const counts = [
+    { n: hoy.length, label: hoy.length === 1 ? 'audiencia hoy' : 'audiencias hoy' },
+    { n: d.necesitanAtencion.tareasVencidas.length, label: 'tareas vencidas' },
+    { n: d.necesitanAtencion.compromisosVencidos.length, label: 'compromisos vencidos' },
+    { n: d.alertasAgenda.solicitudesCambioPendientes.length, label: 'solicitudes pendientes' },
+    { n: d.necesitanAtencion.sinProximaAccion.length, label: 'sin próxima acción' },
+    { n: d.necesitanAtencion.documentosPendientesRevision.length, label: 'documentos por revisar' },
+  ].filter(c => c.n > 0);
+  if(!counts.length && !hoy.length && !proximas.length) return '';
+  return `
+    <div class="card">
+      <h2>Tu día en Mediador</h2>
+      ${counts.length ? `<div class="stat-row" style="margin-bottom:10px;">${counts.map(c => `<div><div class="stat" style="font-size:20px;">${c.n}</div><div class="stat-label">${c.label}</div></div>`).join('')}</div>` : ''}
+      ${hoy.map(h => `
+        <div class="alert-row" onclick="goTo('detail','${h.mediationId}')">
+          <div><div style="font-weight:600; font-size:13.5px;">Audiencia hoy${h.startTime ? ' ' + h.startTime : ''}</div><div class="code">${escapeHtml(h.mediationCode || '')}</div></div>
+          <span class="pill calm">hoy</span>
+        </div>
+      `).join('')}
+      ${proximas.map(h => `
+        <div class="alert-row" onclick="goTo('detail','${h.mediationId}')">
+          <div><div style="font-weight:600; font-size:13.5px;">Audiencia ${fmtDate(h.date)}${h.startTime ? ' ' + h.startTime : ''}</div><div class="code">${escapeHtml(h.mediationCode || '')}</div></div>
+          <span class="pill calm">próxima</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderAttentionItem(item, idx){
+  const badgeClass = ATTENTION_PRIORITY_BADGE_CLASS[item.priority] || 'calm';
+  return `
+    <div class="alert-row" style="cursor:default; flex-direction:column; align-items:stretch; gap:6px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+        <div style="cursor:pointer;" onclick="goTo('detail','${item.mediationId}')">
+          <div class="code">${escapeHtml(item.mediationCode || '')}</div>
+          <div style="font-weight:600; font-size:13.5px;">${escapeHtml(item.title || '')}</div>
+          ${item.detail ? `<div style="font-size:12px; color:var(--text-dim); margin-top:2px;">${escapeHtml(item.detail)}</div>` : ''}
+        </div>
+        <span class="pill ${badgeClass}" style="flex-shrink:0;">${ATTENTION_PRIORITY_LABELS[item.priority] || item.priority}</span>
+      </div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        ${(item.suggestedActions || []).map(a => `<button class="ghost" style="padding:5px 10px; font-size:11.5px;" onclick="handleAttentionAction(${idx},'${a}')">${ATTENTION_ACTION_LABELS[a] || a}</button>`).join('')}
+      </div>
+    </div>
+  `;
+}
+
+// DETECTAR → PROPONER → CONFIRMAR → EJECUTAR — este dispatcher es el
+// "CONFIRMAR": el mediador ya vio la sugerencia y tocó un botón puntual.
+// "descartar"/"completarTarea"/"marcarCompletado" ejecutan sin navegar
+// (Bloque 22 §16 — no obligar a cinco pantallas para algo simple); el
+// resto lleva al expediente, a la sección correspondiente, porque
+// requieren más contexto del que entra en una card del dashboard.
+async function handleAttentionAction(idx, action){
+  const item = currentAttentionItems[idx];
+  if(!item) return;
+  if(action === 'descartar'){
+    try{
+      await api(`/api/mediations/${item.mediationId}/attention/${item.type}/${item.refId}/dismiss`, { method:'POST' });
+      showToast('Alerta descartada.', 'success');
+      renderDashboard();
+    }catch(e){ showToast(e.error || 'No se pudo descartar la alerta.', 'danger'); }
+    return;
+  }
+  if(action === 'completarTarea'){
+    try{ await api(`/api/mediations/${item.mediationId}/tasks/${item.refId}`, { method:'PATCH', body: JSON.stringify({ status:'completada' }) }); showToast('Tarea completada.', 'success'); renderDashboard(); }
+    catch(e){ showToast(e.error || 'No se pudo completar la tarea.', 'danger'); }
+    return;
+  }
+  if(action === 'marcarCompletado'){
+    try{ await api(`/api/mediations/${item.mediationId}/commitments/${item.refId}`, { method:'PATCH', body: JSON.stringify({ status:'cumplido' }) }); showToast('Compromiso marcado como cumplido.', 'success'); renderDashboard(); }
+    catch(e){ showToast(e.error || 'No se pudo actualizar el compromiso.', 'danger'); }
+    return;
+  }
+  // el resto: ir al expediente y, cuando la acción tiene una sección
+  // asociada, bajar directo ahí en vez de dejar al mediador buscarla.
+  await goTo('detail', item.mediationId);
+  const sectionId = ATTENTION_ACTION_SECTION[action];
+  if(sectionId) setTimeout(() => document.getElementById(sectionId)?.scrollIntoView({ behavior:'smooth' }), 150);
 }
 
 async function renderDashboard(){
@@ -316,7 +416,7 @@ async function renderDashboard(){
   try{ d = await api('/api/mediations/dashboard'); }
   catch(e){ main.innerHTML = `<p class="empty-hint">No se pudo cargar el dashboard.</p>`; return; }
 
-  const priorityItems = buildDashboardPriorityItems(d);
+  currentAttentionItems = d.centroAtencion || [];
   const moreHearings = d.proximasAudiencias.length > 3;
 
   main.innerHTML = `
@@ -340,17 +440,11 @@ async function renderDashboard(){
     </div>
     ` : ''}
 
+    ${renderTuDiaCard(d)}
+
     <div class="card">
-      <h2>Qué tengo que hacer${priorityItems.length ? ` <span class="pill warn" style="font-weight:400;">${priorityItems.length}</span>` : ''}</h2>
-      ${priorityItems.length ? priorityItems.map(item => `
-        <div class="alert-row" onclick="goTo('detail','${item.mediationId}')">
-          <div>
-            <div style="font-weight:600; font-size:13.5px;">${escapeHtml(item.label)}</div>
-            <div class="code">${escapeHtml(item.mediationCode || '')}</div>
-          </div>
-          ${item.badge}
-        </div>
-      `).join('') : `<p class="empty-hint">Estás al día — nada pendiente por ahora. Podés crear una mediación nueva o revisar la agenda.</p>`}
+      <h2>¿Qué requiere tu atención?${currentAttentionItems.length ? ` <span class="pill warn" style="font-weight:400;">${currentAttentionItems.length}</span>` : ''}</h2>
+      ${currentAttentionItems.length ? currentAttentionItems.map((item, idx) => renderAttentionItem(item, idx)).join('') : `<p class="empty-hint">Estás al día — nada pendiente por ahora. Podés crear una mediación nueva o revisar la agenda.</p>`}
       ${moreHearings ? `<p class="empty-hint" style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); goTo('agenda');" style="color:var(--calm);">Ver todas las audiencias en la agenda</a></p>` : ''}
     </div>
 
@@ -1978,6 +2072,7 @@ async function sendConversationMessage(){
 // precompletado, en vez de crear la tarea sola. Nunca automático.
 function startConvertToTask(messageId, messageText){
   pendingSourceMessageId = messageId;
+  pendingSourceDocumentId = null;
   const form = document.getElementById('task-form');
   form.style.display = 'block';
   document.getElementById('task-title').value = messageText.length > 80 ? messageText.slice(0, 80) + '…' : messageText;
@@ -2286,7 +2381,7 @@ async function changeHearingStatus(mediationId, hearingId, status){
   if(status === 'no_realizada' && !confirm('¿Marcar esta audiencia como no realizada?')){ renderDetail(mediationId); return; }
   try{
     const result = await api(`/api/mediations/${mediationId}/hearings/${hearingId}/status`, { method:'POST', body: JSON.stringify({ status }) });
-    renderDetail(mediationId);
+    await renderDetail(mediationId);
     const notifText = describeNotifications(result.notifications);
     if(notifText) alert(`Audiencia ${status}.\n\n${notifText}`);
     // el backend solo SUGIERE, nunca crea el compromiso solo (ver
@@ -2297,7 +2392,56 @@ async function changeHearingStatus(mediationId, hearingId, status){
         if(confirm(result.suggestion.message)) toggleForm('commitment-form');
       }, 300);
     }
+    // Bloque 22 §11 — "¿Qué sigue?" apenas se marca una audiencia como
+    // realizada. Todo lo que ofrece ya existe (cambiar el estado de la
+    // mediación, agendar, tareas, compromisos, próxima acción) — esto
+    // solo evita que el mediador tenga que ir a buscarlo por su cuenta.
+    if(status === 'realizada') showWhatNextPrompt(mediationId);
   }catch(e){ showToast(e.error || 'No se pudo actualizar el estado de la audiencia.', 'danger'); }
+}
+
+function showWhatNextPrompt(mediationId){
+  const main = document.getElementById('main');
+  if(!main) return;
+  const banner = document.createElement('div');
+  banner.className = 'alert alert-info';
+  banner.id = 'what-next-prompt';
+  banner.innerHTML = `
+    <div style="flex:1;">
+      <div style="font-weight:600; margin-bottom:6px;">¿Qué sigue?</div>
+      <div style="font-size:12.5px; margin-bottom:8px;">Registrá el resultado de la audiencia, o seguí con la mediación.</div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
+        <button class="btn-secondary btn-sm" onclick="startWhatNextResult('${mediationId}','acuerdo')">Registrar acuerdo</button>
+        <button class="btn-secondary btn-sm" onclick="startWhatNextResult('${mediationId}','acuerdo_parcial')">Acuerdo parcial</button>
+        <button class="btn-secondary btn-sm" onclick="startWhatNextResult('${mediationId}','sin_acuerdo')">Sin acuerdo</button>
+        <button class="btn-secondary btn-sm" onclick="startWhatNextResult('${mediationId}','incomparecencia')">Incomparecencia</button>
+      </div>
+      <div style="font-size:11.5px; color:var(--text-dim); margin-bottom:4px;">O continuar la mediación:</div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <button class="btn-ghost btn-sm" onclick="dismissWhatNextPrompt(); toggleForm('hearing-form'); document.getElementById('section-audiencias')?.scrollIntoView({behavior:'smooth'});">Programar próxima audiencia</button>
+        <button class="btn-ghost btn-sm" onclick="dismissWhatNextPrompt(); toggleForm('task-form'); document.getElementById('section-tareas')?.scrollIntoView({behavior:'smooth'});">Crear tarea</button>
+        <button class="btn-ghost btn-sm" onclick="dismissWhatNextPrompt(); toggleForm('commitment-form'); document.getElementById('section-compromisos')?.scrollIntoView({behavior:'smooth'});">Crear compromiso</button>
+        <button class="btn-ghost btn-sm" onclick="dismissWhatNextPrompt(); document.getElementById('section-admin')?.scrollIntoView({behavior:'smooth'});">Definir próxima acción</button>
+      </div>
+    </div>
+    <button class="modal-close" style="align-self:flex-start;" onclick="dismissWhatNextPrompt()" aria-label="Cerrar">×</button>
+  `;
+  banner.style.display = 'flex';
+  banner.style.alignItems = 'flex-start';
+  banner.style.gap = '8px';
+  main.prepend(banner);
+  banner.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+function dismissWhatNextPrompt(){ document.getElementById('what-next-prompt')?.remove(); }
+// "Registrar acuerdo/parcial/sin acuerdo/incomparecencia" reusa el
+// cambio de estado de MEDIACIÓN ya existente (changeStatus) — nunca un
+// endpoint nuevo, nunca se decide solo: el mediador sigue confirmando
+// desde el selector de estado de siempre, esto solo lo deja seleccionado.
+function startWhatNextResult(mediationId, status){
+  dismissWhatNextPrompt();
+  const select = document.getElementById('status-select');
+  if(select){ select.value = status; changeStatus(mediationId); }
+  document.getElementById('section-admin')?.scrollIntoView({ behavior:'smooth' });
 }
 
 async function recordConfirmation(mediationId, hearingId, partyId, response){
@@ -2408,7 +2552,11 @@ async function uploadDocument(mediationId){
     });
     const data = await res.json();
     if(!res.ok) throw data;
-    renderDetail(mediationId);
+    await renderDetail(mediationId);
+    // Bloque 22 §6 — sugerencia, nunca automática: el mediador confirma o
+    // descarta. Si confirma, la tarea real se crea por el endpoint YA
+    // existente (addTask), solo que con sourceDocumentId precargado.
+    showDocumentTaskSuggestion(mediationId, data.id, data.originalFilename);
   }catch(e){
     showToast(e.error || 'No se pudo subir el archivo.', 'danger');
     btn.disabled = false;
@@ -2423,20 +2571,61 @@ async function uploadDocument(mediationId){
 // después de usarlo una vez — un formulario abierto "en blanco" nunca
 // debe arrastrar la referencia de la conversión anterior.
 let pendingSourceMessageId = null;
+// Bloque 22 §6 — mismo mecanismo que pendingSourceMessageId, pero para
+// "documento recibido → ¿crear tarea de revisión?".
+let pendingSourceDocumentId = null;
 
 async function addTask(mediationId){
   const title = document.getElementById('task-title').value.trim();
   if(!title){ showToast('Falta el título de la tarea.', 'danger'); return; }
   try{
-    await api(`/api/mediations/${mediationId}/tasks`, { method:'POST', body: JSON.stringify({
+    const result = await api(`/api/mediations/${mediationId}/tasks`, { method:'POST', body: JSON.stringify({
       title,
       dueDate: document.getElementById('task-due').value || null,
       priority: document.getElementById('task-priority').value,
       sourceMessageId: pendingSourceMessageId,
+      sourceDocumentId: pendingSourceDocumentId,
     })});
     pendingSourceMessageId = null;
+    pendingSourceDocumentId = null;
+    if(result.alreadyExisted) showToast('Ya existía una tarea activa para este documento — no se creó una duplicada.', 'success');
     renderDetail(mediationId);
   }catch(e){ showToast(e.error || 'No se pudo guardar la tarea.', 'danger'); }
+}
+
+// Bloque 22 §6 — banner de sugerencia tras subir un documento. Usa el
+// componente .alert-info ya existente (Bloque 20 design system), nunca
+// un popup nuevo. [Ahora no] simplemente lo cierra — no queda ningún
+// rastro ni se vuelve a mostrar para ESE documento (no hay reintento
+// automático: es una sugerencia de una sola vez, en el momento de subir).
+function showDocumentTaskSuggestion(mediationId, docId, filename){
+  const section = document.getElementById('section-documentos');
+  if(!section) return;
+  const banner = document.createElement('div');
+  banner.className = 'alert alert-info';
+  banner.id = 'doc-task-suggestion';
+  banner.innerHTML = `
+    <div style="flex:1;">
+      <div>Documento recibido. ¿Querés crear una tarea para revisarlo?</div>
+      <div style="display:flex; gap:6px; margin-top:8px;">
+        <button class="btn-primary btn-sm" onclick="confirmDocumentTaskSuggestion('${mediationId}','${docId}','${escapeHtml(filename).replace(/'/g, "\\'")}')">Crear tarea</button>
+        <button class="btn-ghost btn-sm" onclick="document.getElementById('doc-task-suggestion')?.remove()">Ahora no</button>
+      </div>
+    </div>
+  `;
+  const h2 = section.querySelector('h2');
+  if(h2) h2.insertAdjacentElement('afterend', banner); else section.prepend(banner);
+  section.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function confirmDocumentTaskSuggestion(mediationId, docId, filename){
+  document.getElementById('doc-task-suggestion')?.remove();
+  pendingSourceMessageId = null;
+  pendingSourceDocumentId = docId;
+  const form = document.getElementById('task-form');
+  form.style.display = 'block';
+  document.getElementById('task-title').value = `Revisar documento: ${filename}`;
+  document.getElementById('section-tareas').scrollIntoView({ behavior:'smooth', block:'start' });
 }
 
 async function changeTaskStatus(mediationId, taskId, status){
