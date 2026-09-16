@@ -74,4 +74,26 @@ function canAccessMediationChannel(db, userId, channel) {
   return false;
 }
 
-module.exports = { getMyMediations, canEditMediation, canAccessMediation, canAccessMediationChannel };
+// Bloque 22 (Parte 2) — cantidad de mediaciones ACTIVAS (no cerradas)
+// donde esta persona es titular o tiene mediation_access. Mismo criterio
+// de pertenencia que getMyMediations, filtrado a "no cerrada".
+function getActiveMediationCount(db, userId) {
+  const accessIds = new Set(db.mediationAccess.filter((a) => a.userId === userId).map((a) => a.mediationId));
+  return db.mediations.filter((m) => !m.closedAt && (m.mediatorUserId === userId || accessIds.has(m.id))).length;
+}
+
+// Sugiere, entre los mediadores del estudio (rol 'mediador' puntual —
+// no admin, no asistente), a quien tiene menos mediaciones activas en
+// este momento. Sin ponderar especialidad, historial ni nada más
+// sofisticado — a propósito, esta parte es deliberadamente simple.
+// Devuelve null si no hay una elección real que sugerir (0 o 1
+// candidato: no hay entre quién elegir).
+function suggestAssigneeForStudio(db, studioId) {
+  const candidates = db.users.filter((u) => u.studioId === studioId && u.studioRole === 'mediador');
+  if (candidates.length < 2) return null;
+  const withLoad = candidates.map((u) => ({ id: u.id, name: u.name, activeCount: getActiveMediationCount(db, u.id) }));
+  withLoad.sort((a, b) => a.activeCount - b.activeCount);
+  return withLoad[0];
+}
+
+module.exports = { getMyMediations, canEditMediation, canAccessMediation, canAccessMediationChannel, getActiveMediationCount, suggestAssigneeForStudio };

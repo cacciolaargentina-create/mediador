@@ -24,7 +24,7 @@ const SQLITE_PATH = process.env.SQLITE_PATH || path.join(__dirname, 'data.sqlite
 const LEGACY_JSON_PATH = process.env.DB_PATH || path.join(__dirname, 'data.json');
 
 const EMPTY_DB = {
-  users: [],       // { id, googleId, email, name, avatar, phone, guest, icsToken|null, createdAt }
+  users: [],       // { id, googleId, email, name, avatar, phone, guest, icsToken|null, notificationDigest|null, createdAt } — notificationDigest (Bloque 22 Parte 1): 'none'|'daily'|'weekly', default 'none' (sin digest, sin cambio de comportamiento)
   channels: [],    // { id, code, guestToken, calendarToken, professionalInvites, status:'abierto'|'en_proceso'|'cerrado', createdAt, mediationId|null, partyId|null, lawyerId|null } — mediationId+partyId: hilo mediador↔parte de Mediador; mediationId+lawyerId: hilo mediador↔abogado; mediationId solo (los otros dos null): canal interno del equipo de esa mediación. Los tres null = canal de coparentalidad de siempre.
   members: [],     // { id, channelId, userId, role, label, webAccessToken, assignedByAdmin, lastSeenAt, joinedAt }
   messages: [],    // { id, channelId, senderId|null, text, flagged, reason, pattern, eventId, readAt, createdAt, replyToId, deliverAt, documentId|null } — replyToId: id de otro mensaje del mismo canal al que este responde (hilo estilo WhatsApp), null si no es una respuesta. deliverAt: cuándo se transmite/notifica de verdad — igual a createdAt salvo durante la ventana de "deshacer envío" (ver messaging.js), mientras está en el futuro el mensaje solo lo ve quien lo escribió. documentId (Bloque 19): referencia opcional a un documento YA existente de la mediación — nunca un adjunto nuevo, el documento sigue viviendo solo en `documents`
@@ -34,7 +34,7 @@ const EMPTY_DB = {
   expenses: [],    // { id, channelId, amount, description, requestedBy(userId), status:'pendiente'|'confirmado'|'rechazado', respondedAt, eventId, createdAt }
   checkins: [],    // { id, channelId, userId, lat, lng, createdAt } — la ubicación nunca se muestra en el texto del chat, solo queda en el registro
   auditLog: [],    // { id, actorId, action, channelCode, meta, createdAt } — acciones sensibles para el panel de admin
-  whatsappLog: [],      // { id, kind, phone, userName, channelCode, mediationId|null, detail, createdAt } — notificaciones enviadas, onboarding, mensajes entrantes procesados
+  whatsappLog: [],      // { id, kind, phone, userName, channelCode, mediationId|null, partyId|null, detail, createdAt } — notificaciones enviadas, onboarding, mensajes entrantes procesados. partyId (Bloque 22 Parte 1): para rastrear fallos consecutivos de contacto de UNA parte puntual
   whatsappWebhookRaw: [], // { id, payload, createdAt } — últimos payloads crudos del webhook de Meta, para debug técnico
   certifiedExports: [], // { id, hash, signature, channelCode, generatedByName, generatedByRole, createdAt } — un registro por cada export certificado en PDF, para que la página pública de verificación (/verificar/:hash) pueda confirmar que el documento realmente salió de acá. signature: firma electrónica Ed25519 del hash (ver signing.js) — null en exports viejos, de antes de que existiera esto
   professionalApplications: [], // { id, userId, role, orgName, status:'pending'|'approved'|'rejected', createdAt, decidedAt, decidedBy } — autoregistro de mediador/a o estudio jurídico, pendiente de aprobación manual de un admin
@@ -416,6 +416,13 @@ function openDb() {
   // Sin esto, cualquier intento de guardar una notificación con
   // mediationId hacía fallar el commit entero (se detectó con un test real).
   ensureColumns(sqlite, 'whatsapp_log', { mediationId: 'TEXT' });
+  // Bloque 22 (Parte 1) — partyId propio, no solo userName+mediationId,
+  // para poder rastrear fallos consecutivos de UNA parte puntual sin
+  // ambigüedad (dos partes podrían compartir nombre de pila).
+  ensureColumns(sqlite, 'whatsapp_log', { partyId: 'TEXT' });
+  // preferencia de notificación agrupada — 'none' (default, sin cambios
+  // de comportamiento) | 'daily' | 'weekly'.
+  ensureColumns(sqlite, 'users', { notificationDigest: 'TEXT' });
   sqlite.exec('CREATE INDEX IF NOT EXISTS idx_hearings_proposal_group ON hearings(proposalGroupId);');
   // Bloque 14 — un usuario pertenece a lo sumo UN estudio en esta Parte 1.
   // NULL para todo usuario existente: sigue siendo un mediador

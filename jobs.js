@@ -7,7 +7,7 @@ const { getDB, commit } = require('./db');
 const { nanoid } = require('nanoid');
 const { sendText } = require('./whatsapp');
 const { sendPushToUser } = require('./push');
-const { accessLinkFor } = require('./messaging');
+const { accessLinkFor, notifyPartyAboutHearing } = require('./messaging');
 const { logMediationEvent } = require('./mediationEvents');
 
 // Bloque 17 §14/15 — "YYYY-MM-DD" a "DD/MM/YYYY" para texto pensado para
@@ -147,18 +147,26 @@ async function generateWeeklySummaries() {
 // configuró para ESA mediación puntual (reminderChannels, por defecto
 // los dos). whatsapp se salta solo si el mediador no cargó teléfono —
 // mismo criterio ya usado en generateWeeklySummaries de acá arriba.
+// Bloque 22 (Parte 1.3) — el envío real, separado de "resolver el
+// mediador desde una mediación puntual" para poder reusarlo también
+// desde el digest (que junta varias mediaciones de un mismo usuario, no
+// tiene una sola mediación de la cual derivar canales).
+async function notifyUserDirect(db, user, { title, body, url }, channels) {
+  if (channels.includes('push')) {
+    try { await sendPushToUser(db, commit, user.id, { title, body, url }); }
+    catch (err) { console.error('No se pudo mandar push de Mediador:', err); }
+  }
+  if (channels.includes('whatsapp') && user.phone) {
+    try { await sendText(user.phone, body); }
+    catch (err) { console.error('No se pudo mandar WhatsApp de Mediador:', err); }
+  }
+}
+
 async function notifyMediator(db, mediation, { title, body, url }) {
   const channels = (mediation.reminderChannels || 'push,whatsapp').split(',');
   const mediator = db.users.find((u) => u.id === mediation.mediatorUserId);
   if (!mediator) return;
-  if (channels.includes('push')) {
-    try { await sendPushToUser(db, commit, mediator.id, { title, body, url }); }
-    catch (err) { console.error('No se pudo mandar push de Mediador:', err); }
-  }
-  if (channels.includes('whatsapp') && mediator.phone) {
-    try { await sendText(mediator.phone, body); }
-    catch (err) { console.error('No se pudo mandar WhatsApp de Mediador:', err); }
-  }
+  await notifyUserDirect(db, mediator, { title, body, url }, channels);
 }
 
 async function checkMediationDeadlines() {
@@ -184,11 +192,30 @@ async function checkMediationDeadlines() {
     });
     const mediation = mediationById[commitment.mediationId];
     if (mediation) {
-      await notifyMediator(db, mediation, {
-        title: 'Compromiso vencido — Mediador',
-        body: `${mediation.code}: "${commitment.description}" venció sin cumplirse.`,
-        url: '/mediador.html',
-      });
+      // Bloque 22 (Parte 1.3) — si el mediador tiene digest activado, este
+      // aviso puntual se salta y en cambio se agrupa más abajo con el
+      // resto de sus pendientes del día/semana. Sin digest (default), se
+      // notifica igual que siempre — cero cambio de comportamiento.
+      const mediator = db.users.find((u) => u.id === mediation.mediatorUserId);
+      const digestOn = mediator && ['daily', 'weekly'].includes(mediator.notificationDigest);
+      if (!digestOn) {
+        await notifyMediator(db, mediation, {
+          title: 'Compromiso vencido — Mediador',
+          body: `${mediation.code}: "${commitment.description}" venció sin cumplirse.`,
+          url: '/mediador.html',
+        });
+      }
+    }
+    // Bloque 22 (Parte 1.1) — antes esto solo avisaba al mediador; ahora
+    // también a la parte responsable del compromiso, con el mismo
+    // mecanismo honesto (enviado/no_disponible/error) ya usado para
+    // audiencias. Esto SIEMPRE se notifica de inmediato, sin digest — el
+    // digest es una comodidad para el mediador, no aplica a las partes.
+    const commitmentParty = db.parties.find((p) => p.id === commitment.partyId);
+    if (commitmentParty) {
+      const daysOverdue = Math.max(1, Math.floor((now - new Date(commitment.dueDate).getTime()) / (1000 * 60 * 60 * 24)));
+      await notifyPartyAboutHearing(db, commitmentParty,
+        `${mediation ? mediation.code : ''}: tu compromiso "${commitment.description}" venció hace ${daysOverdue} día(s). Contactá a tu mediador/a si necesitás reprogramarlo.`);
     }
     commitmentsMarked++;
   }
@@ -305,8 +332,78 @@ async function checkMediationDeadlines() {
     rescheduleRequestRemindersLogged++;
   }
 
-  if (commitmentsMarked > 0 || hearingAlertsLogged > 0 || hearingRemindersLogged > 0 || tasksOverdueLogged > 0 || rescheduleRequestRemindersLogged > 0) await commit();
-  return { commitmentsMarked, hearingAlertsLogged, hearingRemindersLogged, tasksOverdueLogged, rescheduleRequestRemindersLogged };
+  // Bloque 22 (Parte 1.2) — escalamiento: si a una parte no se le pudo
+  // notificar (no_disponible o error) durante 3 días corridos, avisarle
+  // al mediador UNA sola vez — no reintenta contactar a la parte por su
+  // cuenta, solo le marca al mediador que capaz conviene llamarla.
+  let contactEscalationsLogged = 0;
+  const ESCALATION_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
+  const partyIdsWithFailures = new Set(
+    db.whatsappLog.filter((w) => w.partyId && ['notification_unavailable', 'notification_error'].includes(w.kind)).map((w) => w.partyId)
+  );
+  for (const partyId of partyIdsWithFailures) {
+    const party = db.parties.find((p) => p.id === partyId);
+    if (!party) continue;
+    const mediation = mediationById[party.mediationId];
+    if (!mediation) continue;
+    // la racha actual de fallos: todo lo que pasó DESPUÉS del último envío
+    // exitoso (o desde siempre, si nunca hubo uno). Un solo envío exitoso
+    // en el medio corta la racha — no promedia ni acumula fallos viejos.
+    const entriesForParty = db.whatsappLog.filter((w) => w.partyId === partyId).sort((a, b) => a.createdAt - b.createdAt);
+    let streakStart = null;
+    for (let i = entriesForParty.length - 1; i >= 0; i--) {
+      if (entriesForParty[i].kind === 'notification_sent') break;
+      if (['notification_unavailable', 'notification_error'].includes(entriesForParty[i].kind)) streakStart = entriesForParty[i].createdAt;
+    }
+    if (!streakStart || now - streakStart < ESCALATION_AFTER_MS) continue;
+    const alreadyEscalated = db.mediationEvents.some((e) => e.type === 'PARTY_CONTACT_ESCALATION' && e.entityId === partyId && e.createdAt > streakStart);
+    if (alreadyEscalated) continue;
+
+    logMediationEvent(db, {
+      mediationId: mediation.id, type: 'PARTY_CONTACT_ESCALATION', actorId: null,
+      entityType: 'party', entityId: partyId,
+      title: `No se pudo contactar a ${party.firstName || 'una parte'} en los últimos 3 días`,
+    });
+    await notifyMediator(db, mediation, {
+      title: 'No pudimos contactar a una parte',
+      body: `${mediation.code}: no se pudo contactar a ${party.firstName || 'la parte'} en los últimos 3 días. Revisá el canal de contacto.`,
+      url: '/mediador.html',
+    });
+    contactEscalationsLogged++;
+  }
+
+  // Bloque 22 (Parte 1.3) — digest agrupado, para quien lo activó
+  // (users.notificationDigest). Se recalcula en vivo con los mismos
+  // datos que ya usa el dashboard — no se acumula en ninguna cola
+  // nueva. Cubre compromisos vencidos y confirmaciones pendientes; lo
+  // que quedó afuera de esta cobertura está documentado en el informe.
+  let digestsSent = 0;
+  const todayIsMonday = new Date(now).getUTCDay() === 1; // "weekly" = una vez por semana, lunes
+  for (const user of db.users.filter((u) => ['daily', 'weekly'].includes(u.notificationDigest))) {
+    if (user.notificationDigest === 'weekly' && !todayIsMonday) continue;
+    const myMediations = db.mediations.filter((m) => m.mediatorUserId === user.id);
+    if (myMediations.length === 0) continue;
+    const myMediationIds = new Set(myMediations.map((m) => m.id));
+    const overdueCommitments = db.commitments.filter((c) => myMediationIds.has(c.mediationId) && c.status === 'vencido');
+    const unconfirmedHearings = db.hearings.filter((h) =>
+      myMediationIds.has(h.mediationId) && ['programada', 'confirmada'].includes(h.status) &&
+      db.hearingConfirmations.some((c) => c.hearingId === h.id && c.response === 'pendiente')
+    );
+    if (overdueCommitments.length === 0 && unconfirmedHearings.length === 0) continue;
+
+    const parts = [];
+    if (overdueCommitments.length) parts.push(`${overdueCommitments.length} compromiso(s) vencido(s)`);
+    if (unconfirmedHearings.length) parts.push(`${unconfirmedHearings.length} audiencia(s) sin confirmar`);
+    await notifyUserDirect(db, user, {
+      title: user.notificationDigest === 'daily' ? 'Tu resumen de hoy' : 'Tu resumen de la semana',
+      body: `Tenés ${parts.join(' y ')} en tus mediaciones. Entrá al dashboard para el detalle.`,
+      url: '/mediador.html',
+    }, (myMediations[0].reminderChannels || 'push,whatsapp').split(','));
+    digestsSent++;
+  }
+
+  if (commitmentsMarked > 0 || hearingAlertsLogged > 0 || hearingRemindersLogged > 0 || tasksOverdueLogged > 0 || rescheduleRequestRemindersLogged > 0 || contactEscalationsLogged > 0) await commit();
+  return { commitmentsMarked, hearingAlertsLogged, hearingRemindersLogged, tasksOverdueLogged, rescheduleRequestRemindersLogged, contactEscalationsLogged, digestsSent };
 }
 
 module.exports = { checkUnjoinedChannels, generateWeeklySummaries, checkMediationDeadlines, notifyMediator, REMINDER_AFTER_MS, SUMMARY_PERIOD_MS };

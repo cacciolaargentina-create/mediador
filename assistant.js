@@ -42,6 +42,12 @@ async function callAssistantAPI(systemPrompt, userContent) {
     return 'El asistente no está disponible todavía (falta configurar ANTHROPIC_API_KEY en el servidor).';
   }
 
+  // Bloque 22 (Parte 4) — userContent puede ser un string (como siempre)
+  // o un array de content blocks (texto + documento/imagen), para poder
+  // mandarle un archivo directo a la API sin extraer texto nosotros
+  // mismos. Mismo endpoint, mismo modelo, mismos system prompts — nunca
+  // un mecanismo de IA paralelo.
+
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -96,4 +102,47 @@ async function askDashboardAssistant(question, dashboardContext) {
   return callAssistantAPI(DASHBOARD_SYSTEM_PROMPT, userContent);
 }
 
-module.exports = { askAssistant, askMediationAssistant, askDashboardAssistant };
+// Bloque 22 (Parte 4.1) — resumen de un documento recién subido. Mismo
+// system prompt, mismo modelo, mismo endpoint que askMediationAssistant
+// — la única diferencia real es que acá el "contexto" incluye el
+// archivo en sí (PDF o imagen, vía content block nativo de la API) en
+// vez de solo texto ya armado. La regla §24 (nunca decide quién tiene
+// razón, nunca da consejo legal, nunca inventa) es la MISMA — viene del
+// mismo MEDIATION_SYSTEM_PROMPT, no se relaja ni se reescribe acá.
+const DOCUMENT_MEDIA_TYPES = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' };
+async function askMediationAssistantAboutDocument({ fileBuffer, fileExt, filename, mediationContext }) {
+  const mediaType = DOCUMENT_MEDIA_TYPES[fileExt.replace('.', '').toLowerCase()];
+  if (!mediaType) {
+    return { unsupported: true, answer: 'Todavía no se pueden resumir documentos Word (.doc/.docx) — subí un PDF o una imagen para pedir el resumen.' };
+  }
+  const blockType = mediaType === 'application/pdf' ? 'document' : 'image';
+  const content = [
+    { type: blockType, source: { type: 'base64', media_type: mediaType, data: fileBuffer.toString('base64') } },
+    { type: 'text', text: `DATOS DE LA MEDIACIÓN (para contexto — el documento adjunto es "${filename}"):\n${mediationContext}\n\nFecha y hora actual: ${new Date().toISOString()}\n\nPREGUNTA DEL MEDIADOR/A: Resumí el contenido de este documento en 3 a 6 oraciones. Si el documento no se puede leer o está vacío, decilo explícitamente.` },
+  ];
+  const answer = await callAssistantAPI(MEDIATION_SYSTEM_PROMPT, content);
+  return { unsupported: false, answer };
+}
+
+// Bloque 22 (Parte 4.2) — sugerir tareas/compromisos a partir de una
+// nota libre. Sigue siendo el mismo asistente, misma regla — la única
+// diferencia es que le pedimos la respuesta en un formato que se pueda
+// parsear, para poder mostrar cada sugerencia como algo que el mediador
+// confirma o descarta, nunca algo que se crea solo.
+async function suggestTasksFromNote(note, mediationContext) {
+  const userContent = `DATOS DE LA MEDIACIÓN:\n${mediationContext}\n\nFecha y hora actual: ${new Date().toISOString()}\n\nEl mediador/a escribió esta nota libre:\n"""\n${note}\n"""\n\nA partir de ESTA NOTA (no inventes nada que no esté insinuado en ella), sugerí posibles tareas o compromisos. Respondé ÚNICAMENTE con un array JSON válido, sin texto antes ni después, con este formato exacto:\n[{"tipo":"tarea"|"compromiso","descripcion":"...","responsable":"nombre mencionado en la nota o null","fecha":"YYYY-MM-DD si se menciona una fecha concreta, si no null"}]\nSi la nota no sugiere ninguna tarea o compromiso concreto, respondé con un array vacío: []`;
+  const raw = await callAssistantAPI(MEDIATION_SYSTEM_PROMPT, userContent);
+  try {
+    const cleaned = raw.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '');
+    const parsed = JSON.parse(cleaned);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((s) => s && s.descripcion && ['tarea', 'compromiso'].includes(s.tipo));
+  } catch (err) {
+    // si el modelo no devolvió JSON válido, no rompemos el endpoint —
+    // simplemente no hay sugerencias estructuradas esta vez. Nunca se
+    // inventa una sugerencia a partir de una respuesta que no se pudo leer.
+    return [];
+  }
+}
+
+module.exports = { askAssistant, askMediationAssistant, askDashboardAssistant, askMediationAssistantAboutDocument, suggestTasksFromNote };

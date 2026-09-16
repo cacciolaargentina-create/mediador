@@ -18,7 +18,8 @@ const { signHash } = require('../signing');
 const { integrityHash, buildMediationPlainContent, buildMediationCertifiedPDF, buildMediationConstanciaPDF } = require('../certificate');
 const { checkHearingConflicts, toMinutes } = require('../agenda');
 const { notifyPartyAboutHearing, notifyLawyerAboutHearing } = require('../messaging');
-const { askMediationAssistant, askDashboardAssistant } = require('../assistant');
+const { askMediationAssistant, askDashboardAssistant, askMediationAssistantAboutDocument, suggestTasksFromNote } = require('../assistant');
+const { buildDraftMinutesPDF, buildConvocationLetterPDF } = require('../workingDocuments');
 const archiver = require('archiver');
 const { postMessage } = require('../messaging');
 const { serializeMessage } = require('../serializers');
@@ -176,7 +177,7 @@ module.exports = function (io, presence) {
   // de estudio solo veía las que tenía asignadas una por una.
   // Bloque 15 — extraída a mediationAccess.js para que routes/agenda.js
   // pueda reusar exactamente esta misma lógica, sin duplicarla.
-  const { getMyMediations } = require('../mediationAccess');
+  const { getMyMediations, suggestAssigneeForStudio } = require('../mediationAccess');
 
   function requireMediationAccess(req, res, next) {
     const db = getDB();
@@ -269,7 +270,14 @@ module.exports = function (io, presence) {
     });
 
     await commit();
-    res.json(serializeMediation(mediation));
+    // Bloque 22 (Parte 2) — sugerencia, nunca asignación automática. Solo
+    // tiene sentido para un admin de estudio (un mediador independiente,
+    // o alguien sin rol de admin, no tiene a quién sugerirle nada).
+    let suggestedAssignee = null;
+    if (req.user.studioId && req.user.studioRole === 'admin') {
+      suggestedAssignee = suggestAssigneeForStudio(db, req.user.studioId);
+    }
+    res.json({ ...serializeMediation(mediation), suggestedAssignee });
   });
 
   // ---------- listar mis mediaciones ----------
@@ -920,6 +928,58 @@ module.exports = function (io, presence) {
     } catch (err) {
       console.error('Error en el asistente de mediación:', err);
       res.status(500).json({ error: 'No se pudo consultar al asistente' });
+    }
+  });
+
+  // Bloque 22 (Parte 4.1) — resumen de un documento, a pedido del
+  // mediador (nunca automático al subir). Mismo nivel de permiso que
+  // /assistant — cualquiera con acceso a la mediación puede pedirlo,
+  // no hace falta ser edición.
+  router.post('/:id/documents/:docId/summarize', requireAuth, requireMediationAccess, async (req, res) => {
+    const db = getDB();
+    const mediation = req.mediation;
+    const doc = db.documents.find((d) => d.id === req.params.docId && d.mediationId === mediation.id);
+    if (!doc) return res.status(404).json({ error: 'Documento no encontrado en esta mediación' });
+    const filePath = path.join(UPLOADS_ROOT, mediation.id, doc.storagePath);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'El archivo ya no está disponible' });
+    try {
+      const parties = db.parties.filter((p) => p.mediationId === mediation.id);
+      const lawyers = db.lawyers.filter((l) => l.mediationId === mediation.id);
+      const hearings = db.hearings.filter((h) => h.mediationId === mediation.id);
+      const documents = db.documents.filter((d) => d.mediationId === mediation.id);
+      const commitments = db.commitments.filter((c) => c.mediationId === mediation.id);
+      const context = buildMediationPlainContent({ mediation, parties, lawyers, hearings, documents, commitments, timeline: [] });
+      const fileBuffer = fs.readFileSync(filePath);
+      const ext = path.extname(doc.originalFilename || '');
+      const result = await askMediationAssistantAboutDocument({ fileBuffer, fileExt: ext, filename: doc.originalFilename, mediationContext: context });
+      res.json(result);
+    } catch (err) {
+      console.error('Error resumiendo documento:', err);
+      res.status(500).json({ error: 'No se pudo generar el resumen' });
+    }
+  });
+
+  // Bloque 22 (Parte 4.2) — sugerencias de tareas/compromisos desde una
+  // nota libre. Devuelve sugerencias, NUNCA crea nada — la creación real
+  // sigue pasando por POST /:id/tasks y POST /:id/commitments, ya
+  // existentes, sin ningún cambio.
+  router.post('/:id/suggest-tasks', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    const { note } = req.body || {};
+    if (!note || !note.trim()) return res.status(400).json({ error: 'Falta la nota' });
+    const db = getDB();
+    const mediation = req.mediation;
+    try {
+      const parties = db.parties.filter((p) => p.mediationId === mediation.id);
+      const lawyers = db.lawyers.filter((l) => l.mediationId === mediation.id);
+      const hearings = db.hearings.filter((h) => h.mediationId === mediation.id);
+      const documents = db.documents.filter((d) => d.mediationId === mediation.id);
+      const commitments = db.commitments.filter((c) => c.mediationId === mediation.id);
+      const context = buildMediationPlainContent({ mediation, parties, lawyers, hearings, documents, commitments, timeline: [] });
+      const suggestions = await suggestTasksFromNote(note.trim(), context);
+      res.json({ suggestions });
+    } catch (err) {
+      console.error('Error sugiriendo tareas desde nota:', err);
+      res.status(500).json({ error: 'No se pudieron generar sugerencias' });
     }
   });
 
@@ -2481,6 +2541,46 @@ module.exports = function (io, presence) {
     } catch (err) {
       console.error('Error generando exportación de mediación:', err);
       res.status(500).json({ error: 'No se pudo generar la exportación' });
+    }
+  });
+
+  // Bloque 22 (Parte 3) — documentos de trabajo. Mismo criterio de
+  // permisos que la exportación certificada (requireEditAccess): un
+  // abogado de solo lectura no puede generarlos, igual que no puede
+  // exportar el expediente certificado.
+  router.get('/:id/hearings/:hearingId/draft-minutes', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    const db = getDB();
+    const mediation = req.mediation;
+    const hearing = db.hearings.find((h) => h.id === req.params.hearingId && h.mediationId === mediation.id);
+    if (!hearing) return res.status(404).json({ error: 'Audiencia no encontrada en esta mediación' });
+    const parties = db.parties.filter((p) => p.mediationId === mediation.id && p.status === 'activa');
+    const lawyers = db.lawyers.filter((l) => l.mediationId === mediation.id);
+    const confirmations = db.hearingConfirmations.filter((c) => c.hearingId === hearing.id);
+    try {
+      const buffer = await buildDraftMinutesPDF({ mediation, hearing, parties, lawyers, confirmations });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="borrador-acta-${mediation.code}-${hearing.date}.pdf"`);
+      res.send(buffer);
+    } catch (err) {
+      console.error('Error generando borrador de acta:', err);
+      res.status(500).json({ error: 'No se pudo generar el borrador de acta' });
+    }
+  });
+
+  router.get('/:id/hearings/:hearingId/convocation-letter', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    const db = getDB();
+    const mediation = req.mediation;
+    const hearing = db.hearings.find((h) => h.id === req.params.hearingId && h.mediationId === mediation.id);
+    if (!hearing) return res.status(404).json({ error: 'Audiencia no encontrada en esta mediación' });
+    const parties = db.parties.filter((p) => p.mediationId === mediation.id && p.status === 'activa');
+    try {
+      const buffer = await buildConvocationLetterPDF({ mediation, hearing, parties });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="convocatoria-${mediation.code}-${hearing.date}.pdf"`);
+      res.send(buffer);
+    } catch (err) {
+      console.error('Error generando carta de convocatoria:', err);
+      res.status(500).json({ error: 'No se pudo generar la carta de convocatoria' });
     }
   });
 

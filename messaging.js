@@ -266,20 +266,20 @@ function getPendingNotificationsCount() {
 // Reusa sendText y logWhatsappEvent tal cual — nada de un motor nuevo.
 async function notifyPartyAboutHearing(db, party, text) {
   if (!party.linkedUserId) {
-    logWhatsappEvent(db, { kind: 'notification_unavailable', userName: party.firstName, mediationId: party.mediationId, detail: 'Nunca se unió al portal' });
+    logWhatsappEvent(db, { kind: 'notification_unavailable', userName: party.firstName, mediationId: party.mediationId, partyId: party.id, detail: 'Nunca se unió al portal' });
     return { status: 'no_disponible' };
   }
   const user = db.users.find((u) => u.id === party.linkedUserId);
   if (!user || !user.phone) {
-    logWhatsappEvent(db, { kind: 'notification_unavailable', userName: party.firstName, mediationId: party.mediationId, detail: 'Sin teléfono cargado' });
+    logWhatsappEvent(db, { kind: 'notification_unavailable', userName: party.firstName, mediationId: party.mediationId, partyId: party.id, detail: 'Sin teléfono cargado' });
     return { status: 'no_disponible' };
   }
   try {
     await sendText(user.phone, text);
-    logWhatsappEvent(db, { kind: 'notification_sent', phone: user.phone, userName: user.name, mediationId: party.mediationId, detail: text });
+    logWhatsappEvent(db, { kind: 'notification_sent', phone: user.phone, userName: user.name, mediationId: party.mediationId, partyId: party.id, detail: text });
     return { status: 'enviado' };
   } catch (err) {
-    logWhatsappEvent(db, { kind: 'notification_error', phone: user.phone, userName: user.name, mediationId: party.mediationId, detail: err.message });
+    logWhatsappEvent(db, { kind: 'notification_error', phone: user.phone, userName: user.name, mediationId: party.mediationId, partyId: party.id, detail: err.message });
     return { status: 'error' };
   }
 }
