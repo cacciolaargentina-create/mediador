@@ -127,6 +127,7 @@ const partyPortalRoutes = require('./routes/party-portal')(io);
 const lawyerPortalRoutes = require('./routes/lawyer-portal')(io);
 const studiosRoutes = require('./routes/studios')();
 const agendaRoutes = require('./routes/agenda')();
+const radarRoutes = require('./routes/radar')();
 
 app.use('/auth', authRoutes);
 app.use('/api/channels', channelRoutes);
@@ -142,6 +143,7 @@ app.use('/api/party-portal', partyPortalRoutes);
 app.use('/api/lawyer-portal', lawyerPortalRoutes);
 app.use('/api/studios', studiosRoutes);
 app.use('/api/agenda', agendaRoutes);
+app.use('/api/radar', radarRoutes);
 
 app.get('/api/health', (req, res) => res.json({ ok: true, users: getDB().users.length }));
 
@@ -265,3 +267,10 @@ setTimeout(() => generateWeeklySummaries().catch((e) => console.error('Error en 
 setInterval(() => generateWeeklySummaries().catch((e) => console.error('Error en job de resumen semanal:', e)), 2 * 60 * 60 * 1000);
 setTimeout(() => checkMediationDeadlines().catch((e) => console.error('Error en job de vencimientos de Mediador:', e)), 25 * 1000);
 setInterval(() => checkMediationDeadlines().catch((e) => console.error('Error en job de vencimientos de Mediador:', e)), 60 * 60 * 1000);
+
+// Bloque 25 — radar competitivo. checkDueSources() decide sola, por fuente,
+// si le toca (frecuencia daily/weekly/manual) — por eso alcanza con
+// revisarlo cada hora, igual que el resto de los jobs de arriba.
+const { checkDueSources } = require('./radarJobs');
+setTimeout(() => checkDueSources().catch((e) => console.error('Error en job del radar competitivo:', e)), 30 * 1000);
+setInterval(() => checkDueSources().catch((e) => console.error('Error en job del radar competitivo:', e)), 60 * 60 * 1000);

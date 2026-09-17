@@ -70,6 +70,17 @@ const EMPTY_DB = {
   tasks: [], // { id, mediationId, assignedTo, title, description, dueDate, priority:'baja'|'media'|'alta'|'urgente', status:'pendiente'|'en_proceso'|'completada'|'cancelada', createdBy, completedAt, createdAt, sourceMessageId|null, sourceDocumentId|null } — sourceDocumentId (Bloque 22 automatización): igual que sourceMessageId pero para "documento recibido → ¿crear tarea de revisión?"; sirve para no duplicar la sugerencia si ya existe una tarea activa para ese documento
   attentionDismissals: [], // { id, mediationId, alertType, refId, dismissedBy, dismissedAt } — "descartar alerta" del centro de atención (Bloque 22 automatización). alertType+refId identifican la situación puntual (ej. alertType:'partyNoResponse', refId:partyId) — nunca borra el dato subyacente, solo oculta la alerta hasta que la situación cambie de verdad (ver automationEngine.js)
   commitments: [], // { id, mediationId, partyId, description, dueDate, status:'pendiente'|'cumplido'|'vencido'|'cancelado', createdFromEventId|null, completedAt, createdAt, sourceMessageId|null }
+
+  // ===== Bloque 25. Radar competitivo — herramienta interna, solo admin
+  // (ver routes/radar.js). Monitorea información PÚBLICA de competidores y
+  // sistemas oficiales para detectar cambios, nunca para copiar contenido ni
+  // decidir producto en automático (ver radarEngine.js) =====
+  competitorSources: [], // { id, name, url, category:'competidor'|'oficial'|'regulatorio'|'mercado', active, checkFrequency:'daily'|'weekly'|'manual', lastCheckedAt|null, lastChangedAt|null, lastHash|null, notes|null, createdAt, updatedAt }
+  competitorSnapshots: [], // { id, sourceId, checkedAt, contentHash, title|null, description|null, pricingText|null, featuresText|null, integrationsText|null, rawTextHash } — solo texto resumido/extractos, nunca el HTML completo (ver radarScraper.js)
+  competitorChanges: [], // { id, sourceId, type, level:'LOW'|'MEDIUM'|'HIGH', title, beforeText|null, afterText|null, evidenceText, detectedAt, status:'nueva'|'revisada'|'descartada'|'convertida_en_oportunidad', reviewedBy|null, reviewedAt|null } — también funciona como "alertas del radar" (§12 de la spec): un cambio relevante ES una alerta, no se duplicó una segunda tabla para lo mismo
+  competitorFeatureDetections: [], // { id, sourceId, feature, status:'confirmada'|'posible'|'no_confirmada', evidence, detectedAt } — una fila por sourceId+feature, se actualiza (no se duplica) en cada chequeo
+  competitorPrices: [], // { id, sourceId, plan|null, price|null, currency|null, periodicity|null, mediationLimit|null, featuresText|null, detectedAt } — histórico, append-only, nunca se borra ni se modifican precios de Mediador automáticamente
+  competitorOpportunities: [], // { id, title, observation, evidence, sourceId|null, changeId|null, status:'pendiente'|'confirmada'|'descartada', createdAt, confirmedBy|null, confirmedAt|null } — siempre creada a mano desde un cambio (§9/§13: el sistema nunca decide solo)
 };
 
 const SCHEMA = `
@@ -275,6 +286,37 @@ CREATE TABLE IF NOT EXISTS attention_dismissals (
   id TEXT PRIMARY KEY, mediationId TEXT, alertType TEXT, refId TEXT,
   dismissedBy TEXT, dismissedAt INTEGER
 );
+-- Bloque 25 (radar competitivo) — ver radarEngine.js/radarScraper.js y
+-- routes/radar.js. Todo texto acá es un extracto corto, nunca HTML completo.
+CREATE TABLE IF NOT EXISTS competitor_sources (
+  id TEXT PRIMARY KEY, name TEXT, url TEXT, category TEXT,
+  active INTEGER DEFAULT 1, checkFrequency TEXT DEFAULT 'weekly',
+  lastCheckedAt INTEGER, lastChangedAt INTEGER, lastHash TEXT, notes TEXT,
+  createdAt INTEGER, updatedAt INTEGER
+);
+CREATE TABLE IF NOT EXISTS competitor_snapshots (
+  id TEXT PRIMARY KEY, sourceId TEXT, checkedAt INTEGER, contentHash TEXT,
+  title TEXT, description TEXT, pricingText TEXT, featuresText TEXT,
+  integrationsText TEXT, rawTextHash TEXT
+);
+CREATE TABLE IF NOT EXISTS competitor_changes (
+  id TEXT PRIMARY KEY, sourceId TEXT, type TEXT, level TEXT, title TEXT,
+  beforeText TEXT, afterText TEXT, evidenceText TEXT, detectedAt INTEGER,
+  status TEXT DEFAULT 'nueva', reviewedBy TEXT, reviewedAt INTEGER
+);
+CREATE TABLE IF NOT EXISTS competitor_feature_detections (
+  id TEXT PRIMARY KEY, sourceId TEXT, feature TEXT, status TEXT,
+  evidence TEXT, detectedAt INTEGER
+);
+CREATE TABLE IF NOT EXISTS competitor_prices (
+  id TEXT PRIMARY KEY, sourceId TEXT, plan TEXT, price TEXT, currency TEXT,
+  periodicity TEXT, mediationLimit TEXT, featuresText TEXT, detectedAt INTEGER
+);
+CREATE TABLE IF NOT EXISTS competitor_opportunities (
+  id TEXT PRIMARY KEY, title TEXT, observation TEXT, evidence TEXT,
+  sourceId TEXT, changeId TEXT, status TEXT DEFAULT 'pendiente',
+  createdAt INTEGER, confirmedBy TEXT, confirmedAt INTEGER
+);
 CREATE INDEX IF NOT EXISTS idx_certified_exports_hash ON certified_exports(hash);
 CREATE INDEX IF NOT EXISTS idx_professional_applications_user ON professional_applications(userId);
 CREATE INDEX IF NOT EXISTS idx_moderation_stats_date ON moderation_stats(date);
@@ -314,6 +356,12 @@ CREATE INDEX IF NOT EXISTS idx_tasks_mediation ON tasks(mediationId);
 CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(dueDate);
 CREATE INDEX IF NOT EXISTS idx_commitments_mediation ON commitments(mediationId);
 CREATE INDEX IF NOT EXISTS idx_commitments_due ON commitments(dueDate);
+CREATE INDEX IF NOT EXISTS idx_competitor_snapshots_source ON competitor_snapshots(sourceId);
+CREATE INDEX IF NOT EXISTS idx_competitor_changes_source ON competitor_changes(sourceId);
+CREATE INDEX IF NOT EXISTS idx_competitor_changes_status ON competitor_changes(status);
+CREATE INDEX IF NOT EXISTS idx_competitor_feature_detections_source ON competitor_feature_detections(sourceId);
+CREATE INDEX IF NOT EXISTS idx_competitor_prices_source ON competitor_prices(sourceId);
+CREATE INDEX IF NOT EXISTS idx_competitor_opportunities_status ON competitor_opportunities(status);
 `;
 
 // columnas que se guardan como 0/1 en SQLite pero son boolean en JS —
@@ -324,6 +372,7 @@ const BOOL_COLUMNS = {
   members: ['assignedByAdmin', 'notificationsMuted'],
   messages: ['flagged', 'pattern'],
   parties: ['allowDocumentUpload'],
+  competitorSources: ['active'],
 };
 // columnas que viajan como objeto/array en JS pero se guardan como texto JSON
 const JSON_COLUMNS = {
@@ -352,6 +401,9 @@ const TABLE_NAMES = {
   documents: 'documents',
   mediationEvents: 'mediation_events', tasks: 'tasks', commitments: 'commitments',
   attentionDismissals: 'attention_dismissals',
+  competitorSources: 'competitor_sources', competitorSnapshots: 'competitor_snapshots',
+  competitorChanges: 'competitor_changes', competitorFeatureDetections: 'competitor_feature_detections',
+  competitorPrices: 'competitor_prices', competitorOpportunities: 'competitor_opportunities',
 };
 
 function rowToRecord(collectionKey, row) {

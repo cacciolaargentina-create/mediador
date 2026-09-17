@@ -2,6 +2,7 @@
 
 let me = null;
 let currentMediationId = null;
+let isPlatformAdmin = false; // Bloque 25 — admin de PLATAFORMA (ADMIN_EMAILS), no admin de estudio. Solo gatilla mostrar/ocultar el link al radar competitivo en el menú de cuenta; el backend (routes/radar.js) es quien realmente lo protege.
 
 function escapeHtml(s){
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -44,6 +45,7 @@ const NEXT_ACTION_RESPONSIBLE_LABELS = { mediador: 'Mediador/a', party: 'Una par
   renderAccountButton();
   goTo('dashboard');
   maybeShowOnboarding();
+  try{ isPlatformAdmin = (await api('/api/admin/am-i-admin')).isAdmin; }catch(e){ isPlatformAdmin = false; }
 })();
 
 // ================= GUÍA DE PRIMER USO =================
@@ -135,6 +137,10 @@ function renderAccountMenu(){
       <div class="who">${escapeHtml(me.name || '')}</div>
       <div class="sub">${escapeHtml(me.email || '')}</div>
     </div>
+    ${isPlatformAdmin ? `<a class="row" role="menuitem" href="/radar.html">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2 19 6v5.4c0 4.2-2.9 7.9-7 9-4.1-1.1-7-4.8-7-9V6l7-2.8Z"/><path d="m9.4 12.1 1.9 1.9 3.4-3.6"/></svg>
+      <span>Radar competitivo</span>
+    </a>` : ''}
     <button class="row" role="menuitem" onclick="closeAccountMenu(); logoutMediador();">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15.5 16.5 4.5-4.5-4.5-4.5"/><path d="M20 12H9.5"/><path d="M9.5 4H6.5A2.5 2.5 0 0 0 4 6.5v11A2.5 2.5 0 0 0 6.5 20h3"/></svg>
       <span>Cerrar sesión</span>
