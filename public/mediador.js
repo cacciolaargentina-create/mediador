@@ -1327,18 +1327,23 @@ const MEETING_STATUS_LABELS = {
 };
 
 // se muestra/oculta según la modalidad elegida — solo tiene sentido pedir
-// proveedor/link cuando la audiencia no es puramente presencial.
-function updateHearingFormVideoVisibility(){
-  const modality = document.getElementById('hearing-modality')?.value;
-  const videoFields = document.getElementById('hearing-video-fields');
+// proveedor/link cuando la audiencia no es puramente presencial. Mismo
+// patrón para el form de "agendar audiencia" (hearing-*) y el de
+// "proponer varios horarios" (propose-*) — prefijo como parámetro para
+// no duplicar la función dos veces con IDs distintos.
+function updateVideoFieldsVisibility(prefix){
+  const modality = document.getElementById(`${prefix}-modality`)?.value;
+  const videoFields = document.getElementById(`${prefix}-video-fields`);
   if(!videoFields) return;
   videoFields.style.display = (modality === 'virtual' || modality === 'hibrida') ? 'block' : 'none';
-  const providerField = document.getElementById('hearing-provider');
-  const manualField = document.getElementById('hearing-manual-link-field');
+  const providerField = document.getElementById(`${prefix}-provider`);
+  const manualField = document.getElementById(`${prefix}-manual-link-field`);
   if(providerField && manualField){
     manualField.style.display = providerField.value ? 'none' : 'block';
   }
 }
+function updateHearingFormVideoVisibility(){ updateVideoFieldsVisibility('hearing'); }
+function updateProposeFormVideoVisibility(){ updateVideoFieldsVisibility('propose'); }
 
 // ---------- Configuración → Videoconferencias (spec §23) ----------
 async function renderVideoSettings(){
@@ -1833,6 +1838,23 @@ async function renderDetail(id){
           <option value="">Todas las partes</option>
           ${parties.map(p => `<option value="${p.id}">${escapeHtml(partyName(p.id))} (solo a esta parte)</option>`).join('')}
         </select>
+        <label>Modalidad</label>
+        <select id="propose-modality" onchange="updateProposeFormVideoVisibility()">
+          <option value="presencial">Presencial</option>
+          <option value="virtual">Virtual</option>
+          <option value="hibrida">Híbrida</option>
+        </select>
+        <div id="propose-video-fields" style="display:none;">
+          <label>Videoconferencia</label>
+          <select id="propose-provider" onchange="updateProposeFormVideoVisibility()">
+            <option value="">— Cargar enlace manualmente —</option>
+            ${VIDEO_PROVIDER_OPTIONS}
+          </select>
+          <div id="propose-manual-link-field">
+            <input id="propose-meeting-url" placeholder="Enlace de la reunión (Zoom, Meet, Teams, etc.)">
+          </div>
+          <p class="empty-hint">Con un proveedor real, la reunión se crea recién cuando se elige cuál horario queda — nunca una por cada opción propuesta.</p>
+        </div>
         <div id="propose-slots">
           <div class="propose-slot-row" style="display:flex; gap:6px; margin-bottom:6px;">
             <input type="date" class="propose-slot-date" style="flex:1;">
@@ -2843,9 +2865,18 @@ async function submitProposal(mediationId){
   const targetSelect = document.getElementById('propose-target');
   const targetPartyId = targetSelect.value || null;
   const targetLabel = targetPartyId ? targetSelect.options[targetSelect.selectedIndex].text : 'todas las partes';
+  const modality = document.getElementById('propose-modality').value;
+  const provider = document.getElementById('propose-provider').value || null;
+  const meetingUrl = document.getElementById('propose-meeting-url').value.trim() || null;
+  if(modality !== 'presencial' && !provider && !meetingUrl){
+    showToast('Modalidad virtual o híbrida requiere un proveedor de videoconferencia o un enlace manual.', 'danger');
+    return;
+  }
   if(!confirm(`Se va a proponer ${slots.length} horario(s) a: ${targetLabel}. ¿Confirmás?`)) return;
   try{
-    const result = await api(`/api/mediations/${mediationId}/hearings/propose`, { method:'POST', body: JSON.stringify({ slots, targetPartyId }) });
+    const body = { slots, targetPartyId, modality };
+    if(provider) body.provider = provider; else if(meetingUrl) body.meetingUrl = meetingUrl;
+    const result = await api(`/api/mediations/${mediationId}/hearings/propose`, { method:'POST', body: JSON.stringify(body) });
     const notifText = describeNotifications(result.notifications);
     if(notifText) alert(`Propuesta enviada.\n\n${notifText}`);
     renderDetail(mediationId);

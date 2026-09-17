@@ -45,13 +45,16 @@ module.exports = function () {
     }
     const state = nanoid();
     req.session.videoOAuthState = state;
-    req.session.videoOAuthReturnTo = safeNextPath(req.query.next) || '/mediador.html';
+    // '/' (no '/mediador.html'): mismo default robusto que ya usa
+    // routes/auth.js para el login — la app de Mediador vive en index.html,
+    // no depende de que exista un mediador.html en el server actual.
+    req.session.videoOAuthReturnTo = safeNextPath(req.query.next) || '/';
     const redirectUri = `${req.protocol}://${req.get('host')}${googleMeet.callbackUrl()}`;
     res.redirect(googleMeet.buildAuthUrl({ redirectUri, state }));
   });
 
   router.get('/google_meet/callback', requireAuth, async (req, res) => {
-    const returnTo = req.session.videoOAuthReturnTo || '/mediador.html';
+    const returnTo = req.session.videoOAuthReturnTo || '/';
     delete req.session.videoOAuthReturnTo;
     const expectedState = req.session.videoOAuthState;
     delete req.session.videoOAuthState;

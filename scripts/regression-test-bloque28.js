@@ -127,6 +127,18 @@ function record(r) { allBodies.push(JSON.stringify(r.body)); return r; }
     check('6. POST .../meeting actualiza el enlace', r.status === 200 && r.body?.meetingUrl === 'https://meet.example.com/retry-1', JSON.stringify(r.body));
   }
 
+  // ==== 6(b). un intento fallido de CAMBIAR de proveedor sobre una
+  // reunión que ya funcionaba nunca debe dejar la audiencia con un
+  // enlace roto o un proveedor "mentiroso" — se restaura el estado
+  // anterior que sí andaba, el error se informa aparte ====
+  {
+    const r = record(await MED_A.fetch(`/api/mediations/${MID}/hearings/${hearingRetryId}/meeting`, { method: 'POST', body: JSON.stringify({ provider: 'google_meet' }) }));
+    check('6(b). intento de cambiar a proveedor no conectado → 502', r.status === 502, JSON.stringify(r.body));
+    check('6(c). la audiencia conserva el link manual anterior que SÍ funcionaba', r.body?.hearing?.meetingUrl === 'https://meet.example.com/retry-1', JSON.stringify(r.body?.hearing));
+    check('6(d). el proveedor sigue siendo "manual", no "google_meet" (nunca queda mintiendo)', r.body?.hearing?.video?.provider === 'manual', JSON.stringify(r.body?.hearing?.video));
+    check('6(e). meetingStatus sigue "creada" (no "error") — el link viejo sigue siendo válido', r.body?.hearing?.video?.meetingStatus === 'creada', JSON.stringify(r.body?.hearing?.video));
+  }
+
   // ==== 7. sub-endpoint DELETE .../meeting — desvincula sin tocar el resto ====
   {
     const r = record(await MED_A.fetch(`/api/mediations/${MID}/hearings/${hearingRetryId}/meeting`, { method: 'DELETE' }));

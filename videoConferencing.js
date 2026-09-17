@@ -40,6 +40,18 @@ async function createHearingMeeting(db, { hearing, mediation, provider, meetingU
   const providerName = provider || (meetingUrl ? 'manual' : null);
   if (!providerName) return { ok: true, skipped: true };
 
+  // snapshot — si ya había una reunión funcionando (ej. un link manual, o
+  // el mediador está probando cambiar de proveedor sobre una audiencia
+  // que ya tenía videoconferencia andando) y el intento nuevo falla, se
+  // vuelve a este estado en vez de dejar un desajuste "dice Google Meet
+  // pero el link que se puede usar es el viejo de otro proveedor".
+  const hadWorkingMeeting = ['creada', 'actualizada'].includes(hearing.meetingStatus) && !!hearing.meetingUrl;
+  const previous = hadWorkingMeeting ? {
+    videoProvider: hearing.videoProvider, meetingId: hearing.meetingId, meetingUrl: hearing.meetingUrl,
+    hostUrl: hearing.hostUrl, meetingMetadata: hearing.meetingMetadata, meetingStatus: hearing.meetingStatus,
+    meetingCreatedAt: hearing.meetingCreatedAt, meetingUpdatedAt: hearing.meetingUpdatedAt,
+  } : null;
+
   hearing.videoProvider = providerName;
   hearing.meetingStatus = MEETING_STATUS.CREANDO;
   try {
@@ -60,15 +72,23 @@ async function createHearingMeeting(db, { hearing, mediation, provider, meetingU
     });
     return { ok: true };
   } catch (err) {
-    hearing.meetingStatus = MEETING_STATUS.ERROR;
     console.error('[video] error creando reunión', providerName, hearing.id, err.cause || err);
     const clientError = toClientError(err);
+    if (previous) {
+      // se restaura la reunión anterior que SÍ funcionaba — el intento
+      // fallido de cambiar de proveedor no debe dejar a la audiencia con
+      // un enlace roto o engañoso (spec §19: "detectar la inconsistencia"
+      // no significa "mostrar un estado peor del que ya había").
+      Object.assign(hearing, previous);
+    } else {
+      hearing.meetingStatus = MEETING_STATUS.ERROR;
+    }
     logMediationEvent(db, {
       mediationId: mediation.id, type: 'VIDEO_MEETING_ERROR', actorId,
       entityType: 'hearing', entityId: hearing.id,
       title: `Error al crear la videoconferencia (${PROVIDER_LABELS[providerName] || providerName})`,
       description: clientError.message,
-      metadata: { provider: providerName, code: clientError.code, action: 'create' },
+      metadata: { provider: providerName, code: clientError.code, action: 'create', keptPreviousMeeting: !!previous },
     });
     return { ok: false, error: clientError };
   }
