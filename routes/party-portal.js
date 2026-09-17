@@ -101,6 +101,9 @@ module.exports = function (io) {
         return {
           id: h.id, date: h.date, startTime: h.startTime, endTime: h.endTime, modality: h.modality,
           location: h.location, meetingUrl: h.meetingUrl,
+          // Bloque 28 §12 — SOLO el nombre del proveedor (para mostrar
+          // "Virtual · Google Meet"), nunca hostUrl/meetingId/metadata.
+          videoProvider: h.videoProvider || null,
           myResponse: confirmation ? confirmation.response : null,
           myRescheduleRequestStatus: myRequest ? myRequest.status : null,
         };

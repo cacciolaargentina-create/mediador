@@ -86,6 +86,8 @@ function showToast(message, kind){
 const CONFIRM_LABELS = { confirma:'Confirmó', no_puede:'Avisó que no puede', pide_cambio:'Pidió un cambio' };
 const REQUEST_STATUS_LABELS = { pendiente:'Esperando respuesta del mediador/a', aceptada:'Aceptado — se reprogramó', rechazada:'No se pudo hacer el cambio', resuelta:'Resuelto sin cambio' };
 const COMMITMENT_STATUS_LABELS = { pendiente:'Pendiente', cumplido:'Cumplido', vencido:'Vencido', cancelado:'Cancelado' };
+// Bloque 28 §13 — solo el nombre del proveedor, nunca hostUrl/credenciales.
+const VIDEO_PROVIDER_LABELS = { google_meet:'Google Meet', zoom:'Zoom', teams:'Microsoft Teams', manual:'enlace de reunión' };
 const MEDIATION_STATUS_LABELS = {
   borrador:'Recién iniciada', iniciada:'Iniciada', contactando_partes:'Contactando a las partes',
   notificaciones:'En notificaciones', audiencia_programada:'Audiencia programada', en_mediacion:'En mediación',
@@ -159,7 +161,7 @@ async function renderDetail(mediationId){
       <h2>Audiencias</h2>
       ${data.hearings.length ? data.hearings.map(h => `
         <div class="item">
-          <strong>${fmtDate(h.date)}${h.startTime ? ' ' + h.startTime : ''}</strong> — ${h.modality}
+          <strong>${fmtDate(h.date)}${h.startTime ? ' ' + h.startTime : ''}</strong> — ${h.modality}${h.modality !== 'presencial' && h.videoProvider ? ' · ' + (VIDEO_PROVIDER_LABELS[h.videoProvider] || h.videoProvider) : ''}
           ${h.location ? `<br><span style="color:var(--text-faint);">${escapeHtml(h.location)}</span>` : ''}
           ${h.meetingUrl ? `<br><a href="${escapeHtml(h.meetingUrl)}" style="color:var(--calm);" target="_blank">Link de la reunión</a>` : ''}
           <div style="margin-top:8px;">

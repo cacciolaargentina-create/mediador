@@ -96,6 +96,12 @@ module.exports = function () {
     if (radarPending >= 3) {
       attention.push({ type: 'radar_cambios_sin_revisar', level: 'LOW', detail: `${radarPending} cambios del radar competitivo sin revisar` });
     }
+    // Bloque 28 §22 — solo estado técnico agregado, nunca URLs/tokens.
+    const hearingsWithVideo = db.hearings.filter((h) => h.videoProvider);
+    const videoErrors = hearingsWithVideo.filter((h) => h.meetingStatus === 'error');
+    if (videoErrors.length >= 3) {
+      attention.push({ type: 'videoconferencias_con_error', level: 'MEDIUM', detail: `${videoErrors.length} audiencia(s) con la videoconferencia en estado de error` });
+    }
 
     res.json({
       kpis: {
@@ -116,7 +122,33 @@ module.exports = function () {
         pendingChanges: radarPending,
         pendingOpportunities: db.competitorOpportunities.filter((o) => o.status === 'pendiente').length,
       },
+      video: {
+        reunionesCreadas: hearingsWithVideo.length,
+        reunionesConError: videoErrors.length,
+        porProveedor: hearingsWithVideo.reduce((acc, h) => { acc[h.videoProvider] = (acc[h.videoProvider] || 0) + 1; return acc; }, {}),
+      },
       requiereAtencion: attention,
+    });
+  });
+
+  // ================= VIDEOCONFERENCIAS (Bloque 28 §22) =================
+  // Métricas agregadas — reuniones creadas, con error, por proveedor,
+  // errores por proveedor. NUNCA joinUrl/hostUrl/tokens (spec §22): el
+  // admin ve estado técnico, no contenido privado de la mediación.
+  router.get('/video-metrics', (req, res) => {
+    const db = getDB();
+    const withVideo = db.hearings.filter((h) => h.videoProvider);
+    const porProveedor = {};
+    const erroresPorProveedor = {};
+    for (const h of withVideo) {
+      porProveedor[h.videoProvider] = (porProveedor[h.videoProvider] || 0) + 1;
+      if (h.meetingStatus === 'error') erroresPorProveedor[h.videoProvider] = (erroresPorProveedor[h.videoProvider] || 0) + 1;
+    }
+    res.json({
+      reunionesCreadas: withVideo.filter((h) => ['creada', 'actualizada'].includes(h.meetingStatus)).length,
+      reunionesConError: withVideo.filter((h) => h.meetingStatus === 'error').length,
+      reunionesCanceladas: withVideo.filter((h) => h.meetingStatus === 'cancelada').length,
+      porProveedor, erroresPorProveedor,
     });
   });
 

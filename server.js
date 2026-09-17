@@ -133,6 +133,7 @@ const studiosRoutes = require('./routes/studios')();
 const agendaRoutes = require('./routes/agenda')();
 const radarRoutes = require('./routes/radar')();
 const adminMediadorRoutes = require('./routes/admin-mediador')();
+const videoProviderRoutes = require('./routes/video-providers')();
 
 app.use('/auth', authRoutes);
 app.use('/api/channels', channelRoutes);
@@ -150,6 +151,7 @@ app.use('/api/studios', studiosRoutes);
 app.use('/api/agenda', agendaRoutes);
 app.use('/api/radar', radarRoutes);
 app.use('/api/admin-mediador', adminMediadorRoutes);
+app.use('/api/video-providers', videoProviderRoutes);
 
 app.get('/api/health', (req, res) => res.json({ ok: true, users: getDB().users.length }));
 

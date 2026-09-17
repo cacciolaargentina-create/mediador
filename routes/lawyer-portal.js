@@ -134,6 +134,9 @@ module.exports = function (io) {
         return {
           id: h.id, date: h.date, startTime: h.startTime, endTime: h.endTime, modality: h.modality,
           location: h.location, meetingUrl: h.meetingUrl, status: h.status,
+          // Bloque 28 §13 — igual que en party-portal.js: solo el nombre
+          // del proveedor, nunca hostUrl/credenciales/datos administrativos.
+          videoProvider: h.videoProvider || null,
           myResponse: confirmation ? confirmation.response : null,
           myRescheduleRequestStatus: myRequest ? myRequest.status : null,
         };

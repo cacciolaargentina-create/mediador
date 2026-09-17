@@ -54,7 +54,8 @@ const EMPTY_DB = {
   // ===== Bloque 4. Ver IMPLEMENTATION_PLAN.md §3.3-3.6 =====
   parties: [], // { id, mediationId, type:'persona'|'empresa', role:'requirente'|'requerido'|'otro', firstName, lastName, legalName, documentType, documentNumber, taxId, email, phone, address, status:'activa'|'inactiva', linkedUserId|null, notes, createdAt }
   lawyers: [], // { id, mediationId, partyId, name, enrollmentNumber, barAssociation, email, phone, createdAt }
-  hearings: [], // { id, mediationId, date, startTime, endTime, type:'primera'|'continuacion'|'privada'|'otra', modality:'presencial'|'virtual'|'hibrida', location, meetingUrl, status:'propuesta'|'programada'|'confirmada'|'realizada'|'cancelada'|'no_realizada', notes, proposalGroupId|null, targetPartyId|null, createdAt, startAlertSentAt|null } — startAlertSentAt (Bloque 26): se completa una sola vez, cuando se publica el mensaje de sistema de "audiencia por empezar" en los hilos de las partes — nunca se resetea, evita mandarlo dos veces
+  hearings: [], // { id, mediationId, date, startTime, endTime, type:'primera'|'continuacion'|'privada'|'otra', modality:'presencial'|'virtual'|'hibrida', location, meetingUrl, status:'propuesta'|'programada'|'confirmada'|'realizada'|'cancelada'|'no_realizada', notes, proposalGroupId|null, targetPartyId|null, createdAt, startAlertSentAt|null, videoProvider|null, meetingId|null, hostUrl|null, meetingCreatedAt|null, meetingUpdatedAt|null, meetingStatus|null, meetingMetadata|null } — startAlertSentAt (Bloque 26): se completa una sola vez, cuando se publica el mensaje de sistema de "audiencia por empezar" en los hilos de las partes — nunca se resetea, evita mandarlo dos veces. Campos de videoconferencia (Bloque 28): meetingUrl SIGUE siendo el join URL de siempre (lo que ya veían partes/abogados/agenda/ICS/el job de "audiencia por empezar") — nunca se duplicó. videoProvider:'google_meet'|'zoom'|'teams'|'manual'|null, meetingId (id de la reunión en el proveedor externo, para poder actualizarla/cancelarla después), hostUrl (link de organizador — SOLO Zoom lo diferencia del join URL; nunca se expone a partes/abogados), meetingStatus:'no_configurada'|'creando'|'creada'|'actualizando'|'actualizada'|'error'|'cancelada' (estado de la REUNIÓN, distinto del estado de la audiencia), meetingMetadata (objeto JSON con datos no sensibles del proveedor — nunca tokens/secrets)
+  videoProviderAccounts: [], // { id, userId, provider:'google_meet'|'zoom'|'teams', status:'conectado'|'requiere_autorizacion'|'error', accessToken|null, refreshToken|null, expiresAt|null, accountEmail|null, lastError|null, connectedAt, updatedAt } — credenciales OAuth de UN mediador para UN proveedor (Bloque 28 §17: nunca en hearings, nunca en logs/respuestas de API — ver serializeVideoAccount en routes/video-providers.js, que nunca incluye accessToken/refreshToken)
   hearingConfirmations: [], // { id, hearingId, partyId, response:'pendiente'|'confirma'|'no_puede'|'pide_cambio', respondedAt, createdAt } — una fila por parte por audiencia, se crea sola al crear la audiencia
   hearingRescheduleRequests: [], // { id, hearingId, mediationId, requestedByPartyId, requestedByType:'party'|'lawyer', requestedByLawyerId|null, reason|null, comment|null, preferredDayText|null, preferredTimeText|null, proposedDate|null, proposedStartTime|null, status:'pendiente'|'aceptada'|'rechazada'|'resuelta', mediatorNote|null, resolvedBy|null, resolvedAt|null, createdAt, sourceMessageId|null } — sourceMessageId (Bloque 19): si el mediador la creó a mano desde un mensaje de chat ("Gestionar cambio de audiencia"), en vez de haber llegado por el portal
 
@@ -362,6 +363,16 @@ CREATE INDEX IF NOT EXISTS idx_competitor_changes_status ON competitor_changes(s
 CREATE INDEX IF NOT EXISTS idx_competitor_feature_detections_source ON competitor_feature_detections(sourceId);
 CREATE INDEX IF NOT EXISTS idx_competitor_prices_source ON competitor_prices(sourceId);
 CREATE INDEX IF NOT EXISTS idx_competitor_opportunities_status ON competitor_opportunities(status);
+-- Bloque 28 — videoconferencias. Credenciales OAuth por mediador y por
+-- proveedor, en su PROPIA tabla — nunca en hearings (spec §17): una
+-- audiencia solo guarda el resultado (meetingUrl/meetingId/estado), nunca
+-- un token. Una fila por userId+provider (ver upsert en routes/video-providers.js).
+CREATE TABLE IF NOT EXISTS video_provider_accounts (
+  id TEXT PRIMARY KEY, userId TEXT, provider TEXT, status TEXT DEFAULT 'requiere_autorizacion',
+  accessToken TEXT, refreshToken TEXT, expiresAt INTEGER, accountEmail TEXT, lastError TEXT,
+  connectedAt INTEGER, updatedAt INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_video_provider_accounts_user ON video_provider_accounts(userId);
 `;
 
 // columnas que se guardan como 0/1 en SQLite pero son boolean en JS —
@@ -382,6 +393,7 @@ const JSON_COLUMNS = {
   pushSubscriptions: ['keys'],
   messages: ['attachment'],
   mediationEvents: ['metadata'],
+  hearings: ['meetingMetadata'],
 };
 const TABLE_NAMES = {
   users: 'users', channels: 'channels', members: 'members', messages: 'messages',
@@ -396,6 +408,7 @@ const TABLE_NAMES = {
   mediationAccess: 'mediation_access',
   studios: 'studios', studioInvitations: 'studio_invitations',
   parties: 'parties', lawyers: 'lawyers', hearings: 'hearings', hearingConfirmations: 'hearing_confirmations',
+  videoProviderAccounts: 'video_provider_accounts',
   hearingRescheduleRequests: 'hearing_reschedule_requests',
   mediatorAvailability: 'mediator_availability', mediatorScheduleBlocks: 'mediator_schedule_blocks',
   documents: 'documents',
@@ -539,6 +552,16 @@ function openDb() {
   // mecanismo para desactivar una cuenta — se hace cumplir en
   // passport.deserializeUser (server.js), nunca duplicado ruta por ruta.
   ensureColumns(sqlite, 'users', { lastLoginAt: 'INTEGER', disabledAt: 'INTEGER' });
+  // Bloque 28 — videoconferencias integradas. meetingUrl/modality/location
+  // ya existían (Bloque 4) y siguen significando exactamente lo mismo;
+  // estas columnas son PURAMENTE aditivas — NULL en toda audiencia
+  // existente equivale a "sin proveedor" (audiencia presencial, o virtual
+  // con link cargado a mano como siempre), cero cambio de comportamiento.
+  ensureColumns(sqlite, 'hearings', {
+    videoProvider: 'TEXT', meetingId: 'TEXT', hostUrl: 'TEXT',
+    meetingCreatedAt: 'INTEGER', meetingUpdatedAt: 'INTEGER',
+    meetingStatus: 'TEXT', meetingMetadata: 'TEXT',
+  });
   if (isNew && fs.existsSync(LEGACY_JSON_PATH)) {
     migrateFromJson(sqlite, LEGACY_JSON_PATH);
   }

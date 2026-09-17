@@ -43,7 +43,18 @@ const NEXT_ACTION_RESPONSIBLE_LABELS = { mediador: 'Mediador/a', party: 'Una par
   }
   document.getElementById('app').style.display = 'block';
   renderAccountButton();
-  goTo('dashboard');
+  // Bloque 28 — vuelta del flujo de conexión OAuth de un proveedor de
+  // videoconferencia (routes/video-providers.js redirige acá con estos
+  // query params, nunca con datos sensibles en la URL).
+  const videoParams = new URLSearchParams(location.search);
+  if(videoParams.get('videoProvider')){
+    const ok = videoParams.get('status') === 'conectado';
+    showToast(ok ? 'Cuenta conectada correctamente.' : 'No se pudo conectar la cuenta — probá de nuevo.', ok ? 'success' : 'danger');
+    history.replaceState(null, '', location.pathname);
+    goTo('videoSettings');
+  } else {
+    goTo('dashboard');
+  }
   maybeShowOnboarding();
   try{ isPlatformAdmin = (await api('/api/admin/am-i-admin')).isAdmin; }catch(e){ isPlatformAdmin = false; }
 })();
@@ -145,6 +156,10 @@ function renderAccountMenu(){
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2 19 6v5.4c0 4.2-2.9 7.9-7 9-4.1-1.1-7-4.8-7-9V6l7-2.8Z"/><path d="m9.4 12.1 1.9 1.9 3.4-3.6"/></svg>
       <span>Radar competitivo</span>
     </a>` : ''}
+    <button class="row" role="menuitem" onclick="closeAccountMenu(); goTo('videoSettings');">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 10 5-3v10l-5-3"/><rect x="2" y="6" width="13" height="12" rx="2"/></svg>
+      <span>Videoconferencias</span>
+    </button>
     <button class="row" role="menuitem" onclick="closeAccountMenu(); logoutMediador();">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15.5 16.5 4.5-4.5-4.5-4.5"/><path d="M20 12H9.5"/><path d="M9.5 4H6.5A2.5 2.5 0 0 0 4 6.5v11A2.5 2.5 0 0 0 6.5 20h3"/></svg>
       <span>Cerrar sesión</span>
@@ -292,6 +307,7 @@ function goTo(screen, id){
   else if(screen === 'studioMediations') renderPromise = renderStudioMediations();
   else if(screen === 'agenda') renderPromise = renderAgenda();
   else if(screen === 'requests') renderPromise = renderRequests();
+  else if(screen === 'videoSettings') renderPromise = renderVideoSettings();
   window.scrollTo(0, 0);
   return renderPromise;
 }
@@ -1297,6 +1313,128 @@ const PARTY_ROLE_LABELS = { requirente: 'Requirente', requerido: 'Requerido', ot
 const HEARING_MODALITY_LABELS = { presencial: 'Presencial', virtual: 'Virtual', hibrida: 'Híbrida' };
 const HEARING_STATUS_LABELS = { programada: 'Programada', confirmada: 'Confirmada', realizada: 'Realizada', cancelada: 'Cancelada', no_realizada: 'No realizada' };
 const CONFIRMATION_LABELS = { pendiente: 'Pendiente', confirma: 'Confirma', no_puede: 'No puede', pide_cambio: 'Pide cambio' };
+
+// ================= VIDEOCONFERENCIAS (Bloque 28) =================
+const VIDEO_PROVIDER_LABELS = { google_meet: 'Google Meet', zoom: 'Zoom', teams: 'Microsoft Teams', manual: 'Enlace manual' };
+const VIDEO_PROVIDER_OPTIONS = `
+  <option value="google_meet">Google Meet</option>
+  <option value="zoom">Zoom</option>
+  <option value="teams">Microsoft Teams</option>
+`;
+const MEETING_STATUS_LABELS = {
+  no_configurada: 'Sin configurar', creando: 'Creando…', creada: 'Reunión creada',
+  actualizando: 'Actualizando…', actualizada: 'Reunión actualizada', error: 'Requiere atención', cancelada: 'Cancelada',
+};
+
+// se muestra/oculta según la modalidad elegida — solo tiene sentido pedir
+// proveedor/link cuando la audiencia no es puramente presencial.
+function updateHearingFormVideoVisibility(){
+  const modality = document.getElementById('hearing-modality')?.value;
+  const videoFields = document.getElementById('hearing-video-fields');
+  if(!videoFields) return;
+  videoFields.style.display = (modality === 'virtual' || modality === 'hibrida') ? 'block' : 'none';
+  const providerField = document.getElementById('hearing-provider');
+  const manualField = document.getElementById('hearing-manual-link-field');
+  if(providerField && manualField){
+    manualField.style.display = providerField.value ? 'none' : 'block';
+  }
+}
+
+// ---------- Configuración → Videoconferencias (spec §23) ----------
+async function renderVideoSettings(){
+  const main = document.getElementById('main');
+  main.innerHTML = `<p class="empty-hint">Cargando…</p>`;
+  let providers;
+  try{ providers = await api('/api/video-providers'); }
+  catch(e){ main.innerHTML = `<p class="empty-hint">No se pudo cargar el estado de los proveedores.</p>`; return; }
+
+  const STATUS_LABELS_VP = { conectado: 'Conectado', requiere_autorizacion: 'No conectado', no_configurada: 'No configurado', error: 'Error' };
+  const STATUS_PILL_CLASS = { conectado: 'calm', requiere_autorizacion: 'warn', no_configurada: 'warn', error: 'danger' };
+
+  main.innerHTML = `
+    <span class="back-link" onclick="goTo('dashboard')">← Volver</span>
+    <h1 style="font-size:21px;">Videoconferencias</h1>
+    <p class="empty-hint" style="margin-bottom:16px;">Conectá los proveedores que vas a usar para crear reuniones automáticamente desde las audiencias. Sin conectar nada, Mediador sigue funcionando igual — siempre podés cargar un enlace manualmente.</p>
+    ${providers.map(p => `
+      <div class="card" style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+        <div>
+          <strong>${escapeHtml(p.label)}</strong>
+          <br><span class="pill ${STATUS_PILL_CLASS[p.status] || 'warn'}">${STATUS_LABELS_VP[p.status] || p.status}</span>
+          ${p.accountEmail ? `<span style="color:var(--text-faint); font-size:12px; margin-left:6px;">${escapeHtml(p.accountEmail)}</span>` : ''}
+          ${!p.perMediatorAccount ? `<p class="empty-hint" style="margin-top:4px;">Se configura una sola vez para toda la instalación (variables de entorno del servidor).</p>` : ''}
+        </div>
+        ${p.perMediatorAccount ? (
+          p.status === 'conectado'
+            ? `<button class="ghost" onclick="disconnectVideoProvider('${p.provider}')">Desconectar</button>`
+            : (p.status === 'no_configurada'
+                ? `<span class="empty-hint">Falta configurar credenciales en el servidor</span>`
+                : `<a href="/api/video-providers/${p.provider}/connect" class="primary" style="text-decoration:none; padding:8px 16px;">Conectar cuenta</a>`)
+        ) : ''}
+      </div>
+    `).join('')}
+  `;
+}
+
+async function disconnectVideoProvider(provider){
+  if(!confirm('¿Desconectar esta cuenta? Las audiencias que ya tienen una reunión creada no se ven afectadas.')) return;
+  try{
+    await api(`/api/video-providers/${provider}/disconnect`, { method: 'POST' });
+    showToast('Cuenta desconectada.', 'success');
+    renderVideoSettings();
+  }catch(e){ showToast(e.error || 'No se pudo desconectar la cuenta.', 'danger'); }
+}
+
+async function createHearingMeetingNow(mediationId, hearingId, provider){
+  try{
+    await api(`/api/mediations/${mediationId}/hearings/${hearingId}/meeting`, { method:'POST', body: JSON.stringify({ provider }) });
+    showToast('Reunión creada.', 'success');
+    renderDetail(mediationId);
+  }catch(e){ showToast(e.error || 'No se pudo crear la reunión.', 'danger'); }
+}
+
+async function removeHearingMeeting(mediationId, hearingId){
+  if(!confirm('¿Quitar la videoconferencia de esta audiencia? Si hay una reunión creada en el proveedor externo, se intenta cancelar.')) return;
+  try{
+    await api(`/api/mediations/${mediationId}/hearings/${hearingId}/meeting`, { method:'DELETE' });
+    showToast('Videoconferencia quitada.', 'success');
+    renderDetail(mediationId);
+  }catch(e){ showToast(e.error || 'No se pudo quitar la videoconferencia.', 'danger'); }
+}
+
+// tarjeta "VIDEOCONFERENCIA" del detalle de audiencia (spec §11): solo
+// aparece si hay algo que mostrar — una audiencia presencial sin ningún
+// intento de video no muestra nada acá.
+function renderHearingVideoCard(m, h){
+  if(!h.modality || h.modality === 'presencial') return '';
+  if(!h.video && !h.meetingUrl) {
+    return `
+      <div style="margin-top:8px; background:var(--surface-2); border-radius:8px; padding:10px 12px;">
+        <div style="font-size:12px; color:var(--text-faint);">Videoconferencia no configurada</div>
+        <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">
+          ${['google_meet','zoom','teams'].map(p => `<button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="createHearingMeetingNow('${m.id}','${h.id}','${p}')">Crear con ${VIDEO_PROVIDER_LABELS[p]}</button>`).join('')}
+        </div>
+      </div>
+    `;
+  }
+  const v = h.video || { provider: 'manual', providerLabel: 'Enlace manual', meetingStatus: 'creada', joinUrl: h.meetingUrl };
+  const isError = v.meetingStatus === 'error';
+  return `
+    <div style="margin-top:8px; background:var(--surface-2); border-radius:8px; padding:10px 12px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+        <div>
+          <div style="font-size:12px; font-weight:600;">Videoconferencia · ${escapeHtml(v.providerLabel || VIDEO_PROVIDER_LABELS[v.provider] || v.provider)}</div>
+          <div style="font-size:11px; color:${isError ? 'var(--danger)' : 'var(--text-faint)'};">${MEETING_STATUS_LABELS[v.meetingStatus] || v.meetingStatus || ''}</div>
+        </div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          ${v.joinUrl ? `<a href="${escapeHtml(v.joinUrl)}" target="_blank" class="primary" style="padding:4px 10px; font-size:11px; text-decoration:none;">Entrar a audiencia</a>` : ''}
+          ${v.joinUrl ? `<button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="copyLinkToClipboard('${escapeHtml(v.joinUrl)}', 'Enlace de la reunión copiado.')">Copiar enlace</button>` : ''}
+          ${isError && v.provider !== 'manual' ? `<button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="createHearingMeetingNow('${m.id}','${h.id}','${v.provider}')">Reintentar</button>` : ''}
+          <button class="ghost" style="padding:4px 10px; font-size:11px; color:var(--danger);" onclick="removeHearingMeeting('${m.id}','${h.id}')">Quitar</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
 const DOCUMENT_TYPE_LABELS = { dni:'DNI', poder:'Poder', notificacion:'Notificación', presupuesto:'Presupuesto', contrato:'Contrato', acta:'Acta', acuerdo:'Acuerdo', constancia:'Constancia', otro:'Otro' };
 const DOCUMENT_STATUS_LABELS = { pendiente_escaneo:'Pendiente de escaneo', recibido:'Recibido — sin revisar', pendiente_revision:'Pendiente de revisión', revisado:'Revisado', observado:'Observado', final:'Final' };
 const TASK_PRIORITY_LABELS = { baja:'Baja', media:'Media', alta:'Alta', urgente:'Urgente' };
@@ -1710,13 +1848,23 @@ async function renderDetail(id){
         <label>Hora (opcional)</label>
         <input id="hearing-time" type="time">
         <label>Modalidad</label>
-        <select id="hearing-modality">
+        <select id="hearing-modality" onchange="updateHearingFormVideoVisibility()">
           <option value="presencial">Presencial</option>
           <option value="virtual">Virtual</option>
           <option value="hibrida">Híbrida</option>
         </select>
-        <label>Lugar o link de reunión (opcional)</label>
-        <input id="hearing-location" placeholder="Dirección o URL">
+        <label>Lugar (si es presencial o híbrida)</label>
+        <input id="hearing-location" placeholder="Dirección">
+        <div id="hearing-video-fields" style="display:none;">
+          <label>Videoconferencia</label>
+          <select id="hearing-provider" onchange="updateHearingFormVideoVisibility()">
+            <option value="">— Cargar enlace manualmente —</option>
+            ${VIDEO_PROVIDER_OPTIONS}
+          </select>
+          <div id="hearing-manual-link-field">
+            <input id="hearing-meeting-url" placeholder="Enlace de la reunión (Zoom, Meet, Teams, etc.)">
+          </div>
+        </div>
         <button class="primary" style="width:100%;" onclick="addHearing('${m.id}')">Guardar audiencia</button>
       </div>
     </div>
@@ -2379,13 +2527,26 @@ async function addLawyer(mediationId, afterSave){
 async function addHearing(mediationId, afterSave){
   const date = document.getElementById('hearing-date').value;
   if(!date){ showToast('Falta la fecha de la audiencia.', 'danger'); return; }
+  const modality = document.getElementById('hearing-modality').value;
+  // Bloque 28 — el form principal tiene un campo de link dedicado
+  // (hearing-meeting-url) y un selector de proveedor; el wizard rápido
+  // (Bloque 24) solo tiene el campo combinado "Lugar" de siempre — en ese
+  // caso, si la modalidad es virtual, ese texto ES el link (nunca se
+  // mandaba antes: el bug real era que esta función solo lo mandaba como
+  // `location`, jamás como `meetingUrl`, así que crear una audiencia
+  // virtual desde el wizard siempre fallaba con 400).
+  const locationValue = document.getElementById('hearing-location').value.trim() || null;
+  const meetingUrlField = document.getElementById('hearing-meeting-url');
+  const providerField = document.getElementById('hearing-provider');
+  const provider = providerField && providerField.value ? providerField.value : null;
+  const meetingUrl = meetingUrlField
+    ? (meetingUrlField.value.trim() || null)
+    : (modality === 'virtual' ? locationValue : null);
+  const location = meetingUrlField ? locationValue : (modality === 'virtual' ? null : locationValue);
+  const body = { date, startTime: document.getElementById('hearing-time').value || null, modality, location };
+  if(provider) body.provider = provider; else if(meetingUrl) body.meetingUrl = meetingUrl;
   try{
-    await api(`/api/mediations/${mediationId}/hearings`, { method:'POST', body: JSON.stringify({
-      date,
-      startTime: document.getElementById('hearing-time').value || null,
-      modality: document.getElementById('hearing-modality').value,
-      location: document.getElementById('hearing-location').value.trim() || null,
-    })});
+    await api(`/api/mediations/${mediationId}/hearings`, { method:'POST', body: JSON.stringify(body) });
     if(afterSave) afterSave(); else renderDetail(mediationId);
   }catch(e){ showToast(e.error || 'No se pudo agendar la audiencia.', 'danger'); }
 }
@@ -2417,13 +2578,13 @@ function renderHearingRow(m, h, timelineList){
   }
   const primaryIsPreparacion = primaryHtml.includes('togglePreparation');
   const primaryIsResumen = primaryHtml.includes('toggleSummary');
-  const showMeetingLinkSecondary = h.meetingUrl && !primaryHtml.includes(escapeHtml(h.meetingUrl));
 
   return `
     <div class="status-history-item">
       <strong>${fmtDate(h.date)}${h.startTime ? ' ' + h.startTime : ''}</strong> —
       ${HEARING_MODALITY_LABELS[h.modality] || h.modality} · <span class="pill ${h.status==='propuesta'?'warn':(h.status==='cancelada'||h.status==='no_realizada')?'danger':'calm'}">${h.status==='propuesta'?'Propuesta':(HEARING_STATUS_LABELS[h.status] || h.status)}</span>
       ${motivoHtml}
+      ${renderHearingVideoCard(m, h)}
       <div style="margin-top:4px;">
         ${h.confirmations.map(c => `
           <span class="pill ${c.response === 'confirma' ? 'calm' : c.response === 'no_puede' ? 'danger' : 'warn'}" style="margin-right:4px;">
@@ -2443,7 +2604,6 @@ function renderHearingRow(m, h, timelineList){
           </select>
         `).join('')}
         <button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="toggleRescheduleRequests('${m.id}','${h.id}')">Solicitudes de cambio</button>
-        ${showMeetingLinkSecondary ? `<a href="${escapeHtml(h.meetingUrl)}" target="_blank" class="ghost" style="padding:4px 10px; font-size:11px; text-decoration:none; color:var(--calm);">Link de la reunión</a>` : ''}
         ${!primaryIsPreparacion && h.status !== 'propuesta' ? `<button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="togglePreparation('${m.id}','${h.id}')">Preparación</button>` : ''}
         ${!primaryIsResumen && h.status !== 'propuesta' ? `<button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="toggleSummary('${m.id}','${h.id}')">Resumen</button>` : ''}
       </div>

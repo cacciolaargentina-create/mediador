@@ -86,6 +86,10 @@ const MEDIATION_STATUS_LABELS = {
   incomparecencia:'Incomparecencia', cerrada:'Cerrada',
 };
 const COMMITMENT_STATUS_LABELS = { pendiente:'Pendiente', cumplido:'Cumplido', vencido:'Vencido', cancelado:'Cancelado' };
+// Bloque 28 §12 — solo para mostrar "Virtual · Google Meet"; el backend
+// nunca manda acá nada más que el nombre del proveedor (ver routes/party-portal.js).
+const MODALITY_LABELS = { presencial:'Presencial', virtual:'Virtual', hibrida:'Híbrida' };
+const VIDEO_PROVIDER_LABELS = { google_meet:'Google Meet', zoom:'Zoom', teams:'Microsoft Teams', manual:'enlace de reunión' };
 
 (async function boot(){
   const main = document.getElementById('main');
@@ -116,6 +120,7 @@ async function render(){
       ${data.hearings.length ? data.hearings.map(h => `
         <div class="item">
           <strong>${fmtDate(h.date)}${h.startTime ? ' ' + h.startTime : ''}</strong>
+          <br><span style="color:var(--text-faint);">${MODALITY_LABELS[h.modality] || h.modality}${h.modality !== 'presencial' && h.videoProvider ? ' · ' + (VIDEO_PROVIDER_LABELS[h.videoProvider] || h.videoProvider) : ''}</span>
           ${h.location ? `<br><span style="color:var(--text-faint);">${escapeHtml(h.location)}</span>` : ''}
           ${h.meetingUrl ? `<br><a href="${escapeHtml(h.meetingUrl)}" style="color:var(--calm);" target="_blank">Link de la reunión</a>` : ''}
           <div style="margin-top:8px;">

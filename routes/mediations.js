@@ -25,6 +25,7 @@ const { getHearingPreparationState, getDashboardAttentionItems, getMediationAtte
 const archiver = require('archiver');
 const { postMessage } = require('../messaging');
 const { serializeMessage } = require('../serializers');
+const { createHearingMeeting, updateHearingMeeting, cancelHearingMeeting, serializeHearingVideo } = require('../videoConferencing');
 
 // Bloque 17 §14/15 — "YYYY-MM-DD" a "DD/MM/YYYY", mismo formato que ya
 // usa fmtDate() en todo el frontend. Sin esto, texto pensado para una
@@ -1088,6 +1089,11 @@ module.exports = function (io, presence) {
       status: h.status, notes: h.notes, proposalGroupId: h.proposalGroupId || null, targetPartyId: h.targetPartyId || null,
       lastModifiedByName: h.lastModifiedBy ? (db.users.find((u) => u.id === h.lastModifiedBy)?.name || null) : null,
       lastModifiedAt: h.lastModifiedAt || null, createdAt: h.createdAt,
+      // Bloque 28 — hostUrl/meetingMetadata NUNCA salen de acá hacia
+      // portal de parte/abogado (esos serializers, en sus propios
+      // archivos, whitelistean sus campos aparte y no llaman a esta
+      // función) — esto es para el mediador/equipo únicamente.
+      video: serializeHearingVideo(h),
       confirmations: (confirmations || []).map((c) => ({
         id: c.id, partyId: c.partyId, response: c.response, respondedAt: c.respondedAt,
       })),
@@ -1510,15 +1516,22 @@ module.exports = function (io, presence) {
   // presencial creada sin dirección todavía definida (un caso común:
   // agendar el día y cargar el lugar después). "Si el modelo lo define
   // así" (spec) — este modelo, tal como ya existía, no lo define así.
-  function validateModalityData(modality, location, meetingUrl) {
-    if (modality === 'virtual' && !meetingUrl) return 'Modalidad virtual requiere un link de reunión (meetingUrl)';
+  // Bloque 28 — "virtual" sigue exigiendo ALGUNA forma de videoconferencia
+  // (spec §5: nadie tiene dónde entrar sin esto), pero ahora eso puede
+  // venir de un `meetingUrl` cargado a mano (como siempre) O de un
+  // `provider` que Mediador usa para crear la reunión — nunca de los dos
+  // a la vez de forma contradictoria.
+  function validateModalityData(modality, location, meetingUrl, provider) {
+    if (modality === 'virtual' && !meetingUrl && !provider) {
+      return 'Modalidad virtual requiere un link de reunión (meetingUrl) o un proveedor de videoconferencia';
+    }
     return null;
   }
 
   router.post('/:id/hearings', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
-    const { date, startTime, endTime, durationMinutes, type, modality, location, meetingUrl, notes } = req.body || {};
+    const { date, startTime, endTime, durationMinutes, type, modality, location, meetingUrl, provider, notes } = req.body || {};
     if (!date) return res.status(400).json({ error: 'Falta la fecha de la audiencia' });
-    const modalityError = validateModalityData(modality || 'presencial', location, meetingUrl);
+    const modalityError = validateModalityData(modality || 'presencial', location, meetingUrl, provider);
     if (modalityError) return res.status(400).json({ error: modalityError });
     const db = getDB();
 
@@ -1552,7 +1565,24 @@ module.exports = function (io, presence) {
       type: type || 'primera', modality: modality || 'presencial', location: location || null, meetingUrl: meetingUrl || null,
       status: 'programada', notes: notes || null, proposalGroupId: null, targetPartyId: null,
       lastModifiedBy: req.user.id, lastModifiedAt: Date.now(), createdAt: Date.now(),
+      videoProvider: null, meetingId: null, hostUrl: null, meetingCreatedAt: null, meetingUpdatedAt: null,
+      meetingStatus: null, meetingMetadata: null,
     };
+
+    // Bloque 28 — se crea la reunión ANTES de persistir la audiencia
+    // (spec §5): si falla y la modalidad es 'virtual' (la única donde el
+    // dato es obligatorio), no se guarda una audiencia aparentemente
+    // virtual sin enlace. 'hibrida' con link manual/proveedor opcional
+    // puede seguir adelante aunque falle — el mediador ve el error en la
+    // tarjeta y reintenta.
+    if (provider || meetingUrl) {
+      const videoResult = await createHearingMeeting(db, { hearing, mediation: req.mediation, provider, meetingUrl, actorId: req.user.id });
+      if (!videoResult.ok && (modality || 'presencial') === 'virtual') {
+        db.mediationEvents = db.mediationEvents.filter((e) => e.entityId !== hearing.id);
+        return res.status(502).json({ error: videoResult.error.message, code: videoResult.error.code });
+      }
+    }
+
     db.hearings.push(hearing);
 
     const parties = db.parties.filter((p) => p.mediationId === req.mediation.id && p.status === 'activa');
@@ -1592,12 +1622,12 @@ module.exports = function (io, presence) {
   // paralela), agrupados por proposalGroupId para poder elegir uno y
   // descartar el resto de una sola vez.
   router.post('/:id/hearings/propose', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
-    const { slots, targetPartyId, type, modality, location, meetingUrl, notes } = req.body || {};
+    const { slots, targetPartyId, type, modality, location, meetingUrl, provider, notes } = req.body || {};
     if (!Array.isArray(slots) || slots.length === 0) {
       return res.status(400).json({ error: 'Hay que mandar al menos un horario candidato' });
     }
     const db = getDB();
-    const modalityError = validateModalityData(modality || 'presencial', location, meetingUrl);
+    const modalityError = validateModalityData(modality || 'presencial', location, meetingUrl, provider);
     if (modalityError) return res.status(400).json({ error: modalityError });
     if (targetPartyId) {
       const targetParty = db.parties.find((p) => p.id === targetPartyId && p.mediationId === req.mediation.id);
@@ -1642,6 +1672,17 @@ module.exports = function (io, presence) {
         type: type || 'primera', modality: modality || 'presencial', location: location || null, meetingUrl: meetingUrl || null,
         status: 'propuesta', notes: notes || null, proposalGroupId, targetPartyId: targetPartyId || null,
         lastModifiedBy: req.user.id, lastModifiedAt: Date.now(), createdAt: Date.now(),
+        // Bloque 28 — con un proveedor real (no link manual), la reunión
+        // recién se crea cuando se elige ESTE horario (confirm-proposal
+        // más abajo) — spec §9 "no crear una reunión nueva innecesariamente"
+        // aplica también acá: no tiene sentido crear una reunión por cada
+        // candidato que después se descarta. `videoProvider` guarda la
+        // intención, `meetingStatus` queda null hasta que se cree de verdad.
+        // Un link manual, en cambio, no cuesta nada crear "de una" — es
+        // el mismo texto para todos los candidatos.
+        videoProvider: meetingUrl ? 'manual' : (provider || null), meetingId: null, hostUrl: null,
+        meetingCreatedAt: meetingUrl ? Date.now() : null, meetingUpdatedAt: null,
+        meetingStatus: meetingUrl ? 'creada' : null, meetingMetadata: null,
       };
       db.hearings.push(hearing);
       created.push(hearing);
@@ -1711,6 +1752,17 @@ module.exports = function (io, presence) {
       cancelledSiblings.forEach((h) => { h.status = 'cancelada'; h.lastModifiedBy = req.user.id; h.lastModifiedAt = Date.now(); });
     }
 
+    // Bloque 28 — recién ahora se crea la reunión con el proveedor real
+    // que se guardó como intención al proponer (§9: nunca antes, para no
+    // crear reuniones de candidatos descartados). Un fallo acá NO impide
+    // confirmar la audiencia — el mediador lo ve en la tarjeta de
+    // videoconferencia y puede reintentar desde ahí.
+    let videoError = null;
+    if (hearing.videoProvider && !hearing.meetingId && hearing.meetingStatus !== 'creada') {
+      const videoResult = await createHearingMeeting(db, { hearing, mediation: req.mediation, provider: hearing.videoProvider, actorId: req.user.id });
+      if (!videoResult.ok) videoError = videoResult.error;
+    }
+
     logMediationEvent(db, {
       mediationId: req.mediation.id, type: 'HEARING_SCHEDULED', actorId: req.user.id,
       entityType: 'hearing', entityId: hearing.id,
@@ -1734,7 +1786,9 @@ module.exports = function (io, presence) {
     }
 
     await commit();
-    res.json({ ...serializeHearing(hearing, confirmations), notifications: confirmNotifications });
+    const response = { ...serializeHearing(hearing, confirmations), notifications: confirmNotifications };
+    if (videoError) response.videoError = videoError;
+    res.json(response);
   });
 
   const HEARING_STATUS_EVENT_TYPE = {
@@ -1776,7 +1830,14 @@ module.exports = function (io, presence) {
     // partes involucradas y sus abogados, con la fecha ANTERIOR (nunca
     // se inventa una nueva) y el motivo si se dio.
     let cancelNotifications = [];
+    let videoError = null;
     if (status === 'cancelada') {
+      // Bloque 28 §10 — cancelar la reunión externa cuando corresponde,
+      // nunca en silencio: si falla, la audiencia SIGUE quedando
+      // cancelada (spec: "la audiencia de Mediador debe mantener su
+      // estado real"), pero el error queda registrado y visible.
+      const videoResult = await cancelHearingMeeting(db, { hearing, mediation: req.mediation, actorId: req.user.id });
+      if (!videoResult.ok) videoError = videoResult.error;
       const confirmations = db.hearingConfirmations.filter((c) => c.hearingId === hearing.id);
       const involvedParties = db.parties.filter((p) => confirmations.some((c) => c.partyId === p.id));
       const cancelText = `${req.mediation.code}: se canceló la audiencia del ${fmtDateEs(hearing.date)}${hearing.startTime ? ' ' + hearing.startTime : ''}${note ? '. Motivo: ' + note : ''}.`;
@@ -1794,6 +1855,7 @@ module.exports = function (io, presence) {
     await commit();
     const response = serializeHearing(hearing, db.hearingConfirmations.filter((c) => c.hearingId === hearing.id));
     if (cancelNotifications.length) response.notifications = cancelNotifications;
+    if (videoError) response.videoError = videoError;
     // regla del motor operativo (§3.11): HEARING_HELD SUGIERE compromisos y
     // tareas de seguimiento, nunca los crea sola — no hay forma segura de
     // adivinar cuántos generó una audiencia real. El frontend decide si le
@@ -1805,6 +1867,49 @@ module.exports = function (io, presence) {
         causedByEventId: hearingEvent ? hearingEvent.id : null,
       };
     }
+    res.json(response);
+  });
+
+  // ---------- videoconferencia de la audiencia (Bloque 28) ----------
+  // Crear/reintentar la reunión de una audiencia ya existente — para una
+  // audiencia que se creó sin video, para cambiar de "link manual" a un
+  // proveedor real, o para reintentar después de un VIDEO_MEETING_ERROR.
+  router.post('/:id/hearings/:hearingId/meeting', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    const { provider, meetingUrl } = req.body || {};
+    if (!provider && !meetingUrl) return res.status(400).json({ error: 'Falta el proveedor o el enlace de la reunión' });
+    const db = getDB();
+    const hearing = db.hearings.find((h) => h.id === req.params.hearingId && h.mediationId === req.mediation.id);
+    if (!hearing) return res.status(404).json({ error: 'Audiencia no encontrada en esta mediación' });
+    if (hearing.modality === 'presencial') return res.status(400).json({ error: 'Esta audiencia es presencial — cambiá la modalidad antes de agregar videoconferencia' });
+
+    const videoResult = await createHearingMeeting(db, { hearing, mediation: req.mediation, provider, meetingUrl, actorId: req.user.id });
+    if (!videoResult.ok) {
+      await commit();
+      return res.status(502).json({ error: videoResult.error.message, code: videoResult.error.code, hearing: serializeHearing(hearing, db.hearingConfirmations.filter((c) => c.hearingId === hearing.id)) });
+    }
+    await commit();
+    res.json(serializeHearing(hearing, db.hearingConfirmations.filter((c) => c.hearingId === hearing.id)));
+  });
+
+  // Desvincula la videoconferencia SIN tocar el resto de la audiencia —
+  // cancela la reunión en el proveedor cuando corresponde y deja la
+  // audiencia como "sin videoconferencia configurada" (spec §11: el
+  // mediador puede volver a un link manual o elegir otro proveedor).
+  router.delete('/:id/hearings/:hearingId/meeting', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    const db = getDB();
+    const hearing = db.hearings.find((h) => h.id === req.params.hearingId && h.mediationId === req.mediation.id);
+    if (!hearing) return res.status(404).json({ error: 'Audiencia no encontrada en esta mediación' });
+    let videoError = null;
+    if (hearing.videoProvider) {
+      const videoResult = await cancelHearingMeeting(db, { hearing, mediation: req.mediation, actorId: req.user.id });
+      if (!videoResult.ok) videoError = videoResult.error;
+    }
+    hearing.videoProvider = null; hearing.meetingId = null; hearing.meetingUrl = null; hearing.hostUrl = null;
+    hearing.meetingStatus = null; hearing.meetingMetadata = null; hearing.meetingUpdatedAt = Date.now();
+    hearing.lastModifiedBy = req.user.id; hearing.lastModifiedAt = Date.now();
+    await commit();
+    const response = serializeHearing(hearing, db.hearingConfirmations.filter((c) => c.hearingId === hearing.id));
+    if (videoError) response.videoError = videoError;
     res.json(response);
   });
 
@@ -1968,6 +2073,16 @@ module.exports = function (io, presence) {
     request.resolvedBy = req.user.id;
     request.resolvedAt = Date.now();
 
+    // Bloque 28 §9 — la reunión existente se ACTUALIZA (nunca se crea una
+    // nueva) si esta audiencia tiene un proveedor real detrás. Un fallo
+    // acá no revierte la reprogramación — queda visible en la tarjeta de
+    // videoconferencia para que el mediador lo resuelva.
+    let videoError = null;
+    if (hearing.videoProvider) {
+      const videoResult = await updateHearingMeeting(db, { hearing, mediation: req.mediation, actorId: req.user.id });
+      if (!videoResult.ok) videoError = videoResult.error;
+    }
+
     const rescheduleEvent = logMediationEvent(db, {
       mediationId: req.mediation.id, type: 'HEARING_RESCHEDULED', actorId: req.user.id,
       entityType: 'hearing', entityId: hearing.id,
@@ -1991,7 +2106,9 @@ module.exports = function (io, presence) {
       }
     }
     await commit();
-    res.json({ request: serializeRescheduleRequest(request), hearing: serializeHearing(hearing, resetConfirmations), notifications: rescheduleNotifications });
+    const rescheduleResponse = { request: serializeRescheduleRequest(request), hearing: serializeHearing(hearing, resetConfirmations), notifications: rescheduleNotifications };
+    if (videoError) rescheduleResponse.videoError = videoError;
+    res.json(rescheduleResponse);
   });
 
 

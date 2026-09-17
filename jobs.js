@@ -298,9 +298,14 @@ async function checkMediationDeadlines() {
         entityType: 'hearing', entityId: hearing.id,
         title: `Recordatorio: audiencia del ${fmtDateEs(hearing.date)}`,
       });
+      // Bloque 28 §15 — el recordatorio incluye el enlace de la
+      // videoconferencia cuando corresponde (modalidad virtual/híbrida
+      // con reunión ya vinculada), sin depender de otro job aparte.
+      const videoSuffix = (hearing.modality === 'virtual' || hearing.modality === 'hibrida') && hearing.meetingUrl
+        ? ` Entrá acá: ${hearing.meetingUrl}` : '';
       await notifyMediator(db, mediation, {
         title: 'Audiencia próxima — Mediador',
-        body: `${mediation.code}: audiencia el ${fmtDateEs(hearing.date)}${hearing.startTime ? ' a las ' + hearing.startTime : ''}.`,
+        body: `${mediation.code}: audiencia el ${fmtDateEs(hearing.date)}${hearing.startTime ? ' a las ' + hearing.startTime : ''}.${videoSuffix}`,
         url: '/mediador.html',
       });
       hearingRemindersLogged++;
