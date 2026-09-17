@@ -31,8 +31,13 @@ if (googleConfigured) {
               createdAt: Date.now(),
             };
             db.users.push(user);
-            await commit();
           }
+          // Bloque 27 — una cuenta desactivada por un admin de plataforma no
+          // puede volver a iniciar sesión (además de deserializeUser, que
+          // corta cualquier sesión YA abierta en el próximo request).
+          if (user.disabledAt) return done(null, false, { message: 'Cuenta desactivada' });
+          user.lastLoginAt = Date.now();
+          await commit();
           done(null, user);
         } catch (err) {
           done(err);
@@ -50,6 +55,11 @@ passport.serializeUser((user, done) => done(null, user.id));
 passport.deserializeUser((id, done) => {
   const db = getDB();
   const user = db.users.find((u) => u.id === id);
+  // Bloque 27 — si un admin desactivó esta cuenta DESPUÉS de que ya tenía
+  // una sesión abierta, esto la corta en el próximo request (req.user queda
+  // undefined, y cada requireAuth ya existente responde 401 como siempre —
+  // no hace falta ningún chequeo nuevo repetido ruta por ruta).
+  if (user && user.disabledAt) return done(null, false);
   done(null, user || null);
 });
 
@@ -131,8 +141,10 @@ if (process.env.ENABLE_FAKE_LOGIN === '1') {
     if (!user) {
       user = { id: nanoid(), googleId: 'fake-' + nanoid(), email, name: name || email, avatar: '', createdAt: Date.now() };
       db.users.push(user);
-      await commit();
     }
+    if (user.disabledAt) return res.status(403).json({ error: 'Cuenta desactivada' });
+    user.lastLoginAt = Date.now();
+    await commit();
     req.login(user, (err) => {
       if (err) return res.status(500).json({ error: String(err) });
       res.json({ ok: true, user });

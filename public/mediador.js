@@ -137,6 +137,10 @@ function renderAccountMenu(){
       <div class="who">${escapeHtml(me.name || '')}</div>
       <div class="sub">${escapeHtml(me.email || '')}</div>
     </div>
+    ${isPlatformAdmin ? `<a class="row" role="menuitem" href="/admin-mediador.html">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M6 19V9m4 10V5m4 14v-7m4 7V11"/></svg>
+      <span>Centro de control</span>
+    </a>` : ''}
     ${isPlatformAdmin ? `<a class="row" role="menuitem" href="/radar.html">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2 19 6v5.4c0 4.2-2.9 7.9-7 9-4.1-1.1-7-4.8-7-9V6l7-2.8Z"/><path d="m9.4 12.1 1.9 1.9 3.4-3.6"/></svg>
       <span>Radar competitivo</span>

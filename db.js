@@ -24,7 +24,7 @@ const SQLITE_PATH = process.env.SQLITE_PATH || path.join(__dirname, 'data.sqlite
 const LEGACY_JSON_PATH = process.env.DB_PATH || path.join(__dirname, 'data.json');
 
 const EMPTY_DB = {
-  users: [],       // { id, googleId, email, name, avatar, phone, guest, icsToken|null, notificationDigest|null, createdAt } — notificationDigest (Bloque 22 Parte 1): 'none'|'daily'|'weekly', default 'none' (sin digest, sin cambio de comportamiento)
+  users: [],       // { id, googleId, email, name, avatar, phone, guest, icsToken|null, notificationDigest|null, createdAt, lastLoginAt|null, disabledAt|null } — notificationDigest (Bloque 22 Parte 1): 'none'|'daily'|'weekly', default 'none' (sin digest, sin cambio de comportamiento). lastLoginAt (Bloque 27): se actualiza en cada login real (Google o fake-login), nunca en cada request. disabledAt (Bloque 27): si está seteado, passport.deserializeUser (server.js) deja de autenticar a esa cuenta — mismo 401 de siempre, sin chequeo nuevo repetido en cada ruta
   channels: [],    // { id, code, guestToken, calendarToken, professionalInvites, status:'abierto'|'en_proceso'|'cerrado', createdAt, mediationId|null, partyId|null, lawyerId|null } — mediationId+partyId: hilo mediador↔parte de Mediador; mediationId+lawyerId: hilo mediador↔abogado; mediationId solo (los otros dos null): canal interno del equipo de esa mediación. Los tres null = canal de coparentalidad de siempre.
   members: [],     // { id, channelId, userId, role, label, webAccessToken, assignedByAdmin, lastSeenAt, joinedAt }
   messages: [],    // { id, channelId, senderId|null, text, flagged, reason, pattern, eventId, readAt, createdAt, replyToId, deliverAt, documentId|null } — replyToId: id de otro mensaje del mismo canal al que este responde (hilo estilo WhatsApp), null si no es una respuesta. deliverAt: cuándo se transmite/notifica de verdad — igual a createdAt salvo durante la ventana de "deshacer envío" (ver messaging.js), mientras está en el futuro el mensaje solo lo ve quien lo escribió. documentId (Bloque 19): referencia opcional a un documento YA existente de la mediación — nunca un adjunto nuevo, el documento sigue viviendo solo en `documents`
@@ -533,6 +533,12 @@ function openDb() {
   // empezar": un solo mensaje por audiencia, nunca dos, aunque el job corra
   // muchas veces mientras la audiencia sigue calificando para la ventana.
   ensureColumns(sqlite, 'hearings', { startAlertSentAt: 'INTEGER' });
+  // Bloque 27 — Admin Console. lastLoginAt: no había ningún tracking de
+  // último acceso a nivel usuario (members.lastSeenAt es por CANAL, no
+  // sirve para "¿esta cuenta sigue activa?"). disabledAt: no existía ningún
+  // mecanismo para desactivar una cuenta — se hace cumplir en
+  // passport.deserializeUser (server.js), nunca duplicado ruta por ruta.
+  ensureColumns(sqlite, 'users', { lastLoginAt: 'INTEGER', disabledAt: 'INTEGER' });
   if (isNew && fs.existsSync(LEGACY_JSON_PATH)) {
     migrateFromJson(sqlite, LEGACY_JSON_PATH);
   }
