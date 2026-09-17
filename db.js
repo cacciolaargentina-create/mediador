@@ -54,7 +54,7 @@ const EMPTY_DB = {
   // ===== Bloque 4. Ver IMPLEMENTATION_PLAN.md §3.3-3.6 =====
   parties: [], // { id, mediationId, type:'persona'|'empresa', role:'requirente'|'requerido'|'otro', firstName, lastName, legalName, documentType, documentNumber, taxId, email, phone, address, status:'activa'|'inactiva', linkedUserId|null, notes, createdAt }
   lawyers: [], // { id, mediationId, partyId, name, enrollmentNumber, barAssociation, email, phone, createdAt }
-  hearings: [], // { id, mediationId, date, startTime, endTime, type:'primera'|'continuacion'|'privada'|'otra', modality:'presencial'|'virtual'|'hibrida', location, meetingUrl, status:'propuesta'|'programada'|'confirmada'|'realizada'|'cancelada'|'no_realizada', notes, proposalGroupId|null, targetPartyId|null, createdAt }
+  hearings: [], // { id, mediationId, date, startTime, endTime, type:'primera'|'continuacion'|'privada'|'otra', modality:'presencial'|'virtual'|'hibrida', location, meetingUrl, status:'propuesta'|'programada'|'confirmada'|'realizada'|'cancelada'|'no_realizada', notes, proposalGroupId|null, targetPartyId|null, createdAt, startAlertSentAt|null } — startAlertSentAt (Bloque 26): se completa una sola vez, cuando se publica el mensaje de sistema de "audiencia por empezar" en los hilos de las partes — nunca se resetea, evita mandarlo dos veces
   hearingConfirmations: [], // { id, hearingId, partyId, response:'pendiente'|'confirma'|'no_puede'|'pide_cambio', respondedAt, createdAt } — una fila por parte por audiencia, se crea sola al crear la audiencia
   hearingRescheduleRequests: [], // { id, hearingId, mediationId, requestedByPartyId, requestedByType:'party'|'lawyer', requestedByLawyerId|null, reason|null, comment|null, preferredDayText|null, preferredTimeText|null, proposedDate|null, proposedStartTime|null, status:'pendiente'|'aceptada'|'rechazada'|'resuelta', mediatorNote|null, resolvedBy|null, resolvedAt|null, createdAt, sourceMessageId|null } — sourceMessageId (Bloque 19): si el mediador la creó a mano desde un mensaje de chat ("Gestionar cambio de audiencia"), en vez de haber llegado por el portal
 
@@ -529,6 +529,10 @@ function openDb() {
   // "el mediador lo descartó explícitamente" no se puede derivar de ningún
   // dato existente, por eso este es el único campo nuevo del bloque.
   ensureColumns(sqlite, 'mediations', { onboardingDismissedAt: 'INTEGER' });
+  // Bloque 26 §2 — idempotencia del mensaje de sistema "audiencia por
+  // empezar": un solo mensaje por audiencia, nunca dos, aunque el job corra
+  // muchas veces mientras la audiencia sigue calificando para la ventana.
+  ensureColumns(sqlite, 'hearings', { startAlertSentAt: 'INTEGER' });
   if (isNew && fs.existsSync(LEGACY_JSON_PATH)) {
     migrateFromJson(sqlite, LEGACY_JSON_PATH);
   }

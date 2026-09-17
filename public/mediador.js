@@ -1319,6 +1319,47 @@ function fmtFileSize(bytes){
   return (bytes/(1024*1024)).toFixed(1) + ' MB';
 }
 
+// Bloque 26 — banner de "audiencia en curso/por empezar" en Comunicaciones.
+// Cálculo EN VIVO a partir de los mismos `hearings` que ya se pidieron para
+// esta pantalla (nunca un endpoint nuevo, nunca depende de un job). Reusa
+// meetingUrl tal cual — nunca genera un link propio. Es a nivel de la
+// MEDIACIÓN (no de una parte puntual): la audiencia es una sola para todas
+// las partes, así que el banner es el mismo sin importar qué hilo esté
+// abierto (§1 de la spec).
+function findActiveHearingForBanner(hearings){
+  if(!hearings || !hearings.length) return null;
+  const now = Date.now();
+  const todayStr = new Date().toISOString().slice(0,10);
+  for(const h of hearings){
+    if(h.date !== todayStr) continue;
+    if(!['programada','confirmada'].includes(h.status)) continue;
+    if(!h.meetingUrl) continue;
+    if(h.modality !== 'virtual' && h.modality !== 'hibrida') continue;
+    if(!h.startTime) continue;
+    const startMs = new Date(`${h.date}T${h.startTime}`).getTime();
+    if(isNaN(startMs)) continue;
+    let durationMs = 60*60*1000; // default: 60 min si no hay endTime cargado
+    if(h.endTime){
+      const endMs = new Date(`${h.date}T${h.endTime}`).getTime();
+      if(!isNaN(endMs) && endMs > startMs) durationMs = endMs - startMs;
+    }
+    const windowStart = startMs - 30*60*1000;
+    const windowEnd = startMs + durationMs;
+    if(now >= windowStart && now <= windowEnd) return h;
+  }
+  return null;
+}
+function renderHearingBanner(codeOrObject, hearings){
+  const h = findActiveHearingForBanner(hearings);
+  if(!h) return '';
+  return `
+    <div class="card-highlight" style="margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+      <div>Audiencia con <strong>${escapeHtml(codeOrObject)}</strong> — hoy a las ${escapeHtml(h.startTime)}</div>
+      <a href="${escapeHtml(h.meetingUrl)}" target="_blank" class="primary" style="text-decoration:none; padding:8px 16px; flex-shrink:0;">Entrar a la audiencia</a>
+    </div>
+  `;
+}
+
 function partyName(partyId){
   const p = currentParties.find(x => x.id === partyId);
   if(!p) return '—';
@@ -1716,6 +1757,7 @@ async function renderDetail(id){
     <div class="card" id="section-comunicaciones">
       <h2>Comunicaciones</h2>
       <p class="empty-hint" style="margin-top:-4px; margin-bottom:10px;">Qué se dijo, quién lo dijo y a quién estaba dirigido — separado del Timeline, que es lo que pasó operativamente.</p>
+      ${renderHearingBanner(m.code, hearings)}
       <div id="communications-list">${renderCommunicationsList(m.id, communications)}</div>
       <div id="communications-chat" style="margin-top:10px;"></div>
     </div>

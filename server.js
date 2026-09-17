@@ -260,13 +260,20 @@ setInterval(() => checkAndSendReminders().catch((e) => console.error('Error en r
 // canales sin unir (Tarea C) y resumen semanal (Tarea D) — corren cada
 // 2hs; cada función internamente decide si le toca actuar o no en esa
 // corrida, así que no hace falta un intervalo más fino que ese.
-const { checkUnjoinedChannels, generateWeeklySummaries, checkMediationDeadlines } = require('./jobs');
+const { checkUnjoinedChannels, generateWeeklySummaries, checkMediationDeadlines, checkHearingsStartingSoon } = require('./jobs');
 setTimeout(() => checkUnjoinedChannels().catch((e) => console.error('Error en job de canales sin unir:', e)), 15 * 1000);
 setInterval(() => checkUnjoinedChannels().catch((e) => console.error('Error en job de canales sin unir:', e)), 2 * 60 * 60 * 1000);
 setTimeout(() => generateWeeklySummaries().catch((e) => console.error('Error en job de resumen semanal:', e)), 20 * 1000);
 setInterval(() => generateWeeklySummaries().catch((e) => console.error('Error en job de resumen semanal:', e)), 2 * 60 * 60 * 1000);
 setTimeout(() => checkMediationDeadlines().catch((e) => console.error('Error en job de vencimientos de Mediador:', e)), 25 * 1000);
 setInterval(() => checkMediationDeadlines().catch((e) => console.error('Error en job de vencimientos de Mediador:', e)), 60 * 60 * 1000);
+
+// Bloque 26 §2 — mensaje de "audiencia por empezar" en el chat. Cadencia
+// PROPIA de 5 minutos (no la hora del resto de los jobs de arriba) — es lo
+// que permite acertar la ventana de "minutos antes" con precisión razonable,
+// ver auditoría en jobs.js. No cambia la cadencia de ningún otro job.
+setTimeout(() => checkHearingsStartingSoon(io).catch((e) => console.error('Error en job de "audiencia por empezar":', e)), 35 * 1000);
+setInterval(() => checkHearingsStartingSoon(io).catch((e) => console.error('Error en job de "audiencia por empezar":', e)), 5 * 60 * 1000);
 
 // Bloque 25 — radar competitivo. checkDueSources() decide sola, por fuente,
 // si le toca (frecuencia daily/weekly/manual) — por eso alcanza con

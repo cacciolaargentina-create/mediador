@@ -22,6 +22,42 @@ async function api(path, opts = {}){
   return data;
 }
 
+// Bloque 26 — mismo cálculo que public/mediador.js (ver el comentario ahí):
+// en vivo, a partir de los hearings que ya trae este portal, nunca un
+// endpoint nuevo. Lo que el portal ya puede ver en `data.hearings` es
+// exactamente lo que puede ver acá — no se agrega ninguna decisión de
+// acceso nueva.
+function findActiveHearingForBanner(hearings){
+  if(!hearings || !hearings.length) return null;
+  const now = Date.now();
+  const todayStr = new Date().toISOString().slice(0,10);
+  for(const h of hearings){
+    if(h.date !== todayStr) continue;
+    if(!h.meetingUrl) continue;
+    if(h.modality !== 'virtual' && h.modality !== 'hibrida') continue;
+    if(!h.startTime) continue;
+    const startMs = new Date(`${h.date}T${h.startTime}`).getTime();
+    if(isNaN(startMs)) continue;
+    let durationMs = 60*60*1000;
+    if(h.endTime){
+      const endMs = new Date(`${h.date}T${h.endTime}`).getTime();
+      if(!isNaN(endMs) && endMs > startMs) durationMs = endMs - startMs;
+    }
+    if(now >= startMs - 30*60*1000 && now <= startMs + durationMs) return h;
+  }
+  return null;
+}
+function renderHearingBanner(codeOrObject, hearings){
+  const h = findActiveHearingForBanner(hearings);
+  if(!h) return '';
+  return `
+    <div class="card" style="background:var(--calm-dim, var(--surface-2)); margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+      <div>Audiencia con <strong>${escapeHtml(codeOrObject)}</strong> — hoy a las ${escapeHtml(h.startTime)}</div>
+      <a href="${escapeHtml(h.meetingUrl)}" target="_blank" class="primary" style="text-decoration:none; padding:8px 16px; flex-shrink:0;">Entrar a la audiencia</a>
+    </div>
+  `;
+}
+
 // Bloque 20 §13 — mismo helper que public/mediador.js, para no interrumpir
 // con alert() los flujos normales del portal.
 function showToast(message, kind){
@@ -137,6 +173,8 @@ async function render(){
         </div>
       ` : `<p class="empty-hint" style="margin-top:8px;">Tu mediador/a todavía no habilitó la carga de documentos para vos.</p>`}
     </div>
+
+    ${renderHearingBanner(data.mediationCode, data.hearings)}
 
     <div class="card">
       <h2>Mensajes con tu mediador/a</h2>

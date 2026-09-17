@@ -28,6 +28,43 @@ async function api(path, opts = {}){
   return data;
 }
 
+// Bloque 26 — mismo cálculo que public/mediador.js/portal.js (ver el
+// comentario en mediador.js): en vivo, a partir de los hearings que ya trae
+// este portal para ESTA mediación puntual (el abogado ve el banner de la
+// audiencia de su representado, nunca de otra mediación — eso ya lo separa
+// resolveLawyerMediation en el backend antes de que estos datos lleguen acá).
+function findActiveHearingForBanner(hearings){
+  if(!hearings || !hearings.length) return null;
+  const now = Date.now();
+  const todayStr = new Date().toISOString().slice(0,10);
+  for(const h of hearings){
+    if(h.date !== todayStr) continue;
+    if(h.status && !['programada','confirmada'].includes(h.status)) continue;
+    if(!h.meetingUrl) continue;
+    if(h.modality !== 'virtual' && h.modality !== 'hibrida') continue;
+    if(!h.startTime) continue;
+    const startMs = new Date(`${h.date}T${h.startTime}`).getTime();
+    if(isNaN(startMs)) continue;
+    let durationMs = 60*60*1000;
+    if(h.endTime){
+      const endMs = new Date(`${h.date}T${h.endTime}`).getTime();
+      if(!isNaN(endMs) && endMs > startMs) durationMs = endMs - startMs;
+    }
+    if(now >= startMs - 30*60*1000 && now <= startMs + durationMs) return h;
+  }
+  return null;
+}
+function renderHearingBanner(codeOrObject, hearings){
+  const h = findActiveHearingForBanner(hearings);
+  if(!h) return '';
+  return `
+    <div class="card" style="background:var(--calm-dim, var(--surface-2)); margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+      <div>Audiencia con <strong>${escapeHtml(codeOrObject)}</strong> — hoy a las ${escapeHtml(h.startTime)}</div>
+      <a href="${escapeHtml(h.meetingUrl)}" target="_blank" class="primary" style="text-decoration:none; padding:8px 16px; flex-shrink:0;">Entrar a la audiencia</a>
+    </div>
+  `;
+}
+
 // Bloque 20 §13 — mismo helper que public/mediador.js y public/portal.js.
 function showToast(message, kind){
   if(!message) return;
@@ -180,6 +217,8 @@ async function renderDetail(mediationId){
         </div>
       ` : `<p class="empty-hint" style="margin-top:8px;">El mediador/a todavía no habilitó la carga de documentos para esta parte.</p>`}
     </div>
+
+    ${renderHearingBanner(data.mediationCode, data.hearings)}
 
     <div class="card">
       <h2>Conversación de tu representado/a</h2>

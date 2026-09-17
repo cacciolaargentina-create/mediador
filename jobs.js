@@ -7,7 +7,7 @@ const { getDB, commit } = require('./db');
 const { nanoid } = require('nanoid');
 const { sendText } = require('./whatsapp');
 const { sendPushToUser } = require('./push');
-const { accessLinkFor, notifyPartyAboutHearing } = require('./messaging');
+const { accessLinkFor, notifyPartyAboutHearing, postSystemMessage } = require('./messaging');
 const { logMediationEvent } = require('./mediationEvents');
 
 // Bloque 17 §14/15 — "YYYY-MM-DD" a "DD/MM/YYYY" para texto pensado para
@@ -406,4 +406,65 @@ async function checkMediationDeadlines() {
   return { commitmentsMarked, hearingAlertsLogged, hearingRemindersLogged, tasksOverdueLogged, rescheduleRequestRemindersLogged, contactEscalationsLogged, digestsSent };
 }
 
-module.exports = { checkUnjoinedChannels, generateWeeklySummaries, checkMediationDeadlines, notifyMediator, REMINDER_AFTER_MS, SUMMARY_PERIOD_MS };
+// Bloque 26 §2 — mensaje de sistema en el hilo de cada parte cuando una
+// audiencia virtual/híbrida está por empezar. Corre con SU PROPIO intervalo
+// más frecuente (server.js lo llama cada 5 minutos), separado del resto de
+// los jobs de este archivo (que corren cada hora) — con cadencia horaria no
+// se puede acertar una ventana de "minutos antes" con ninguna precisión
+// razonable (ver auditoría del bloque). No se tocó la cadencia general de
+// checkMediationDeadlines ni de ningún otro job existente.
+//
+// Ventana: entre 20 y 5 minutos antes del inicio — nunca después de que ya
+// empezó (eso ya lo cubre el banner en vivo de public/mediador.js/portal.js/
+// lawyer-portal.js, que no depende de este job). Ancha a propósito (15 min)
+// para garantizar que, con un poll cada 5 minutos, ninguna audiencia
+// calificable quede sin al menos una corrida que la vea dentro de la ventana.
+const HEARING_START_ALERT_WINDOW_START_MS = 20 * 60 * 1000;
+const HEARING_START_ALERT_WINDOW_END_MS = 5 * 60 * 1000;
+
+async function checkHearingsStartingSoon(io) {
+  const db = getDB();
+  const now = Date.now();
+  let hearingsAlerted = 0, messagesPosted = 0;
+
+  for (const hearing of db.hearings) {
+    if (hearing.startAlertSentAt) continue; // idempotencia — nunca dos veces la misma audiencia
+    if (!['programada', 'confirmada'].includes(hearing.status)) continue;
+    if (!hearing.meetingUrl) continue;
+    if (hearing.modality !== 'virtual' && hearing.modality !== 'hibrida') continue;
+    if (!hearing.startTime) continue;
+    const startMs = new Date(`${hearing.date}T${hearing.startTime}`).getTime();
+    if (Number.isNaN(startMs)) continue;
+    const msUntilStart = startMs - now;
+    if (msUntilStart > HEARING_START_ALERT_WINDOW_START_MS || msUntilStart < HEARING_START_ALERT_WINDOW_END_MS) continue;
+
+    const mediation = db.mediations.find((m) => m.id === hearing.mediationId);
+    if (!mediation) continue;
+
+    // se marca ANTES de postear — si algo falla a mitad de camino, la
+    // audiencia queda igual marcada como alertada: preferimos el riesgo de
+    // que a alguna parte le falte el mensaje una vez, nunca el de
+    // duplicarlo (mismo criterio "nunca dos veces" del resto del bloque).
+    hearing.startAlertSentAt = now;
+    hearingsAlerted++;
+
+    const activeParties = db.parties.filter((p) => p.mediationId === mediation.id && p.status === 'activa');
+    const text = `Audiencia de "${mediation.object}" (${mediation.code}) — hoy a las ${hearing.startTime}. Entrá acá: ${hearing.meetingUrl}`;
+    for (const party of activeParties) {
+      // solo si esa parte ya tiene hilo propio (fue invitada al portal) —
+      // nunca a las partes de otra mediación, nunca a un hilo que no existe.
+      const thread = db.channels.find((c) => c.mediationId === mediation.id && c.partyId === party.id);
+      if (!thread) continue;
+      await postSystemMessage(io, thread, text);
+      messagesPosted++;
+    }
+  }
+
+  if (hearingsAlerted > 0) await commit();
+  return { hearingsAlerted, messagesPosted };
+}
+
+module.exports = {
+  checkUnjoinedChannels, generateWeeklySummaries, checkMediationDeadlines, notifyMediator,
+  checkHearingsStartingSoon, REMINDER_AFTER_MS, SUMMARY_PERIOD_MS,
+};

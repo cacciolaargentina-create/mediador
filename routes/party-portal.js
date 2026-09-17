@@ -99,7 +99,7 @@ module.exports = function (io) {
         const myRequests = db.hearingRescheduleRequests.filter((r) => r.hearingId === h.id && r.requestedByPartyId === party.id).sort((a, b) => b.createdAt - a.createdAt);
         const myRequest = myRequests.find((r) => r.status === 'pendiente') || myRequests[0] || null;
         return {
-          id: h.id, date: h.date, startTime: h.startTime, modality: h.modality,
+          id: h.id, date: h.date, startTime: h.startTime, endTime: h.endTime, modality: h.modality,
           location: h.location, meetingUrl: h.meetingUrl,
           myResponse: confirmation ? confirmation.response : null,
           myRescheduleRequestStatus: myRequest ? myRequest.status : null,
