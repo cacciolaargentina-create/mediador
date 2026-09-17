@@ -1319,6 +1319,138 @@ function partyName(partyId){
   return p.legalName || `${p.firstName || ''} ${p.lastName || ''}`.trim() || '—';
 }
 
+// Bloque 24 — asistente de carga guiada. El paso actual dentro del wizard es
+// puramente de sesión del browser (no se persiste en el servidor): si se
+// recarga la página a mitad de camino, lo que ya se guardó sigue existiendo,
+// pero el wizard no "recuerda" en qué paso estaba — se recalcula desde cero
+// (parties.length===0 → arranca en el paso 1; si ya hay una parte, ya no
+// se muestra, ver §7 test 6). onboardingWizardMediationId es lo único que
+// permite seguir avanzando de paso 1→2→3→4 SIN que el wizard se cierre solo
+// apenas se crea la primera parte (que haría que parties.length===0 deje de
+// ser cierto a mitad del wizard).
+let onboardingWizardMediationId = null;
+let onboardingWizardStep = 1;
+
+function wizardAdvance(id, step){
+  onboardingWizardStep = step;
+  renderDetail(id);
+}
+
+function finishOnboardingWizard(id){
+  onboardingWizardMediationId = null;
+  renderDetail(id);
+}
+
+async function dismissOnboardingWizard(id){
+  try{
+    await api(`/api/mediations/${id}`, { method:'PATCH', body: JSON.stringify({ dismissOnboarding: true }) });
+  }catch(e){ showToast(e.error || 'No se pudo descartar la guía.', 'danger'); return; }
+  onboardingWizardMediationId = null;
+  renderDetail(id);
+}
+
+function renderOnboardingWizard(m, parties){
+  const main = document.getElementById('main');
+  const step = onboardingWizardStep;
+  const skipLink = `<div style="text-align:center; margin-top:16px;"><a href="#" onclick="event.preventDefault(); dismissOnboardingWizard('${m.id}')" style="color:var(--text-faint); font-size:12.5px;">Saltar, prefiero cargar todo desde las pestañas</a></div>`;
+
+  let stepBody = '';
+  if(step === 1){
+    // único paso obligatorio — mismo formulario/endpoint que la pestaña
+    // Partes (POST /:id/parties), sin ningún campo nuevo.
+    stepBody = `
+      <h2 style="text-align:center;">¿Quién inicia la mediación?</h2>
+      <p class="empty-hint" style="text-align:center; margin-bottom:16px;">Cargá la parte requirente para arrancar el expediente.</p>
+      <label>Rol</label>
+      <select id="party-role"><option value="requirente" selected>Requirente</option><option value="requerido">Requerido</option><option value="otro">Otro</option></select>
+      <label>Nombre</label>
+      <input id="party-first-name" placeholder="Nombre">
+      <label>Apellido</label>
+      <input id="party-last-name" placeholder="Apellido">
+      <label>Documento</label>
+      <input id="party-document" placeholder="Ej: 30111222">
+      <label>Email (opcional)</label>
+      <input id="party-email" placeholder="nombre@correo.com">
+      <label>Teléfono (opcional)</label>
+      <input id="party-phone">
+      <button class="primary" style="width:100%; margin-top:10px;" onclick="addParty('${m.id}', () => wizardAdvance('${m.id}', 2))">Guardar y seguir</button>
+    `;
+  } else if(step === 2){
+    stepBody = `
+      <h2 style="text-align:center;">¿Contra quién se dirige?</h2>
+      <p class="empty-hint" style="text-align:center; margin-bottom:16px;">Parte requerida — si todavía no la tenés, se puede cargar después desde la pestaña Partes.</p>
+      <label>Rol</label>
+      <select id="party-role"><option value="requirente">Requirente</option><option value="requerido" selected>Requerido</option><option value="otro">Otro</option></select>
+      <label>Nombre</label>
+      <input id="party-first-name" placeholder="Nombre">
+      <label>Apellido</label>
+      <input id="party-last-name" placeholder="Apellido">
+      <label>Documento</label>
+      <input id="party-document" placeholder="Ej: 30111222">
+      <label>Email (opcional)</label>
+      <input id="party-email" placeholder="nombre@correo.com">
+      <label>Teléfono (opcional)</label>
+      <input id="party-phone">
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <button class="ghost" style="flex:1;" onclick="wizardAdvance('${m.id}', 3)">Saltar este paso</button>
+        <button class="primary" style="flex:1;" onclick="addParty('${m.id}', () => wizardAdvance('${m.id}', 3))">Guardar y seguir</button>
+      </div>
+    `;
+  } else if(step === 3){
+    stepBody = `
+      <h2 style="text-align:center;">¿Tienen abogado?</h2>
+      <p class="empty-hint" style="text-align:center; margin-bottom:16px;">Podés vincularlo a una de las partes que ya cargaste.</p>
+      <label>Email (opcional)</label>
+      <input id="lawyer-email" placeholder="abogado@estudio.com">
+      <label>Nombre</label>
+      <input id="lawyer-name" placeholder="Ej: Dr. Rodríguez">
+      <label>Matrícula (opcional)</label>
+      <input id="lawyer-enrollment">
+      <label>Representa a</label>
+      <select id="lawyer-party">
+        <option value="">— Sin asignar —</option>
+        ${parties.map(p => `<option value="${p.id}">${escapeHtml(partyName(p.id))}</option>`).join('')}
+      </select>
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <button class="ghost" style="flex:1;" onclick="wizardAdvance('${m.id}', 4)">Saltar este paso</button>
+        <button class="primary" style="flex:1;" onclick="addLawyer('${m.id}', () => wizardAdvance('${m.id}', 4))">Guardar y seguir</button>
+      </div>
+    `;
+  } else {
+    stepBody = `
+      <h2 style="text-align:center;">¿Ya tenés fecha de audiencia?</h2>
+      <p class="empty-hint" style="text-align:center; margin-bottom:16px;">Si todavía no la coordinaste, se puede agendar después desde la pestaña Audiencias.</p>
+      <label>Fecha</label>
+      <input id="hearing-date" type="date">
+      <label>Hora (opcional)</label>
+      <input id="hearing-time" type="time">
+      <label>Modalidad</label>
+      <select id="hearing-modality">
+        <option value="presencial">Presencial</option>
+        <option value="virtual">Virtual</option>
+        <option value="hibrida">Híbrida</option>
+      </select>
+      <label>Lugar o link de reunión (opcional)</label>
+      <input id="hearing-location" placeholder="Dirección o URL">
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <button class="ghost" style="flex:1;" onclick="finishOnboardingWizard('${m.id}')">Saltar este paso</button>
+        <button class="primary" style="flex:1;" onclick="addHearing('${m.id}', () => finishOnboardingWizard('${m.id}'))">Guardar y seguir</button>
+      </div>
+    `;
+  }
+
+  main.innerHTML = `
+    <div style="max-width:460px; margin:32px auto 0;">
+      <div class="eyebrow" style="text-align:center;">${escapeHtml(m.code)} · Paso ${step} de 4</div>
+      <h1 style="text-align:center; font-size:21px; margin-bottom:18px;">Carga guiada del expediente</h1>
+      <div class="card">
+        ${stepBody}
+      </div>
+      ${skipLink}
+    </div>
+  `;
+}
+
 async function renderDetail(id){
   const main = document.getElementById('main');
   main.innerHTML = `<p class="empty-hint">Cargando…</p>`;
@@ -1342,6 +1474,20 @@ async function renderDetail(id){
   currentParties = parties;
   currentDocuments = documents;
   currentHearings = hearings;
+
+  // Bloque 24 — el wizard se muestra si es un ALTA sin partes todavía (nunca
+  // si ya hay al menos una, ni por primera vez ni al recargar — spec §1/§7
+  // test 2), O si ya estábamos navegándolo en esta misma sesión de pantalla
+  // (isWizardActive), que es lo que permite llegar hasta el paso 4 aunque el
+  // paso 1 ya haya hecho que parties.length deje de ser 0.
+  const isWizardActive = onboardingWizardMediationId === id;
+  const shouldShowWizard = (parties.length === 0 && !m.onboardingDismissedAt) || isWizardActive;
+  if(shouldShowWizard){
+    if(!isWizardActive){ onboardingWizardMediationId = id; onboardingWizardStep = 1; }
+    renderOnboardingWizard(m, parties);
+    return;
+  }
+  onboardingWizardMediationId = null;
 
   const statusOptions = Object.keys(STATUS_LABELS).map(s =>
     `<option value="${s}" ${s === m.status ? 'selected' : ''}>${STATUS_LABELS[s]}</option>`
@@ -2135,7 +2281,11 @@ async function inviteParty(mediationId, partyId){
   }catch(e){ showToast(e.error || 'No se pudo generar la invitación.', 'danger'); }
 }
 
-async function addParty(mediationId){
+// Bloque 24 — el segundo parámetro (afterSave) es opcional: lo usa
+// únicamente el asistente de carga guiada para avanzar de paso en vez de
+// re-renderizar el expediente normal. Sin él, el comportamiento es
+// exactamente el de siempre (llamado desde la pestaña Partes).
+async function addParty(mediationId, afterSave){
   const firstName = document.getElementById('party-first-name').value.trim();
   const lastName = document.getElementById('party-last-name').value.trim();
   if(!firstName){ showToast('Falta el nombre de la parte.', 'danger'); return; }
@@ -2147,7 +2297,7 @@ async function addParty(mediationId){
       email: document.getElementById('party-email').value.trim() || null,
       phone: document.getElementById('party-phone').value.trim() || null,
     })});
-    renderDetail(mediationId);
+    if(afterSave) afterSave(); else renderDetail(mediationId);
   }catch(e){ showToast(e.error || 'No se pudo guardar la parte.', 'danger'); }
 }
 
@@ -2160,7 +2310,7 @@ async function inviteLawyer(mediationId, lawyerId){
   }catch(e){ showToast(e.error || 'No se pudo generar la invitación.', 'danger'); }
 }
 
-async function addLawyer(mediationId){
+async function addLawyer(mediationId, afterSave){
   const name = document.getElementById('lawyer-name').value.trim();
   if(!name){ showToast('Falta el nombre del abogado.', 'danger'); return; }
   try{
@@ -2170,11 +2320,11 @@ async function addLawyer(mediationId){
       partyId: document.getElementById('lawyer-party').value || null,
       email: document.getElementById('lawyer-email').value.trim() || null,
     })});
-    renderDetail(mediationId);
+    if(afterSave) afterSave(); else renderDetail(mediationId);
   }catch(e){ showToast(e.error || 'No se pudo guardar el abogado.', 'danger'); }
 }
 
-async function addHearing(mediationId){
+async function addHearing(mediationId, afterSave){
   const date = document.getElementById('hearing-date').value;
   if(!date){ showToast('Falta la fecha de la audiencia.', 'danger'); return; }
   try{
@@ -2184,7 +2334,7 @@ async function addHearing(mediationId){
       modality: document.getElementById('hearing-modality').value,
       location: document.getElementById('hearing-location').value.trim() || null,
     })});
-    renderDetail(mediationId);
+    if(afterSave) afterSave(); else renderDetail(mediationId);
   }catch(e){ showToast(e.error || 'No se pudo agendar la audiencia.', 'danger'); }
 }
 

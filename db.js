@@ -43,7 +43,7 @@ const EMPTY_DB = {
   reports: [], // { id, channelId, messageId|null, reporterId, reason, createdAt, status:'pendiente'|'revisado', reviewedBy, reviewedAt } — "Reportar" desde el chat, para cuando lo que preocupa es un mensaje del OTRO lado (la moderación de IA solo filtra lo que uno mismo manda)
 
   // ===== Mediador (B2B) — Bloque 1. Ver IMPLEMENTATION_PLAN.md §3 para el resto de las tablas (Bloques 4-6, todavía no creadas) =====
-  mediations: [], // { id, code, internalNumber, mediatorUserId, channelId, type, object, description, status:'borrador'|'iniciada'|'contactando_partes'|'notificaciones'|'audiencia_programada'|'en_mediacion'|'acuerdo'|'acuerdo_parcial'|'sin_acuerdo'|'incomparecencia'|'cerrada', nextActionText, nextActionResponsibleType:'mediador'|'party'|'lawyer', nextActionResponsibleId, nextActionDueDate, closedAt, closedResult, closedNotes, createdAt, inactivityThresholdDays|null, partyNoResponseThresholdDays|null } — inactivityThresholdDays/partyNoResponseThresholdDays (Bloque 22 automatización): ventanas configurables por mediación para el centro de atención, default en código (21 y 5 días) si son null — mismo patrón que upcomingDueWindowDays
+  mediations: [], // { id, code, internalNumber, mediatorUserId, channelId, type, object, description, status:'borrador'|'iniciada'|'contactando_partes'|'notificaciones'|'audiencia_programada'|'en_mediacion'|'acuerdo'|'acuerdo_parcial'|'sin_acuerdo'|'incomparecencia'|'cerrada', nextActionText, nextActionResponsibleType:'mediador'|'party'|'lawyer', nextActionResponsibleId, nextActionDueDate, closedAt, closedResult, closedNotes, createdAt, inactivityThresholdDays|null, partyNoResponseThresholdDays|null, onboardingDismissedAt|null } — inactivityThresholdDays/partyNoResponseThresholdDays (Bloque 22 automatización): ventanas configurables por mediación para el centro de atención, default en código (21 y 5 días) si son null — mismo patrón que upcomingDueWindowDays. onboardingDismissedAt (Bloque 24): se completa solo al descartar el asistente de carga guiada, nunca se lee fuera de ese flujo
   mediationStatusHistory: [], // { id, mediationId, fromStatus, toStatus, changedBy, note, createdAt } — nunca se borra una fila, solo se agregan
   mediationAccess: [], // { id, mediationId, userId, role:'mediador'|'asistente'|'abogado'|'admin', partyId|null, grantedBy, grantedAt } — el mediador titular vive en mediations.mediatorUserId, esta tabla es para accesos ADICIONALES (ver §3.2b del plan)
 
@@ -472,6 +472,11 @@ function openDb() {
   // upcomingDueWindowDays (Bloque 11) — NULL usa el default del código
   // (21 días de inactividad, 5 días sin respuesta de una parte).
   ensureColumns(sqlite, 'mediations', { inactivityThresholdDays: 'INTEGER', partyNoResponseThresholdDays: 'INTEGER' });
+  // Bloque 24 — el asistente de carga guiada se descarta a mano, una sola
+  // vez; "parties.length===0" ya sirve para saber cuándo MOSTRARLO, pero
+  // "el mediador lo descartó explícitamente" no se puede derivar de ningún
+  // dato existente, por eso este es el único campo nuevo del bloque.
+  ensureColumns(sqlite, 'mediations', { onboardingDismissedAt: 'INTEGER' });
   if (isNew && fs.existsSync(LEGACY_JSON_PATH)) {
     migrateFromJson(sqlite, LEGACY_JSON_PATH);
   }

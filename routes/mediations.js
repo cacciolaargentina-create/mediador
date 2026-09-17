@@ -157,6 +157,7 @@ function serializeMediation(m) {
     upcomingDueWindowDays: m.upcomingDueWindowDays ?? 7,
     inactivityThresholdDays: m.inactivityThresholdDays ?? automationEngine.DEFAULT_INACTIVITY_THRESHOLD_DAYS,
     partyNoResponseThresholdDays: m.partyNoResponseThresholdDays ?? automationEngine.DEFAULT_PARTY_NO_RESPONSE_THRESHOLD_DAYS,
+    onboardingDismissedAt: m.onboardingDismissedAt || null,
     createdAt: m.createdAt,
   };
 }
@@ -795,6 +796,13 @@ module.exports = function (io, presence) {
         return res.status(400).json({ error: 'El umbral de "sin respuesta" tiene que ser entre 1 y 60 días' });
       }
       mediation.partyNoResponseThresholdDays = days;
+    }
+    // Bloque 24 — descartar el asistente de carga guiada. Se completa acá,
+    // en un solo lugar, y no se lee en ningún otro flujo del sistema (ver
+    // §2 de la spec). No se contempla "des-descartar": si el mediador
+    // quiere volver a ver los pasos, usa las pestañas directamente.
+    if (req.body?.dismissOnboarding === true) {
+      mediation.onboardingDismissedAt = Date.now();
     }
 
     await commit();
