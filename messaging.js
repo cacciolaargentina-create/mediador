@@ -164,12 +164,21 @@ function baseUrl() {
 // link de acceso sin login para quien no tiene cuenta de Google: el token
 // del guest-link clásico (Persona B invitada desde la web) o el
 // webAccessToken de quien se sumó por WhatsApp (A o B).
+//
+// accessLinkFor se llama tanto para canales de coparentalidad como de
+// Mediador (fireNotification es el mecanismo de notificación compartido de
+// postMessage) — el index.html actual es la SPA de Mediador (cambio de
+// estructura de otra sesión: mediador.html pasó a ser index.html, y Puente
+// Digital se movió a /chat.html), así que el path tiene que depender de a
+// qué canal pertenece esto: channel.mediationId seteado = Mediador (raíz),
+// null = coparentalidad (/chat.html).
 function accessLinkFor(channel, user) {
-  if (user.googleId) return `${baseUrl()}/?channel=${channel.code}`;
+  const path = channel.mediationId ? '/' : '/chat.html';
+  if (user.googleId) return `${baseUrl()}${path}?channel=${channel.code}`;
   const db = getDB();
   const member = db.members.find((m) => m.channelId === channel.id && m.userId === user.id);
   const token = (member && member.webAccessToken) || channel.guestToken;
-  return `${baseUrl()}/?guest=${token}`;
+  return `${baseUrl()}${path}?guest=${token}`;
 }
 
 // Map<`${channelId}:${toUserId}`, { count, fromName, timer }> — agrupa

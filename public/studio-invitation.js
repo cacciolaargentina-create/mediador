@@ -55,7 +55,7 @@ function escapeHtml(s){
 async function acceptInvitation(){
   try{
     await api(`/api/studios/invitations/${token}/accept`, { method:'POST' });
-    document.getElementById('main').innerHTML = `<h1>¡Listo!</h1><p>Ya sos parte del estudio.</p><button class="primary" onclick="location.href='/mediador.html'">Ir a Mediador</button>`;
+    document.getElementById('main').innerHTML = `<h1>¡Listo!</h1><p>Ya sos parte del estudio.</p><button class="primary" onclick="location.href='/'">Ir a Mediador</button>`;
   }catch(e){ alert(e.error || 'No se pudo aceptar la invitación.'); }
 }
 

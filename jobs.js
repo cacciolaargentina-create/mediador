@@ -202,7 +202,7 @@ async function checkMediationDeadlines() {
         await notifyMediator(db, mediation, {
           title: 'Compromiso vencido — Mediador',
           body: `${mediation.code}: "${commitment.description}" venció sin cumplirse.`,
-          url: '/mediador.html',
+          url: '/',
         });
       }
     }
@@ -239,7 +239,7 @@ async function checkMediationDeadlines() {
       await notifyMediator(db, mediation, {
         title: 'Tarea vencida — Mediador',
         body: `${mediation.code}: "${task.title}" venció sin completarse.`,
-        url: '/mediador.html',
+        url: '/',
       });
     }
     tasksOverdueLogged++;
@@ -282,7 +282,7 @@ async function checkMediationDeadlines() {
         await notifyMediator(db, mediation, {
           title: 'Confirmación pendiente — Mediador',
           body: `${mediation.code}: hay partes sin confirmar la audiencia del ${fmtDateEs(hearing.date)}.`,
-          url: '/mediador.html',
+          url: '/',
         });
         hearingAlertsLogged++;
       }
@@ -306,7 +306,7 @@ async function checkMediationDeadlines() {
       await notifyMediator(db, mediation, {
         title: 'Audiencia próxima — Mediador',
         body: `${mediation.code}: audiencia el ${fmtDateEs(hearing.date)}${hearing.startTime ? ' a las ' + hearing.startTime : ''}.${videoSuffix}`,
-        url: '/mediador.html',
+        url: '/',
       });
       hearingRemindersLogged++;
     }
@@ -332,7 +332,7 @@ async function checkMediationDeadlines() {
     await notifyMediator(db, mediation, {
       title: 'Solicitud de cambio pendiente',
       body: `${mediation.code}: hay una solicitud de cambio de audiencia esperando tu respuesta.`,
-      url: '/mediador.html',
+      url: '/',
     });
     rescheduleRequestRemindersLogged++;
   }
@@ -372,7 +372,7 @@ async function checkMediationDeadlines() {
     await notifyMediator(db, mediation, {
       title: 'No pudimos contactar a una parte',
       body: `${mediation.code}: no se pudo contactar a ${party.firstName || 'la parte'} en los últimos 3 días. Revisá el canal de contacto.`,
-      url: '/mediador.html',
+      url: '/',
     });
     contactEscalationsLogged++;
   }
@@ -402,7 +402,7 @@ async function checkMediationDeadlines() {
     await notifyUserDirect(db, user, {
       title: user.notificationDigest === 'daily' ? 'Tu resumen de hoy' : 'Tu resumen de la semana',
       body: `Tenés ${parts.join(' y ')} en tus mediaciones. Entrá al dashboard para el detalle.`,
-      url: '/mediador.html',
+      url: '/',
     }, (myMediations[0].reminderChannels || 'push,whatsapp').split(','));
     digestsSent++;
   }

@@ -1,8 +1,8 @@
 {
-  "name": "Mediador",
-  "short_name": "Mediador",
-  "description": "El sistema operativo de tu mediación — expedientes, audiencias, documentos y comunicación con las partes.",
-  "start_url": "/",
+  "name": "Puente Digital",
+  "short_name": "Puente",
+  "description": "Comunicación mediada por IA para coparentalidad.",
+  "start_url": "/chat.html",
   "display": "standalone",
   "background_color": "#0F1517",
   "theme_color": "#0F1517",

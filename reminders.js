@@ -49,7 +49,7 @@ async function checkAndSendReminders() {
       // suscripto, le llega por los dos lados, mismo criterio que ya se usa
       // para las notificaciones de mensajes nuevos en messaging.js.
       try {
-        await sendPushToUser(db, commit, user.id, { title: 'Puente Digital', body: text, url: null });
+        await sendPushToUser(db, commit, user.id, { title: 'Puente Digital', body: text, url: '/chat.html' });
       } catch (err) {
         console.error('No se pudo enviar recordatorio de evento por push:', err);
       }

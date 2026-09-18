@@ -81,7 +81,7 @@ function renderNoAccess(app, me){
     <div class="center-note">
       <span class="brand">Mediador</span>
       La cuenta <strong>${escapeHtml(me.name)}</strong> (${escapeHtml(me.email || '')}) no tiene acceso al centro de control.
-      <div><a href="/mediador.html" style="color:var(--calm);">Volver a la app</a></div>
+      <div><a href="/" style="color:var(--calm);">Volver a la app</a></div>
     </div>
   `;
 }
@@ -99,7 +99,7 @@ function renderShell(){
           ${SECTIONS.map(s => `<button data-section="${s.id}" class="${s.id===STATE.section?'active':''}" onclick="goSection('${s.id}')">${escapeHtml(s.label)}</button>`).join('')}
         </nav>
         <div class="sidebar-foot">
-          <a href="/mediador.html">← Volver a la app</a>
+          <a href="/">← Volver a la app</a>
         </div>
       </aside>
       <div class="main">

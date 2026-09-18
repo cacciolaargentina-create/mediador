@@ -199,7 +199,7 @@ function accountMenuEsc(e){
 
 async function logoutMediador(){
   await api('/auth/logout', { method:'POST' });
-  location.href = '/mediador.html';
+  location.href = '/';
 }
 
 async function askMediationAI(mediationId){
@@ -284,7 +284,7 @@ function showToast(message, kind){
 const TAB_FOR_SCREEN = {
   dashboard:'dashboard', list:'list', detail:'list', new:'list',
   stats:'stats', team:'team', studioMediations:'team',
-  agenda:'agenda', requests:'agenda',
+  agenda:'agenda', requests:'requests',
 };
 function goTo(screen, id){
   currentMediationId = id || null;

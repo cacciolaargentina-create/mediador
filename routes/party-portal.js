@@ -246,7 +246,7 @@ module.exports = function (io) {
       await notifyMediator(db, req.mediation, {
         title: 'Respuesta a propuesta de audiencia',
         body: `${req.mediation.code}: ${req.party.firstName || 'una parte'} respondió "${response}" a la propuesta del ${fmtDateEs(hearingForConfirm.date)}${hearingForConfirm.startTime ? ' ' + hearingForConfirm.startTime : ''}.`,
-        url: '/mediador.html',
+        url: '/',
       });
     }
     await commit();

@@ -871,7 +871,7 @@ function showProLogin(info, token){
   document.getElementById('pro-login-role').textContent = professionalRoleLabel(info.role);
   document.getElementById('pro-login-label').textContent = info.label;
   document.getElementById('pro-login-btn').onclick = () => {
-    location.href = '/auth/google?next=' + encodeURIComponent('/?pro=' + token);
+    location.href = '/auth/google?next=' + encodeURIComponent('/chat.html?pro=' + token);
   };
   document.getElementById('pro-login-screen').style.display = 'flex';
 }
@@ -1161,7 +1161,7 @@ function accountMenuEsc(e){
 async function logout(){
   updateAppBadge(0);
   await api('/auth/logout', { method:'POST' });
-  location.href = '/';
+  location.href = '/chat.html';
 }
 async function checkAdminLink(){
   if(isGuest) return;
@@ -4067,7 +4067,7 @@ function renderProStatusCard(proStatus){
       <div class="bubble original"><div class="bubble-label">Mensaje original</div>Otra vez llegás tarde. Sos un desastre y nunca te importa nuestro hijo.</div>
       <div class="bubble suggested"><div class="bubble-label">Alternativa sugerida por la IA</div>Hoy la entrega se realizó 25 minutos después del horario acordado. ¿Podemos confirmar el horario para la próxima entrega?</div>
     </div>
-    <p class="empty-hint" style="margin-top:-6px;">¿Sos mediador/a o estudio jurídico? <a href="#" onclick="event.preventDefault(); location.href='/?proSignup=1';" style="color:var(--calm);">Registrate acá</a>.</p>
+    <p class="empty-hint" style="margin-top:-6px;">¿Sos mediador/a o estudio jurídico? <a href="#" onclick="event.preventDefault(); location.href='/chat.html?proSignup=1';" style="color:var(--calm);">Registrate acá</a>.</p>
   `;
 }
 

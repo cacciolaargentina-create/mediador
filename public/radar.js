@@ -66,7 +66,7 @@ function renderNoAccess(app, me){
     <div class="center-note">
       <span class="brand">Mediador</span>
       La cuenta <strong>${escapeHtml(me.name)}</strong> (${escapeHtml(me.email || '')}) no tiene acceso al radar competitivo.
-      <div><a href="/mediador.html" style="color:var(--calm);">Volver a la app</a></div>
+      <div><a href="/" style="color:var(--calm);">Volver a la app</a></div>
     </div>
   `;
 }
@@ -86,7 +86,7 @@ function renderShell(){
           <div class="brand">Mediador <em>Radar</em></div>
           <div class="brand-sub">Herramienta interna — no visible para mediadores</div>
         </div>
-        <div class="user-chip">${escapeHtml(STATE.me.name)} <a href="/mediador.html">Volver a la app</a></div>
+        <div class="user-chip">${escapeHtml(STATE.me.name)} <a href="/">Volver a la app</a></div>
       </header>
       <nav class="radar-nav">
         ${SECTIONS.map(s => `<button class="${s.id===currentSection?'active':''}" onclick="goSection('${s.id}')">${s.label}</button>`).join('')}

@@ -1,0 +1,1570 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Puente Digital</title>
+<link rel="manifest" href="/manifest-puente.json">
+<link rel="icon" href="/icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#0F1517">
+<!-- Sin esto, iOS abre el ícono agregado a la pantalla de inicio dentro de
+     Safari con toda su interfaz — con esto, abre "standalone" (como una app
+     de verdad, sin barra de navegador), que es requisito además para que
+     la Push API exista del lado de iOS. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Puente">
+<!-- corre ANTES de pintar: si no, quien eligió modo claro ve un flash oscuro
+     (el tema por default) hasta que app.js carga al final del body. -->
+<script>(function(){try{var t=localStorage.getItem('pd_theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+  :root{
+    /* Bloque 23 — mismo branding que Mediador (design system del Bloque 20):
+       paleta y tipografía alineadas a los valores exactos de tokens.css, sin
+       tocar la estructura de esta app ni sacar el toggle claro/oscuro (algo
+       que Mediador ni siquiera tiene). Se mantienen los mismos NOMBRES de
+       variable de siempre — todo el resto de la hoja y de app.js sigue
+       funcionando sin cambios, solo cambia a qué color apunta cada una. */
+    --bg:#0F1517; --surface:#172326; --surface-2:#193033; --line:#2A3A3D;
+    --text:#F4F7F7; --text-dim:#93A3A2; --text-faint:#5E6E6D;
+    --calm:#22C7B8; --calm-dim:#123B38; --warn:#D79B2B; --warn-dim:#4A3712;
+    --danger:#D95353; --danger-dim:#4A1F1F; --header-bg:rgba(15,21,23,0.92);
+    /* fondo de la pastilla activa del nav inferior y de las filas del menú de
+       cuenta: --calm-dim acá no sirve porque en oscuro es un teal sólido que
+       pinta un bloque duro; esto es el mismo color de marca pero apenas
+       insinuado, que es lo que hace iOS con el ítem seleccionado. */
+    --tab-active-bg:rgba(34,199,184,0.16); --menu-hover-bg:rgba(255,255,255,0.06);
+    --float-shadow:0 8px 30px rgba(0,0,0,0.34), 0 2px 8px rgba(0,0,0,0.18);
+    --serif:'Inter',sans-serif; --sans:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
+    /* colores de burbuja del chat, aparte de --calm — WhatsApp usa un verde
+       propio para "mis" mensajes que no es el --calm de marca del resto de
+       la app; se separan en variables propias para poder pedir "que se vea
+       como WhatsApp" sin desteñir el resto de la interfaz. No son parte del
+       branding (es un color funcional, no de marca) — sin cambios. */
+    --wa-me-bg:#005c4b; --wa-them-bg:#202c33; --wa-tick-read:#53bdeb;
+  }
+  /* ---- modo claro: mismos tokens, otros valores — todo el resto de la hoja
+     de estilos usa var(--...), así que alcanza con redefinirlos acá para
+     retemar la app entera (landing y dashboard incluidos). Valores exactos
+     de la paleta clara de Mediador (Bloque 20). ---- */
+  :root[data-theme="light"]{
+    --bg:#F5F8F8; --surface:#FFFFFF; --surface-2:#F2F6F6; --line:#DDE5E6;
+    --text:#172124; --text-dim:#667477; --text-faint:#8A989A;
+    --calm:#159B91; --calm-dim:#E6FAF7; --warn:#D79B2B; --warn-dim:#FFF6DF;
+    --danger:#D95353; --danger-dim:#FCEBEC; --header-bg:rgba(245,248,248,0.92);
+    --tab-active-bg:rgba(21,155,145,0.12); --menu-hover-bg:rgba(23,33,36,0.05);
+    --float-shadow:0 8px 30px rgba(15,21,23,0.14), 0 2px 8px rgba(15,21,23,0.08);
+    --wa-me-bg:#d9fdd3; --wa-them-bg:#ffffff; --wa-tick-read:#53bdeb;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  /* varios botones se muestran/ocultan con el atributo `hidden` en vez de con
+     style.display (ver setInstallBtnVisible en app.js). El display:none que
+     trae `hidden` de fábrica lo pisa cualquier regla con clase, así que hay
+     que subirlo acá una sola vez para toda la hoja. */
+  [hidden]{ display:none !important; }
+  html,body{height:100%;}
+  body{ background:var(--bg); color:var(--text); font-family:var(--sans); -webkit-font-smoothing:antialiased; display:flex; flex-direction:column; min-height:100vh; }
+
+  /* ---- scrollbar sutil en TODA la app (no solo el composer) — por
+     default el navegador dibuja una barra ancha con pista blanca/gris
+     clara, que se nota fuerte contra el fondo oscuro. Esto la angosta y
+     la pinta con los mismos tokens del tema (pista transparente, "dedo"
+     del color de línea, un toque más claro al pasar el mouse), así se
+     ve igual de discreta en cualquier contenedor con scroll — chat,
+     historial, el composer cuando le toca. scrollbar-color es la versión
+     Firefox; los ::-webkit-scrollbar-* son Chrome/Safari/Edge. ---- */
+  *{ scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
+  *::-webkit-scrollbar{ width:8px; height:8px; }
+  *::-webkit-scrollbar-track{ background:transparent; }
+  *::-webkit-scrollbar-thumb{ background:var(--line); border-radius:8px; }
+  *::-webkit-scrollbar-thumb:hover{ background:var(--text-faint); }
+
+  /* ---- animación al cambiar de tema: la clase se agrega un instante desde
+     JS (toggleTheme) y se saca sola — así el resto del tiempo los estados
+     hover/focus no arrastran una transición de color que los haría sentir
+     lentos. ---- */
+  html.theme-anim, html.theme-anim *{ transition:background-color .35s ease, color .35s ease, border-color .35s ease, box-shadow .35s ease !important; }
+  /* .icon-btn ahora siempre lleva una SVG adentro (antes eran emoji con
+     font-size): el tamaño lo fija el botón, no la tipografía, así todos los
+     íconos del header miden exactamente lo mismo — con emoji cada plataforma
+     los dibujaba con su propio alto de línea y quedaban desparejos. */
+  .icon-btn{ background:none; border:1px solid var(--line); color:var(--text-dim); width:34px; height:34px; border-radius:10px; padding:0; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; -webkit-tap-highlight-color:transparent; }
+  .icon-btn svg{ width:17px; height:17px; display:block; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+  .icon-btn:hover{ border-color:var(--calm-dim); color:var(--text); }
+  .icon-btn:focus-visible, .account-btn:focus-visible, .account-menu button:focus-visible, .account-menu a:focus-visible{ outline:2px solid var(--calm); outline-offset:2px; }
+  @keyframes theme-icon-pop{ 0%{ transform:rotate(0) scale(1); } 45%{ transform:rotate(160deg) scale(0.65); } 100%{ transform:rotate(360deg) scale(1); } }
+  .icon-btn.animating{ animation:theme-icon-pop .5s ease; }
+
+  /* ---- logo animado: un puentecito se dibuja bajo el nombre, con un punto
+     que lo cruza, en loop suave. width:100%/em en la SVG para que escale
+     solo con el tamaño de letra de cada lugar donde se usa (header chico,
+     login grande) sin necesitar medirlo por JS. ---- */
+  .bridge-logo{ position:relative; display:inline-block; }
+  .bridge-logo .bridge-arc{ position:absolute; left:0; top:100%; width:100%; height:0.5em; pointer-events:none; overflow:visible; }
+
+  header.topbar{
+    margin:10px 12px 0; padding:9px 10px 9px 16px; border-radius:20px; display:flex; align-items:center;
+    justify-content:space-between; flex-shrink:0; gap:10px; position:relative; z-index:20;
+    background:var(--header-bg); -webkit-backdrop-filter:blur(14px) saturate(1.4); backdrop-filter:blur(14px) saturate(1.4);
+    border:1px solid var(--line); box-shadow:0 4px 16px rgba(0,0,0,0.14);
+    transition:box-shadow .25s ease, backdrop-filter .25s ease;
+  }
+  /* al scrollear el contenido detrás, se intensifica el vidrio (más blur,
+     más sombra) — mismo efecto que las barras de navegación translúcidas
+     de iOS. Usa --header-bg (ya semitransparente y theme-aware) en vez de
+     un color fijo, para que se vea bien en claro y en oscuro por igual. */
+  header.topbar.scrolled{
+    -webkit-backdrop-filter:blur(22px) saturate(1.6); backdrop-filter:blur(22px) saturate(1.6);
+    box-shadow:0 6px 22px rgba(0,0,0,0.24);
+  }
+  /* min-width:0 en las dos mitades es lo que evita el desborde: sin eso, un
+     hijo flex NO puede achicarse por debajo de su contenido (min-width:auto es
+     el default) y la barra crece más ancha que la pantalla en vez de recortar
+     el nombre. El logo además tiene flex-shrink propio y el lado derecho
+     flex-shrink:0, así que lo primero que cede es siempre el texto. */
+  header.topbar .brand-slot{ min-width:0; flex:0 1 auto; overflow:hidden; }
+  header.topbar .brand{ font-family:var(--serif); font-weight:600; font-size:18px; white-space:nowrap; }
+  header.topbar .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
+  header.topbar .topbar-actions{ display:flex; align-items:center; gap:6px; flex-shrink:0; min-width:0; }
+
+  /* ---- botón de cuenta (avatar) — el único elemento del lado derecho que
+     sobrevive en pantallas angostas; todo lo demás se pliega adentro del
+     menú que abre. Es un <button> y no un <div> porque ahora abre algo. ---- */
+  .account-btn{
+    display:flex; align-items:center; gap:7px; background:none; border:1px solid transparent;
+    border-radius:999px; padding:3px 4px 3px 3px; cursor:pointer; font-family:var(--sans);
+    color:var(--text-dim); flex-shrink:0; max-width:150px; -webkit-tap-highlight-color:transparent;
+  }
+  .account-btn:hover, .account-btn[aria-expanded="true"]{ border-color:var(--line); background:var(--menu-hover-bg); }
+  .account-btn .avatar{ width:28px; height:28px; border-radius:50%; flex-shrink:0; object-fit:cover; display:block; }
+  /* fallback cuando no hay foto de Google: inicial sobre el color de marca,
+     no un rojo genérico del navegador. */
+  span.account-btn-initial{
+    width:28px; height:28px; border-radius:50%; flex-shrink:0; display:flex; align-items:center;
+    justify-content:center; background:var(--calm); color:#0E1516; font-size:12.5px; font-weight:600;
+  }
+  .account-btn .account-name{ font-size:12.5px; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .account-btn .caret{ width:13px; height:13px; flex-shrink:0; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; color:var(--text-faint); transition:transform .18s ease; }
+  .account-btn[aria-expanded="true"] .caret{ transform:rotate(180deg); }
+  /* invitado en pantalla ancha: no hay nada que el menú agregue, así que el
+     avatar deja de parecer un botón. */
+  .account-btn.no-menu{ cursor:default; }
+  .account-btn.no-menu:hover{ background:none; border-color:transparent; }
+  .account-btn.no-menu .caret{ display:none; }
+  /* debajo de 600px sólo queda el avatar: ni nombre ni flecha ni la fila de
+     íconos sueltos — eso es lo que hacía que la barra se saliera de pantalla.
+     600 y no 560: a 560 los cinco íconos (5×34 + gaps) más el nombre más el
+     logo entran justo justo, sin aire. */
+  .account-btn .account-name, .account-btn .caret{ display:none; }
+  .topbar-actions .only-wide{ display:none; }
+  @media (min-width:600px){
+    .account-btn .account-name, .account-btn .caret{ display:block; }
+    .topbar-actions .only-wide{ display:flex; }
+  }
+
+  /* ---- menú de cuenta ---- */
+  .account-menu{
+    position:absolute; top:calc(100% + 8px); right:10px; min-width:232px; max-width:min(280px, calc(100vw - 32px));
+    background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:6px;
+    box-shadow:var(--float-shadow); z-index:35; display:none;
+    opacity:0; transform:translateY(-6px) scale(.98); transform-origin:top right;
+    transition:opacity .16s ease, transform .16s ease;
+  }
+  .account-menu.mounted{ display:block; }
+  .account-menu.open{ opacity:1; transform:none; }
+  /* z-index 15 (no 34) a propósito: el backdrop es hermano del header, y el
+     header tiene backdrop-filter, que arma su propio contexto de apilamiento.
+     El menú vive DENTRO del header, así que por más z-index que tenga nunca
+     sube por encima del z-index:20 del header — un backdrop con z-index mayor
+     le taparía el menú y se comería los clics. Con 15 queda debajo del header
+     (y de su menú) pero encima de #main (z auto) y del nav inferior (z:10),
+     que es exactamente lo que tiene que cubrir para cerrar al tocar afuera. */
+  .account-menu-backdrop{ position:fixed; inset:0; z-index:15; display:none; }
+  .account-menu-backdrop.mounted{ display:block; }
+  .account-menu-head{ padding:9px 11px 10px; border-bottom:1px solid var(--line); margin-bottom:6px; }
+  .account-menu-head .who{ font-size:13.5px; color:var(--text); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .account-menu-head .role-badge{ display:inline-block; margin-top:5px; font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:0.05em; color:var(--calm); border:1px solid var(--calm-dim); padding:2px 7px; border-radius:10px; }
+  .account-menu .row{
+    display:flex; align-items:center; gap:10px; width:100%; background:none; border:none;
+    color:var(--text); font-family:var(--sans); font-size:13px; text-align:left; text-decoration:none;
+    padding:9px 11px; border-radius:10px; cursor:pointer;
+  }
+  .account-menu .row:hover{ background:var(--menu-hover-bg); }
+  .account-menu .row svg{ width:16px; height:16px; flex-shrink:0; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; color:var(--text-dim); }
+  .account-menu .row .label{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .account-menu .row .state{ font-size:11px; color:var(--text-faint); flex-shrink:0; }
+  .account-menu .sep{ height:1px; background:var(--line); margin:6px 4px; }
+  .account-menu .row.danger, .account-menu .row.danger svg{ color:var(--danger); }
+  /* las filas que duplican un ícono ya visible en el header se ocultan a
+     partir de 560px, para no ofrecer la misma acción dos veces. */
+  @media (min-width:600px){ .account-menu .row.dup{ display:none; } .account-menu .sep.dup{ display:none; } }
+
+  /* la barra de abajo ahora flota (no está pegada al borde), así que el
+     colchón tiene que cubrir alto de la píldora + su separación del borde +
+     el home indicator de iOS; si no, el último ítem de cualquier lista queda
+     tapado por el vidrio. */
+  main{ flex:1; overflow-y:auto; padding-bottom:calc(96px + env(safe-area-inset-bottom, 0px)); }
+  .screen{ display:none; animation:fade .25s ease; }
+  .screen.active{ display:block; }
+  @keyframes fade{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;} }
+
+  /* íconos de línea (nav inferior, tabs contextuales, propuestas de
+     horario): SVG en línea sin width/height propio, así que toman el
+     tamaño del contexto donde caen — mismo criterio que antes usaban los
+     emoji con font-size, ahora con 1em. El botón ⚙ es la única excepción,
+     ese sí trae su propio width/height fijo (16px) porque no vive dentro
+     de un .ic. */
+  .ic svg{ width:1em; height:1em; display:block; stroke:currentColor; }
+  /* ---- nav inferior: píldora flotante estilo barra de Safari en iOS ----
+     Antes era una barra full-bleed pegada abajo con un borde superior. Ahora
+     flota separada de los tres bordes, con vidrio (blur + --header-bg, que ya
+     es semitransparente y theme-aware) y sombra difusa, de modo que el
+     contenido se ve pasar por debajo. El bottom usa env(safe-area-inset-bottom)
+     para no montarse sobre el home indicator del iPhone. */
+  nav.tabs{
+    position:fixed; bottom:calc(10px + env(safe-area-inset-bottom, 0px)); left:12px; right:12px;
+    display:flex; gap:4px; padding:6px; z-index:10;
+    background:var(--header-bg); border:1px solid var(--line); border-radius:22px;
+    -webkit-backdrop-filter:blur(20px) saturate(1.7); backdrop-filter:blur(20px) saturate(1.7);
+    box-shadow:var(--float-shadow);
+  }
+  nav.tabs button{ flex:1; min-width:0; background:none; border:none; border-radius:16px; color:var(--text-faint); font-family:var(--sans); font-size:10.5px; padding:7px 4px 6px; display:flex; flex-direction:column; align-items:center; gap:3px; cursor:pointer; position:relative; -webkit-tap-highlight-color:transparent; transition:background-color .18s ease, color .18s ease; }
+  nav.tabs button .ic{ font-size:20px; line-height:1; }
+  nav.tabs button .tab-label{ max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  nav.tabs button.active{ color:var(--calm); background:var(--tab-active-bg); }
+  nav.tabs button .dot-alert{ display:none; position:absolute; top:5px; right:calc(50% - 16px); width:6px; height:6px; border-radius:50%; background:var(--warn); }
+  nav.tabs button .dot-alert.show{ display:block; }
+  @media (prefers-reduced-motion:reduce){ nav.tabs button{ transition:none; } }
+
+  /* ---- nav contextual: solo visible DENTRO de un caso (Chat/Calendario/Gastos/Historial/Asistente/Config) ----
+     va arriba, entre el topbar y el contenido — dos barras separadas, cada
+     una con su función (ver NAV-RESTRUCTURE): la de abajo nunca cambia, la
+     de arriba aparece/desaparece según haya o no un caso activo. */
+  /* z-index acá es necesario, no cosmético: backdrop-filter hace que este
+     elemento arme su propio contexto de apilamiento (como un filter), así
+     que sin un z-index explícito el "Cambiar de caso" (.case-switcher,
+     que cuelga de acá con position:absolute) queda atrapado adentro de
+     ese contexto en vez de flotar sobre el resto de la página — #main
+     (el chat), al venir después en el HTML y no tener z-index propio,
+     terminaba pintándose encima de todo este bloque, tapando el selector. */
+  nav.case-tabs{
+    display:none; flex-direction:column; flex-shrink:0; position:relative; z-index:12;
+    background:var(--header-bg); -webkit-backdrop-filter:blur(14px) saturate(1.4); backdrop-filter:blur(14px) saturate(1.4);
+    border-bottom:1px solid var(--line);
+  }
+  .case-tabs-info{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 14px 2px; font-size:12px; color:var(--text-dim); }
+  .case-tabs-info .gear-btn{ background:none; border:1px solid var(--line); color:var(--text-dim); width:26px; height:26px; border-radius:7px; font-size:13px; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+  .case-switch-btn{ background:none; border:none; color:var(--text-dim); font-size:12px; cursor:pointer; padding:0; text-align:left; font-family:var(--sans); display:flex; align-items:center; gap:4px; }
+  .case-switch-btn .caret{ font-size:9px; color:var(--text-faint); display:inline-block; transition:transform .15s ease; }
+  .case-switch-btn.open .caret{ transform:rotate(180deg); }
+  /* selector rápido de caso: entra con un fade+slide chico en vez de
+     aparecer de golpe, y un backdrop atrás para que se note que es un
+     panel propio (tocar afuera también lo cierra). display:none/block se
+     sigue usando además de la clase — así, cerrado, no ocupa layout ni
+     puede recibir clics por accidente. */
+  .case-switcher{ position:absolute; top:100%; left:0; right:0; background:var(--surface); border-bottom:1px solid var(--line); box-shadow:0 12px 28px rgba(0,0,0,0.4); z-index:15; max-height:55vh; overflow-y:auto; padding:10px 12px 14px; opacity:0; transform:translateY(-8px); transition:opacity .18s ease, transform .18s ease; }
+  .case-switcher.open{ opacity:1; transform:none; }
+  .case-switcher-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:14; opacity:0; transition:opacity .18s ease; }
+  .case-switcher-backdrop.open{ opacity:1; }
+  .case-switcher-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; padding:0 2px; }
+  .case-switcher-heading{ font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-faint); }
+  .case-switcher .modal-close{ font-size:15px; padding:2px; }
+  .case-tabs-scroller{ display:flex; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+  .case-tabs-scroller::-webkit-scrollbar{ display:none; }
+  .case-tabs-scroller button{ flex:0 0 auto; background:none; border:none; color:var(--text-faint); font-size:12px; padding:8px 13px 10px; display:flex; align-items:center; gap:5px; cursor:pointer; white-space:nowrap; position:relative; border-bottom:2px solid transparent; }
+  .case-tabs-scroller button.active{ color:var(--calm); border-bottom-color:var(--calm); }
+  .case-tabs-scroller .dot-alert{ display:none; position:absolute; top:5px; right:3px; width:6px; height:6px; border-radius:50%; background:var(--warn); }
+  .case-tabs-scroller .dot-alert.show{ display:block; }
+
+  /* ---- modal "Nuevo caso": sheet desde abajo en mobile, diálogo centrado en pantallas anchas ---- */
+  .modal-overlay{ display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:30; align-items:flex-end; justify-content:center; }
+  .modal-overlay.show{ display:flex; }
+  .modal-sheet{ background:var(--surface); border:1px solid var(--line); border-bottom:none; border-radius:16px 16px 0 0; padding:20px; width:100%; max-width:480px; max-height:85vh; overflow-y:auto; }
+  .modal-head{ display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .modal-close{ background:none; border:none; color:var(--text-dim); font-size:20px; cursor:pointer; padding:4px; line-height:1; flex-shrink:0; }
+  @media (min-width:700px){
+    .modal-overlay{ align-items:center; }
+    .modal-sheet{ border-radius:14px; border-bottom:1px solid var(--line); }
+  }
+
+  /* ---- pantalla de bloqueo (PIN / Face ID) — tapa todo, arriba incluso
+     de los modales (z-index más alto que .modal-overlay). ---- */
+  #app-lock-screen{ display:none; position:fixed; inset:0; z-index:200; background:var(--bg); align-items:center; justify-content:center; padding:24px; }
+  #app-lock-screen.show{ display:flex; }
+  .lock-inner{ display:flex; flex-direction:column; align-items:center; width:100%; max-width:300px; text-align:center; }
+  .lock-pin-dots{ display:flex; gap:14px; margin-bottom:6px; }
+  .lock-pin-dots .dot{ width:14px; height:14px; border-radius:50%; border:1.5px solid var(--line); background:none; transition:background-color .15s ease, border-color .15s ease; }
+  .lock-pin-dots .dot.filled{ background:var(--calm); border-color:var(--calm); }
+  .lock-pin-dots.shake{ animation:lock-shake .4s ease; }
+  @keyframes lock-shake{ 20%,60%{ transform:translateX(-8px); } 40%,80%{ transform:translateX(8px); } }
+  .lock-pin-error{ color:var(--danger); font-size:12.5px; min-height:18px; margin-bottom:8px; }
+  .lock-keypad{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; width:100%; max-width:240px; }
+  .lock-key{ aspect-ratio:1; border-radius:50%; border:1px solid var(--line); background:var(--surface); color:var(--text); font-size:19px; font-family:var(--sans); cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  .lock-key:hover{ border-color:var(--calm-dim); }
+  .lock-key.lock-key-ghost{ background:none; border:none; cursor:default; }
+  .lock-key.lock-key-del{ background:none; border:none; font-size:15px; color:var(--text-dim); }
+  /* ---- configuración (toggles simples) ---- */
+  .settings-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 0; border-bottom:1px solid var(--line); }
+  .settings-row:last-child{ border-bottom:none; }
+  .settings-row .st-label{ font-size:13.5px; font-weight:600; }
+  .settings-row .st-desc{ font-size:12px; color:var(--text-dim); margin-top:2px; line-height:1.4; }
+  .switch{ position:relative; display:inline-block; width:38px; height:22px; flex-shrink:0; }
+  .switch input{ opacity:0; width:0; height:0; }
+  .switch .slider{ position:absolute; inset:0; background:var(--line); border-radius:22px; cursor:pointer; transition:background-color .15s ease; }
+  .switch .slider::before{ content:''; position:absolute; width:16px; height:16px; left:3px; top:3px; background:#fff; border-radius:50%; transition:transform .15s ease; }
+  .switch input:checked + .slider{ background:var(--calm); }
+  .switch input:checked + .slider::before{ transform:translateX(16px); }
+
+  .pad{ padding:18px 20px; }
+  .center-pad{ padding:40px 20px; display:flex; flex-direction:column; align-items:center; text-align:center; gap:16px; }
+  h1.screen-title{ font-family:var(--serif); font-size:23px; font-weight:600; margin-bottom:4px; }
+  .screen-sub{ color:var(--text-dim); font-size:13.5px; margin-bottom:18px; line-height:1.5; }
+  .card{ background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:14px; }
+  .split-card{ max-width:480px; margin:0 auto 24px; }
+  .eyebrow{ font-family:var(--mono); font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-faint); margin-bottom:8px; }
+  button.primary, a.primary{ background:var(--calm); color:#0E1A19; border:none; font-weight:600; font-size:14px; padding:12px 18px; border-radius:8px; cursor:pointer; font-family:var(--sans); }
+
+  /* botones 3D/interactivos del home — a propósito acotado a la landing,
+     no se aplica al resto de la app (los botones del chat, formularios,
+     etc. se quedan con su estilo plano de siempre, que ahí es lo correcto). */
+  .cta-3d{
+    transition:transform .15s ease, box-shadow .15s ease;
+    box-shadow:0 4px 0 rgba(0,0,0,0.22), 0 8px 18px rgba(0,0,0,0.28);
+  }
+  .cta-3d:active{ transform:translateY(3px); box-shadow:0 1px 0 rgba(0,0,0,0.22), 0 3px 8px rgba(0,0,0,0.22); }
+  @media (hover:hover){
+    .cta-3d:hover{ transform:translateY(-2px); box-shadow:0 6px 0 rgba(0,0,0,0.22), 0 12px 22px rgba(0,0,0,0.3); }
+  }
+  .cta-3d-glow{ animation:cta-glow-pulse 2.6s ease-in-out infinite; }
+  @keyframes cta-glow-pulse{
+    0%, 100%{ box-shadow:0 4px 0 rgba(0,0,0,0.22), 0 8px 18px rgba(0,0,0,0.28), 0 0 0 rgba(95,168,160,0); }
+    50%{ box-shadow:0 4px 0 rgba(0,0,0,0.22), 0 8px 18px rgba(0,0,0,0.28), 0 0 18px rgba(95,168,160,0.45); }
+  }
+  button.primary:disabled{ opacity:0.4; cursor:not-allowed; }
+  button.ghost, a.ghost{ background:none; border:1px solid var(--line); color:var(--text); font-size:13px; padding:10px 14px; border-radius:8px; cursor:pointer; font-family:var(--sans); }
+  button.ghost.small{ padding:6px 10px; font-size:11.5px; }
+  button.google-btn{ display:flex; align-items:center; gap:10px; background:#fff; color:#1F1F1F; border:none; font-weight:600; font-size:14px; padding:12px 22px; border-radius:8px; cursor:pointer; font-family:var(--sans); }
+  button.danger-link{ background:none; border:none; color:var(--danger); font-size:12px; cursor:pointer; padding:0; font-family:var(--sans); text-decoration:underline; }
+  input[type=text], input[type=date], textarea, select{ width:100%; min-width:0; background:var(--surface-2); border:1px solid var(--line); color:var(--text); padding:11px 12px; border-radius:8px; font-family:var(--sans); font-size:14px; }
+  input:focus, textarea:focus, select:focus{ outline:2px solid var(--calm-dim); border-color:var(--calm); }
+  label.field-label{ font-size:12px; color:var(--text-dim); display:block; margin-bottom:6px; }
+  .field-hint{ font-size:11px; color:var(--text-faint); margin-top:6px; line-height:1.4; }
+  .row-copy{ display:flex; gap:8px; }
+  .row-copy input{ flex:1; }
+  .row-copy button{ flex-shrink:0; }
+
+  /* ---- "probalo vos mismo" al lado de "así se ve en la práctica": el
+     demo interactivo y el showcase automático muestran la misma idea
+     (la reformulación) de dos formas — probarlo vos mismo vs. verlo
+     andar solo — así que van juntos, uno al lado del otro en pantallas
+     anchas, apilados en mobile. ---- */
+  .try-showcase-row{ display:flex; flex-direction:column; gap:16px; margin-bottom:24px; }
+  .hero-demo{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:18px; width:100%; max-width:480px; margin:0 auto; }
+  .bubble{ max-width:82%; padding:10px 13px; border-radius:12px; font-size:14px; line-height:1.45; margin-bottom:8px; }
+  .bubble.original{ background:var(--surface-2); border:1px solid var(--danger); color:var(--text-dim); text-decoration:line-through; text-decoration-color:var(--danger); text-decoration-thickness:1px; }
+  .bubble.suggested{ background:var(--calm-dim); border:1px solid var(--calm); color:var(--text); margin-left:auto; }
+  .bubble-label{ font-family:var(--mono); font-size:9.5px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-faint); margin-bottom:3px; }
+
+  .status-banner{ display:flex; align-items:center; gap:8px; padding:9px 12px; border-radius:8px; font-size:12px; font-family:var(--mono); margin-bottom:16px; }
+  .status-banner.ok{ background:var(--calm-dim); color:var(--calm); }
+  .status-banner.warn{ background:var(--warn-dim); color:var(--warn); }
+  .status-banner.err{ background:var(--danger-dim); color:var(--danger); }
+  .status-banner .dot{ width:6px; height:6px; border-radius:50%; background:currentColor; flex-shrink:0; }
+
+  .code-display{ font-family:var(--mono); font-size:26px; letter-spacing:0.12em; color:var(--calm); text-align:center; padding:14px; background:var(--surface-2); border:1px dashed var(--calm-dim); border-radius:8px; margin-bottom:12px; }
+
+  .cal-nav{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  .cal-nav button{ width:32px; height:32px; padding:0; font-size:16px; line-height:1; flex-shrink:0; }
+  .cal-month-label{ font-family:var(--serif); font-size:15px; font-weight:600; text-transform:capitalize; }
+  .cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+  .cal-dow{ text-align:center; font-family:var(--mono); font-size:9.5px; color:var(--text-faint); padding-bottom:6px; text-transform:uppercase; }
+  .cal-day{ aspect-ratio:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; border-radius:7px; font-size:12px; color:var(--text-dim); }
+  .cal-day.empty{ visibility:hidden; }
+  .cal-day.has-events{ background:var(--surface-2); color:var(--text); cursor:pointer; }
+  .cal-day.has-events:hover{ background:var(--surface); }
+  .cal-day.today .num{ color:var(--calm); font-weight:700; }
+  .cal-day.selected{ outline:1.5px solid var(--calm); outline-offset:-1px; }
+  .cal-day .dots{ display:flex; gap:2px; }
+  .cal-day .dot{ width:4px; height:4px; border-radius:50%; background:var(--text-faint); }
+  .cal-day .dot.confirmado{ background:var(--calm); }
+  .cal-day .dot.pendiente{ background:var(--warn); }
+  .cal-day .dot.rechazado{ background:var(--danger); }
+
+  /* el -300px deja lugar para todo lo que hay arriba (header + barra
+     contextual + el renglón de "Resumen y próximos eventos" colapsado) Y
+     para la barra inferior fija (nav.tabs, ~56px) que si no queda tapando
+     el composer — medido a mano, no es un número al azar. */
+  .chat-wrap{ display:flex; flex-direction:column; height:calc(100vh - 300px); min-height:320px; }
+  /* envoltorio del área de mensajes (sin el composer) — position:relative
+     acá, no en .chat-wrap entero, para que el botón "ir abajo" y la fecha
+     flotante queden ancladas justo arriba del composer sin importar cuánto
+     crezca este (ver .composer textarea, auto-crecimiento). */
+  .chat-log-area{ position:relative; flex:1; min-height:0; display:flex; flex-direction:column; }
+  /* overflow-x:hidden explícito — si no, la cola del globo y el ícono de
+     "responder" (::before/::after con offsets negativos, ver más abajo)
+     empujan el ancho de scroll y aparece una barra horizontal fantasma:
+     dejar overflow-x en su default "visible" no alcanza, porque fijar
+     overflow-y a algo distinto de "visible" hace que overflow-x compute a
+     "auto" solo, por spec de CSS. */
+  /* padding lateral (8px) — sin esto las burbujas quedan pegadas al borde
+     del contenedor y el overflow-x:hidden de arriba corta la colita, que
+     sobresale 7px del costado de cada burbuja (ver .msg.me::after /
+     .msg.them::after) — se veía sin colita en vez de solo evitar la barra
+     de scroll fantasma que era lo único que ese overflow-x tenía que
+     arreglar. */
+  .chat-log{ flex:1; overflow-y:auto; overflow-x:hidden; padding:4px 8px 12px; display:flex; flex-direction:column; gap:8px; }
+
+  /* botón flotante "ir abajo" — semitransparente, aparece solo cuando el
+     scroll no está ya al final del chat (ver updateJumpButtonVisibility). */
+  .jump-bottom-btn{
+    position:absolute; left:50%; bottom:12px; transform:translateX(-50%) translateY(8px);
+    width:38px; height:38px; border-radius:50%; border:1px solid var(--line);
+    background:var(--header-bg); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
+    color:var(--text-dim); display:flex; align-items:center; justify-content:center;
+    cursor:pointer; opacity:0; pointer-events:none; transition:opacity .18s ease, transform .18s ease;
+    z-index:5;
+  }
+  .jump-bottom-btn.show{ opacity:1; pointer-events:auto; transform:translateX(-50%) translateY(0); }
+  .jump-bottom-btn svg{ width:16px; height:16px; }
+  .jump-bottom-btn .unread-dot{
+    position:absolute; top:-3px; right:-3px; background:var(--calm); color:#0E1A19;
+    font-family:var(--mono); font-size:9px; font-weight:700; min-width:15px; height:15px;
+    border-radius:8px; display:flex; align-items:center; justify-content:center; padding:0 3px;
+  }
+
+  /* fecha flotante al scrollear, estilo WhatsApp — aparece mientras se
+     scrollea, se desvanece sola al soltar. */
+  .float-date{
+    position:absolute; top:8px; left:50%; transform:translateX(-50%);
+    background:var(--header-bg); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
+    color:var(--text-dim); font-size:10.5px; font-family:var(--mono); text-transform:uppercase;
+    letter-spacing:0.05em; padding:5px 14px; border-radius:10px; border:1px solid var(--line);
+    opacity:0; transition:opacity .3s ease; pointer-events:none; z-index:5;
+  }
+  .float-date.show{ opacity:1; }
+  /* ---- burbujas estilo WhatsApp: menos redondeadas que antes (7.5px, no
+     14px), sin borde (una sombra chica hace ese trabajo), esquina inferior
+     casi recta del lado de la "cola" — mismo truco liviano que ya usaba
+     esta hoja de estilos (border-radius en vez de un SVG de cola de
+     verdad), solo que ahora más marcado para leerse como WhatsApp a
+     primera vista. ---- */
+  .msg{ position:relative; max-width:78%; padding:6px 9px; border-radius:7.5px; font-size:14.5px; line-height:1.4; box-shadow:0 1px 0.5px rgba(0,0,0,0.13); }
+  /* ícono de "responder" que se revela al arrastrar el mensaje hacia la
+     derecha (ver setupMessageSwipeReply/--reply-progress) — invisible
+     hasta que el swipe avanza, sin fallback a "1" si el navegador no
+     conoce la variable (por eso el ", 0" en el var()). */
+  .msg.me::before, .msg.them::before{
+    content:''; position:absolute; top:50%; left:-30px; width:20px; height:20px; margin-top:-10px;
+    background:var(--calm); border-radius:50%; opacity:var(--reply-progress, 0);
+    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='9 14 4 9 9 4'%3E%3C/polyline%3E%3Cpath d='M20 20v-7a4 4 0 0 0-4-4H4'%3E%3C/path%3E%3C/svg%3E") center/60% no-repeat;
+    mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='9 14 4 9 9 4'%3E%3C/polyline%3E%3Cpath d='M20 20v-7a4 4 0 0 0-4-4H4'%3E%3C/path%3E%3C/svg%3E") center/60% no-repeat;
+    pointer-events:none;
+  }
+  .msg-pressed{ filter:brightness(0.85); transition:filter .15s ease; }
+
+  /* mensajes ajenos: avatar chico pegado abajo a la izquierda del grupo,
+     igual que WhatsApp — el nombre en sí sigue viviendo dentro de la
+     burbuja (.msg-sender), acá solo el avatar. */
+  .msg-row-them{ display:flex; gap:7px; align-items:flex-end; align-self:flex-start; max-width:88%; }
+  .msg-avatar{
+    width:24px; height:24px; border-radius:50%; flex-shrink:0; overflow:hidden;
+    display:flex; align-items:center; justify-content:center; margin-bottom:2px;
+    color:#fff; font-weight:700; font-size:10px; font-family:var(--sans);
+  }
+  .msg-avatar img{ width:100%; height:100%; object-fit:cover; }
+  .msg-them-col{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .msg-them-col .msg{ max-width:100%; } /* el límite real ya lo pone .msg-row-them */
+
+  /* ===== "vidrio líquido" — superficies flotantes: el menú de acciones
+     del mensaje. Blur real + semi-transparencia, no un panel opaco más. ===== */
+  .glass-panel{
+    background:var(--header-bg); -webkit-backdrop-filter:blur(18px) saturate(1.5); backdrop-filter:blur(18px) saturate(1.5);
+    border:1px solid var(--line); box-shadow:0 8px 28px rgba(0,0,0,0.3);
+  }
+  .msg-menu-overlay{ position:fixed; inset:0; z-index:50; background:rgba(0,0,0,0.15); }
+  .msg-menu-glass{
+    position:fixed; z-index:51; width:220px; border-radius:14px; padding:6px;
+    display:flex; flex-direction:column; gap:2px; animation:msg-menu-pop .15s ease;
+  }
+  /* .msg-menu-item se reusa tal cual en el menú "⋮" del caso
+     (.case-menu-glass, ver más abajo) — mismo look de botón de menú de
+     vidrio en los dos lugares, sin duplicar la regla. */
+  .msg-menu-glass .msg-menu-item, .case-menu-glass .msg-menu-item{
+    background:none; border:none; text-align:left; padding:11px 12px; border-radius:9px;
+    font-size:13.5px; color:var(--text); font-family:var(--sans); cursor:pointer; width:100%;
+  }
+  .msg-menu-glass .msg-menu-item:active, .case-menu-glass .msg-menu-item:active{ background:rgba(128,128,128,0.18); }
+  @keyframes msg-menu-pop{ from{ opacity:0; transform:scale(0.92); } to{ opacity:1; transform:scale(1); } }
+
+  /* ===== menú "⋮" del caso (Buscar en esta conversación, silenciar,
+     calendario/gastos, informe certificado) — mismo estilo "vidrio" que
+     el menú de acciones de un mensaje, implementado aparte (overlay/
+     panel propios) para no tocar esa lógica ya probada. ===== */
+  .case-menu-overlay{ position:fixed; inset:0; z-index:50; background:rgba(0,0,0,0.15); }
+  .case-menu-glass{
+    position:fixed; z-index:51; width:250px; border-radius:14px; padding:6px;
+    display:flex; flex-direction:column; gap:2px; animation:msg-menu-pop .15s ease;
+  }
+
+  /* ===== buscar dentro de la conversación abierta — panel flotante que
+     tapa el área de mensajes (no el composer, que sigue disponible
+     debajo) mientras se busca; se cierra con la ✕ o eligiendo un
+     resultado. ===== */
+  .chat-search-panel{
+    position:absolute; inset:0; z-index:6; border-radius:0;
+    display:flex; flex-direction:column; padding:10px 12px; overflow-y:auto;
+  }
+  .chat-search-row{ display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-shrink:0; }
+  .chat-search-row input{ flex:1; }
+  .chat-search-row .modal-close{ flex-shrink:0; }
+
+  .msg.me{ background:var(--wa-me-bg); color:var(--text); align-self:flex-end; border-bottom-right-radius:2px; }
+  .msg.them{ background:var(--wa-them-bg); color:var(--text); align-self:flex-start; border-bottom-left-radius:2px; }
+  .msg-sender{ font-size:12.5px; font-weight:600; color:var(--calm); margin-bottom:1px; }
+  .msg-text{ white-space:pre-wrap; word-break:break-word; }
+  /* fila de hora + tildes, siempre pegada abajo a la derecha de la
+     burbuja — el patrón más reconocible de WhatsApp. Un solo tilde gris
+     = enviado; doble tilde celeste = leído. No existe un estado
+     "entregado" separado de "leído" en el modelo de datos de acá, así
+     que no se inventa uno — se muestra lo que realmente se sabe. */
+  .msg-meta{ display:flex; align-items:center; justify-content:flex-end; gap:3px; margin-top:2px; }
+  .msg-time{ font-size:10.5px; color:var(--text-faint); }
+  /* "⋯" — abre el menú de acciones del mensaje con un click normal, en
+     cualquier dispositivo (el long-press/swipe en mobile es un atajo,
+     nunca la única forma de llegar a Responder/Reaccionar/Reportar). */
+  .msg-more-btn{ background:none; border:none; color:var(--text-faint); font-size:13px; line-height:1; padding:0 0 0 4px; cursor:pointer; }
+  .msg-more-btn:hover{ color:var(--text); }
+  .ticks{ display:inline-flex; color:var(--text-faint); }
+  .ticks.read{ color:var(--wa-tick-read); }
+  .verified-badge{ color:var(--wa-tick-read); vertical-align:middle; margin-left:3px; flex-shrink:0; }
+
+  /* ---- pantalla de chat: el título "Chat con X" repite lo que ya dice la
+     barra contextual de arriba ("Con X · CODIGO"), así que se oculta acá
+     para darle más alto al log de mensajes — sigue en el DOM (por si algo
+     más lo necesita) solo invisible. ---- */
+  #screen-chat #chat-title{ display:none; }
+  #screen-chat #chat-sub{ margin-bottom:4px; font-size:12px; display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; }
+  /* fila de "quién más está" arriba del chat — ver updateChatPresenceLine() en app.js */
+  .presence-chip{ display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
+  .presence-dot{ width:7px; height:7px; border-radius:50%; background:var(--text-faint); flex-shrink:0; }
+  .presence-dot.online{ background:var(--calm); box-shadow:0 0 0 2px var(--calm-dim); }
+  .presence-dot.typing{ background:var(--warn); box-shadow:0 0 0 2px var(--warn-dim); animation:presence-pulse 1s ease-in-out infinite; }
+  @keyframes presence-pulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.35; } }
+
+  /* ===== lista de casos, estilo WhatsApp (reemplaza a .case-card) ===== */
+  .wa-row-wrap{ position:relative; overflow:hidden; border-bottom:1px solid var(--line); }
+  .wa-row{ display:flex; gap:12px; padding:10px 6px; cursor:pointer; background:var(--surface); position:relative; z-index:1; }
+  .wa-row:active{ background:var(--surface-2); }
+  .wa-row-avatar-col{ position:relative; flex-shrink:0; }
+  .wa-avatar{
+    width:48px; height:48px; border-radius:50%; flex-shrink:0; overflow:hidden;
+    display:flex; align-items:center; justify-content:center; position:relative;
+    color:#fff; font-weight:700; font-size:16px; font-family:var(--sans);
+  }
+  .wa-avatar img{ width:100%; height:100%; object-fit:cover; }
+  .wa-online-dot{
+    position:absolute; bottom:0; right:0; width:12px; height:12px; border-radius:50%;
+    background:var(--calm); border:2.5px solid var(--surface);
+  }
+  .wa-extra-badge{
+    position:absolute; top:-3px; right:-3px; background:var(--surface-2); border:1px solid var(--line);
+    color:var(--text-dim); font-family:var(--mono); font-size:9px; font-weight:700;
+    min-width:16px; height:16px; border-radius:8px; display:flex; align-items:center; justify-content:center;
+  }
+  .wa-row-body{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+  .wa-row-top{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  .wa-name{ font-weight:600; font-size:14.5px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .wa-time{ flex-shrink:0; font-size:11px; color:var(--text-faint); font-family:var(--mono); }
+  .wa-row-bottom{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .wa-preview{ font-size:12.5px; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .wa-row-meta{ display:flex; gap:6px; margin-top:4px; flex-wrap:wrap; align-items:center; }
+  .wa-code-tag{ font-family:var(--mono); font-size:9px; color:var(--text-faint); background:var(--surface-2); padding:2px 7px; border-radius:8px; }
+
+  .search-result-row{ padding:9px 6px; border-bottom:1px solid var(--line); cursor:pointer; }
+  .search-result-row:active{ background:var(--surface); }
+  .search-result-top{ display:flex; justify-content:space-between; align-items:center; margin-bottom:3px; }
+  .search-result-text{ font-size:12.5px; color:var(--text-dim); line-height:1.4; }
+  .search-result-text mark{ background:var(--calm-dim); color:var(--calm); border-radius:3px; padding:0 2px; }
+
+  /* swipe hacia la izquierda para revelar cambio de estado, estilo
+     WhatsApp — o el "‹" con click, para quien no tiene touch (ver
+     toggleRowSwipe en app.js). */
+  .wa-row-actions{ position:absolute; top:0; right:0; bottom:0; display:flex; z-index:0; }
+  .swipe-action{
+    width:56px; border:none; color:#fff; font-size:10px; font-family:var(--sans); font-weight:600;
+    display:flex; align-items:center; justify-content:center; text-align:center; padding:4px; cursor:pointer;
+  }
+  .swipe-action.abierto{ background:var(--calm-dim); color:var(--calm); }
+  .swipe-action.en_proceso{ background:var(--warn-dim); color:var(--warn); }
+  .swipe-action.cerrado{ background:var(--danger-dim); color:var(--danger); }
+  .swipe-action.is-current{ opacity:0.45; } /* el estado en el que ya está el caso, atenuado */
+  .wa-swipe-hint{ align-self:center; color:var(--text-faint); font-size:16px; flex-shrink:0; padding:0 4px; cursor:pointer; }
+  /* resumen semanal + próximos eventos: colapsados por default para no
+     comerle lugar al chat — quien los quiera los despliega. */
+  .case-summary-toggle{ margin-bottom:6px; }
+  .case-summary-toggle summary{ cursor:pointer; list-style:none; font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-faint); padding:6px 2px; display:flex; align-items:center; gap:6px; }
+  .case-summary-toggle summary::-webkit-details-marker{ display:none; }
+  .case-summary-toggle summary::before{ content:'▸'; transition:transform .15s ease; }
+  .case-summary-toggle[open] summary::before{ transform:rotate(90deg); }
+  .case-summary-toggle .card:last-child{ margin-bottom:0; }
+  /* separador de fecha entre días — la píldora centrada de "HOY"/"AYER"
+     que agrupa los mensajes por día, igual que WhatsApp. Antes cada
+     mensaje solo tenía su propia hora, sin ningún corte visual entre un
+     día y el siguiente. */
+  .date-sep{ align-self:center; background:var(--surface-2); color:var(--text-dim); font-size:11px; font-family:var(--mono); text-transform:uppercase; letter-spacing:0.05em; padding:4px 13px; border-radius:8px; margin:8px 0 4px; }
+  .msg.system{ align-self:center; background:none; border:1px dashed var(--line); color:var(--text-faint); font-size:11.5px; font-family:var(--mono); text-align:center; max-width:92%; }
+  .msg.pattern{ border-color:var(--warn); color:var(--warn); }
+  .msg .flag-note{ margin-top:6px; font-size:11.5px; color:var(--warn); border-top:1px solid var(--warn-dim); padding-top:5px; }
+  .neutral-btn{ font-family:var(--mono); font-size:9.5px; text-decoration:underline; color:var(--calm); background:none; border:none; cursor:pointer; padding:0; margin-top:5px; }
+  .neutral-box{ margin-top:7px; padding:8px 9px; background:var(--surface-2); border:1px solid var(--calm-dim); border-radius:7px; font-size:12.5px; color:var(--text-dim); line-height:1.4; }
+  .neutral-box .lab{ font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:0.06em; color:var(--calm); margin-bottom:3px; }
+
+  /* ---- responder a un mensaje (hilo estilo WhatsApp) ---- */
+  .reply-btn{ font-family:var(--mono); font-size:9.5px; text-decoration:underline; color:var(--text-faint); background:none; border:none; cursor:pointer; padding:0; margin-top:4px; }
+  .reply-btn:hover{ color:var(--calm); }
+  /* la cita arriba del texto: borde de color a la izquierda, fondo un
+     toque más oscuro/claro que la burbuja — mismo lenguaje visual que
+     WhatsApp usa para "esto es lo que estás respondiendo". Clickeable
+     para saltar al mensaje original si todavía está cargado en pantalla. */
+  .msg-quote{ display:block; text-align:left; width:100%; background:rgba(0,0,0,0.08); border-left:3px solid var(--calm); border-radius:4px; padding:4px 7px; margin-bottom:4px; cursor:pointer; font:inherit; color:inherit; }
+  :root[data-theme="light"] .msg-quote{ background:rgba(0,0,0,0.05); }
+  .msg-quote .qname{ font-size:11.5px; font-weight:600; color:var(--calm); }
+  .msg-quote .qtext{ font-size:12px; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; }
+  .msg-quote-missing{ font-style:italic; color:var(--text-faint); }
+  /* franja de "Respondiendo a…" arriba del composer, con su X para
+     cancelar — mismo patrón que WhatsApp antes de escribir la respuesta. */
+  .reply-preview-bar{ display:flex; align-items:center; gap:8px; background:var(--surface-2); border:1px solid var(--calm-dim); border-left:3px solid var(--calm); border-radius:7px; padding:6px 8px; margin-bottom:8px; }
+  .reply-preview-bar .rp-body{ flex:1; min-width:0; }
+  .reply-preview-bar .rp-name{ font-size:11.5px; font-weight:600; color:var(--calm); }
+  .reply-preview-bar .rp-text{ font-size:12px; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .reply-preview-bar .rp-close{ background:none; border:none; color:var(--text-faint); font-size:16px; cursor:pointer; padding:2px 4px; flex-shrink:0; line-height:1; }
+  .reply-preview-bar .rp-close:hover{ color:var(--text); }
+
+  /* ---- mensaje fijado — banner en el tope del chat, con acento cálido
+     (var(--warn), no --calm como "responder") para distinguirse a
+     simple vista de la franja de responder/citar. Toca para saltar al
+     mensaje; la ✕ (reusa .rp-close) solo aparece para las partes. ---- */
+  .pinned-banner-bar{
+    display:flex; align-items:center; gap:8px; background:var(--surface-2);
+    border:1px solid var(--warn-dim); border-left:3px solid var(--warn);
+    border-radius:7px; padding:7px 9px; margin-bottom:8px; cursor:pointer; flex-shrink:0;
+  }
+  .pinned-banner-bar .pin-ic{ flex-shrink:0; font-size:14px; }
+  .pinned-banner-bar .pin-body{ flex:1; min-width:0; }
+  .pinned-banner-bar .pin-name{ font-size:11px; font-weight:600; color:var(--warn); }
+  .pinned-banner-bar .pin-text{ font-size:12.5px; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  /* flash breve al saltar a un mensaje citado (scrollToMessage) — para
+     que quede claro cuál es el que se estaba citando, no solo que la
+     pantalla se movió. */
+  @media (prefers-reduced-motion: no-preference){
+    .msg-highlight{ animation:msg-flash 1.1s ease; }
+    @keyframes msg-flash{ 0%,100%{ box-shadow:0 1px 0.5px rgba(0,0,0,0.13); } 25%{ box-shadow:0 0 0 2px var(--calm); } }
+  }
+
+  /* ---- deshacer envío: barra de cuenta regresiva de 8s + botón, mientras
+     el mensaje está guardado pero todavía no se transmitió a nadie más
+     (ver UNDO_SEND_WINDOW_MS). ---- */
+  .msg.pending-send{ opacity:0.88; }
+  .undo-bar-track{ height:2px; background:rgba(255,255,255,0.25); border-radius:1px; margin-top:7px; overflow:hidden; }
+  :root[data-theme="light"] .undo-bar-track{ background:rgba(0,0,0,0.12); }
+  .undo-bar-fill{ height:100%; background:currentColor; width:100%; animation-name:undo-countdown; animation-timing-function:linear; animation-fill-mode:forwards; }
+  @keyframes undo-countdown{ from{ width:100%; } to{ width:0%; } }
+  .undo-send-btn{ margin-top:6px; background:none; border:none; color:inherit; text-decoration:underline; font-size:11.5px; cursor:pointer; padding:0; opacity:0.85; }
+
+  /* ---- reacciones rápidas: solo pastillas con conteo — nada de fila
+     permanente si el mensaje no tiene ninguna todavía (el disparador
+     "😀 Reaccionar" vive en el menú de acciones, ver showMessageActionMenu
+     en app.js). ---- */
+  .reactions-row{ display:flex; gap:5px; flex-wrap:wrap; align-items:center; margin-top:6px; }
+  .reaction-pill{ background:var(--surface-2); border:1px solid var(--line); border-radius:11px; padding:2px 8px; font-size:11.5px; color:var(--text-dim); cursor:pointer; line-height:1.4; }
+  .reaction-pill.mine{ background:var(--calm-dim); border-color:var(--calm); color:var(--calm); }
+  /* .msg ya lleva position:relative (ver arriba) — el picker cuelga de
+     ahí, arriba del todo de la burbuja, se abra desde el menú de
+     acciones (toggleReactionPicker) o directo. */
+  .reaction-picker{ display:flex; position:absolute; bottom:100%; left:0; margin-bottom:4px; background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:6px 8px; gap:6px; box-shadow:0 6px 16px rgba(0,0,0,0.35); z-index:5; }
+  .reaction-picker button{ background:none; border:none; font-size:17px; cursor:pointer; padding:2px; line-height:1; }
+
+  .analyzing{ align-self:flex-end; font-family:var(--mono); font-size:11px; color:var(--text-faint); display:flex; align-items:center; gap:8px; padding:6px 4px; }
+  .analyzing .spin{ width:10px; height:10px; border-radius:50%; border:2px solid var(--line); border-top-color:var(--calm); animation:spin .7s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  .reform-card{ align-self:flex-end; max-width:90%; background:var(--surface); border:1px solid var(--warn); border-radius:12px; padding:14px; }
+  .reform-card .head{ display:flex; align-items:center; gap:6px; font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--warn); margin-bottom:10px; }
+  .reform-card .reason{ font-size:12.5px; color:var(--text-dim); margin-bottom:12px; line-height:1.4; }
+  .reform-card .block{ margin-bottom:10px; }
+  .reform-card .block .lab{ font-family:var(--mono); font-size:9.5px; text-transform:uppercase; letter-spacing:0.07em; color:var(--text-faint); margin-bottom:4px; }
+  .reform-card .block .txt{ font-size:13.5px; line-height:1.4; padding:8px 10px; border-radius:7px; }
+  .reform-card .block.orig .txt{ background:var(--surface-2); color:var(--text-dim); border:1px solid var(--danger); }
+  .reform-card .block.alt .txt{ background:var(--calm-dim); border:1px solid var(--calm); }
+  .reform-card .actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
+  .reform-card .actions button{ flex:1; font-size:12.5px; padding:9px 8px; }
+
+  .composer{ display:flex; align-items:flex-end; gap:8px; padding-top:10px; border-top:1px solid var(--line); }
+  .composer textarea{
+    /* 240px ≈ 11-12 líneas antes de necesitar scroll interno — la idea
+       (como el composer de Claude o de Messenger) es que la caja CREZCA
+       para casi cualquier mensaje real, y el scroll quede como última
+       instancia para algo excepcionalmente largo, no como lo normal. */
+    resize:none; min-height:42px; max-height:240px; padding:11px 16px;
+    border-radius:21px; overflow-y:auto; line-height:1.35;
+    transition:border-color .15s ease;
+  }
+  .composer textarea:focus{ border-color:var(--calm-dim); }
+  .composer button{ flex-shrink:0; }
+  .composer button.send-circle{
+    width:42px; height:42px; border-radius:50%; padding:0;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--calm); border:none; color:#0E1A19; cursor:pointer;
+  }
+  .composer button.send-circle:disabled{ opacity:0.4; cursor:not-allowed; }
+  .composer button.send-circle svg{ width:18px; height:18px; }
+  .composer button.attach-circle{
+    flex-shrink:0; width:38px; height:38px; border-radius:50%; padding:0; margin-bottom:2px;
+    display:flex; align-items:center; justify-content:center;
+    background:none; border:1px solid var(--line); color:var(--text-dim); cursor:pointer;
+  }
+  .composer button.attach-circle:hover{ border-color:var(--calm-dim); color:var(--text); }
+  .composer button.attach-circle svg{ width:16px; height:16px; }
+
+  /* ===== adjuntos dentro de la burbuja — foto (miniatura clickeable) o
+     tarjeta de archivo para el resto (hoy solo PDF). ===== */
+  .msg-attachment-img-link{ display:block; margin-bottom:4px; }
+  .msg-attachment-img{ display:block; width:100%; max-width:230px; max-height:280px; object-fit:cover; border-radius:8px; cursor:pointer; }
+  .msg-attachment-file{
+    display:flex; align-items:center; gap:8px; background:rgba(0,0,0,0.15); border-radius:8px;
+    padding:8px 10px; margin-bottom:4px; text-decoration:none; color:inherit; max-width:230px;
+  }
+  :root[data-theme="light"] .msg-attachment-file{ background:rgba(0,0,0,0.06); }
+  .msg-attachment-file .fname{ font-size:13px; font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .msg-attachment-file .fsize{ font-size:11px; color:var(--text-faint); flex-shrink:0; }
+
+  .quick-templates{ display:flex; flex-wrap:wrap; gap:6px; padding-top:10px; }
+  .chip{ background:var(--surface-2); border:1px solid var(--line); color:var(--text-dim); font-size:11px; padding:6px 10px; border-radius:14px; cursor:pointer; font-family:var(--sans); white-space:nowrap; }
+  .chip:hover{ border-color:var(--calm-dim); color:var(--text); }
+  .chip.chip-propose{ border-color:var(--calm-dim); color:var(--calm); }
+
+  .propose-inline{ background:var(--surface); border:1px solid var(--calm-dim); border-radius:10px; padding:12px; margin-top:8px; }
+  .propose-inline input{ margin-bottom:8px; }
+  .inline-form-actions{ display:flex; gap:8px; }
+  .inline-form-actions button{ flex-shrink:0; }
+
+  .proposal-card{ align-self:center; max-width:92%; background:var(--surface); border:1px solid var(--calm-dim); border-radius:12px; padding:13px 14px; }
+  .proposal-head{ display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:var(--text-dim); margin-bottom:6px; }
+  .proposal-head .ic{ font-size:13px; }
+  .proposal-head .ev-pill{ margin-left:auto; }
+  .proposal-detail{ font-size:14px; line-height:1.4; margin-bottom:3px; }
+  .proposal-date{ font-family:var(--mono); font-size:11px; text-transform:capitalize; color:var(--text-faint); margin-bottom:10px; }
+  .proposal-series{ font-size:11px; color:var(--text-faint); background:var(--surface-2); border-radius:6px; padding:6px 8px; margin-bottom:10px; line-height:1.4; }
+  .series-tag{ font-size:11px; }
+  .proposal-actions{ display:flex; gap:6px; align-items:center; }
+  .proposal-actions button{ flex-shrink:0; }
+  .proposal-actions .primary{ margin-left:auto; }
+  .proposal-wait{ font-size:11.5px; color:var(--text-faint); font-family:var(--mono); }
+  .text-link{ display:block; margin-top:6px; background:none; border:none; color:var(--calm); font-size:11.5px; text-decoration:underline; cursor:pointer; padding:0; font-family:var(--sans); }
+  .counter-form input{ margin-bottom:8px; }
+  .counter-actions{ display:flex; gap:8px; }
+  .counter-actions button{ flex-shrink:0; }
+  .counter-actions .primary{ flex:1; }
+
+  .event-item{ padding:12px 0; border-bottom:1px solid var(--line); }
+  .event-item:last-child{ border-bottom:none; }
+  .event-item .row1{ display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; }
+  .event-item .day{ font-family:var(--mono); font-size:11px; color:var(--calm); width:52px; flex-shrink:0; }
+  .event-item .what{ font-size:13.5px; flex:1; }
+  .ev-pill{ font-family:var(--mono); font-size:9.5px; text-transform:uppercase; letter-spacing:0.05em; padding:2px 8px; border-radius:10px; flex-shrink:0; }
+  .ev-pill.pendiente{ background:var(--warn-dim); color:var(--warn); }
+  .ev-pill.confirmado{ background:var(--calm-dim); color:var(--calm); }
+  .ev-pill.rechazado{ background:var(--danger-dim); color:var(--danger); }
+  .ev-pill.vencimiento{ background:var(--warn-dim); color:var(--warn); }
+  .event-vencimiento{ border-left:2px solid var(--warn); padding-left:10px; margin-left:-1px; }
+  .cal-day .dot.vencimiento{ background:var(--warn); }
+  .status-select-row{ display:flex; gap:6px; }
+  .status-opt{ flex:1; background:var(--surface-2); border:1px solid var(--line); color:var(--text-dim); font-size:11.5px; padding:9px 6px; border-radius:8px; cursor:pointer; font-family:var(--sans); }
+  .status-opt.active{ background:var(--calm-dim); border-color:var(--calm); color:var(--calm); font-weight:600; }
+  .event-item .who{ font-size:11px; color:var(--text-faint); }
+  .event-item .confirm-actions{ display:flex; gap:8px; margin-top:6px; }
+
+  .hist-item{ padding:12px 0; border-bottom:1px solid var(--line); }
+  .hist-item:last-child{ border-bottom:none; }
+  .hist-item .top{ display:flex; justify-content:space-between; margin-bottom:4px; }
+  .hist-item .who{ font-size:12px; font-weight:600; }
+  .hist-item .ts{ font-family:var(--mono); font-size:10.5px; color:var(--text-faint); }
+  .hist-item .txt{ font-size:13px; color:var(--text-dim); line-height:1.4; }
+  .hist-item .flag{ display:inline-block; margin-top:5px; font-family:var(--mono); font-size:9.5px; color:var(--warn); border:1px solid var(--warn-dim); background:var(--warn-dim); padding:2px 7px; border-radius:5px; text-transform:uppercase; letter-spacing:0.05em; }
+
+  .empty-hint{ font-size:13px; color:var(--text-faint); text-align:center; padding:20px 10px; }
+  .disclaimer{ font-size:11px; color:var(--text-faint); line-height:1.5; margin-top:20px; border-top:1px solid var(--line); padding-top:14px; }
+
+  /* overflow-x:hidden porque el drawer de la hamburguesa (position:fixed +
+     transform, más abajo) puede sumar overflow horizontal fantasma al
+     contenedor cuando está corrido fuera de pantalla — sin esto, abrirlo
+     empuja un scroll horizontal que no debería existir. */
+  .landing-screen{ overflow-y:auto; overflow-x:hidden; display:flex; flex-direction:column; }
+
+  /* ---- animación de entrada al scrollear: solo si el sistema no pidió
+     menos movimiento — si pidió reduced-motion, .reveal nunca queda oculto
+     y este bloque entero no aplica, así que ese público ve todo servido
+     de una sin esperar nada. --i (0,1,2...) en cada elemento escalona
+     items de una misma fila/grilla en vez de que entren todos a la vez. ---- */
+  @media (prefers-reduced-motion: no-preference){
+    .reveal{ opacity:0; transform:translateY(22px); transition:opacity .6s cubic-bezier(.2,.7,.3,1), transform .6s cubic-bezier(.2,.7,.3,1); transition-delay:calc(var(--i, 0) * 70ms); }
+    .reveal.reveal-visible{ opacity:1; transform:none; }
+  }
+
+  /* ---- sin justify-content:space-between a propósito: con 3 hijos
+     (brand, nav, actions) eso reparte el espacio EN PARTES IGUALES entre
+     los tres, dejando el nav de links flotando centrado en vez de pegado a
+     los íconos de la derecha — el margin-right:auto en .brand logra el
+     mismo "todo lo demás pegado a la derecha" sin ese efecto raro. ---- */
+  .site-header{ position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:14px 18px; padding:14px 20px; background:var(--header-bg); backdrop-filter:blur(6px); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .site-header .brand{ font-family:var(--serif); font-weight:600; font-size:17px; color:var(--text); text-decoration:none; flex-shrink:0; margin-right:auto; }
+  .site-header .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
+  .site-footer-inner .brand{ font-family:var(--serif); font-weight:600; font-size:16px; color:var(--text); text-decoration:none; }
+  .site-footer-inner .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
+  .site-header-actions{ display:flex; align-items:center; gap:8px; }
+  .hamburger-btn{ display:none; }
+  .site-nav{ display:flex; gap:18px; flex-wrap:wrap; align-items:center; width:auto; order:1; }
+  .site-header-actions{ order:2; }
+  .site-nav a{ font-size:12.5px; color:var(--text-dim); text-decoration:none; font-family:var(--sans); white-space:nowrap; }
+  .site-nav a:hover, .site-nav a.active{ color:var(--calm); }
+
+  /* ---- menú hamburguesa: por debajo de 640px los links se esconden atrás
+     del botón ☰ y se abren como un panel propio sobre el margen derecho
+     (no un dropdown pegado al header) — traslúcido con blur, con su propio
+     backdrop atrás para poder cerrarlo tocando afuera. Arriba de 640px
+     vuelve todo a la fila normal de siempre y el botón desaparece. ---- */
+  @media (max-width:639px){
+    .hamburger-btn{ display:flex; }
+    /* en mobile los íconos (con el ☰) quedan en la fila de arriba, fijos
+       al lado del logo; el panel ahora es un drawer aparte, no un renglón
+       más del header — por eso ya no comparte 'order' con .site-nav. */
+    .site-header-actions{ order:1; }
+    /* backdrop-filter en .site-header crea containing block para hijos
+       position:fixed (spec de Filter Effects) — con eso puesto, el drawer
+       de acá abajo (fixed, hijo de este header) queda "fixed" relativo al
+       header en vez de al viewport, y termina empujando scroll horizontal
+       fantasma en #login-screen. Se saca acá (queda solo el tinte de
+       --header-bg, sin blur) para que el drawer se posicione bien. */
+    /* además: .site-nav-backdrop (z-index:44) es HERMANO de .site-header
+       (z-index:20), no de .site-nav — entonces aunque .site-nav tenga
+       z-index:45, ese valor solo cuenta DENTRO del stacking context de
+       .site-header (tope real: 20), y el backdrop terminaba pintándose
+       ARRIBA del drawer entero. Un clic real en "Apariencia" (a
+       diferencia de un .click() por JS, que no pasa por hit-testing)
+       caía en el backdrop y solo cerraba el menú. Subir acá el z-index
+       de .site-header por encima del backdrop lo arregla. */
+    .site-header{ backdrop-filter:none; -webkit-backdrop-filter:none; z-index:50; }
+    .site-nav{
+      display:flex; flex-direction:column; align-items:stretch; gap:2px;
+      position:fixed; top:0; right:0; bottom:0; width:min(80vw,320px);
+      margin:0; padding:78px 20px 28px; border:none; border-left:1px solid var(--line);
+      background:var(--header-bg); -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
+      box-shadow:-10px 0 36px rgba(0,0,0,0.35);
+      transform:translateX(105%); transition:transform .32s cubic-bezier(.32,.72,.35,1);
+      z-index:45; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    }
+    .site-nav.open{ transform:translateX(0); }
+    .site-nav a{ padding:10px 4px; font-size:14px; width:100%; }
+    .site-nav-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:44; opacity:0; pointer-events:none; transition:opacity .3s ease; }
+    .site-nav-backdrop.open{ opacity:1; pointer-events:auto; }
+  }
+  /* fuera del drawer mobile (desktop, o el propio botón antes de abrirlo)
+     estos elementos no tienen que existir visualmente. */
+  .site-nav-divider{ display:none; }
+  .site-nav-action{ display:none; }
+  .site-nav-drawer-head{ display:none; }
+  @media (max-width:639px){
+    .site-nav-divider{ display:block; height:1px; background:var(--line); margin:14px 2px; flex-shrink:0; }
+    .site-nav-action{
+      display:flex; align-items:center; gap:10px; width:100%;
+      background:none; border:1px solid var(--line); color:var(--text);
+      font-family:var(--sans); font-size:13.5px; padding:11px 12px; border-radius:9px;
+      cursor:pointer; margin-bottom:8px; text-align:left;
+    }
+    .site-nav-action .ic{ font-size:15px; flex-shrink:0; width:18px; text-align:center; }
+    .site-nav-google{ background:#fff; color:#1F1F1F; border:none; font-weight:600; justify-content:center; margin-bottom:0; }
+    /* cabecera del drawer: mismo logo animado que el resto del sitio, y
+       una X explícita para cerrar — tocar afuera (el backdrop) también
+       cierra, pero un botón de cerrar adentro del propio panel es lo que
+       se espera de un drawer, no hay que depender solo del backdrop. */
+    .site-nav-drawer-head{
+      display:flex; align-items:center; justify-content:space-between;
+      margin:0 0 16px; padding-bottom:14px; border-bottom:1px solid var(--line); flex-shrink:0;
+    }
+    .site-nav-drawer-head .brand{ font-family:var(--serif); font-weight:600; font-size:17px; color:var(--text); }
+    .site-nav-drawer-head .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
+    .site-nav-close{
+      background:none; border:1px solid var(--line); color:var(--text-dim);
+      width:30px; height:30px; border-radius:8px; font-size:15px; cursor:pointer;
+      display:flex; align-items:center; justify-content:center; flex-shrink:0;
+    }
+    .site-nav-close:hover{ border-color:var(--calm-dim); color:var(--text); }
+  }
+
+  .site-footer{ border-top:1px solid var(--line); padding:24px 20px 30px; margin-top:auto; }
+  .site-footer-inner{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px; max-width:720px; margin:0 auto 14px; }
+  .site-footer .disclaimer{ max-width:720px; margin:0 auto; font-size:11px; color:var(--text-faint); line-height:1.5; border:none; padding-top:0; }
+
+  .legal-wrap{ max-width:720px; width:100%; margin:0 auto; padding:40px 22px 20px; box-sizing:border-box; }
+  .legal-wrap h1{ font-family:var(--serif); font-size:28px; font-weight:600; margin-bottom:8px; }
+  .legal-wrap .updated{ font-family:var(--mono); font-size:11px; color:var(--text-faint); margin-bottom:22px; text-transform:uppercase; letter-spacing:0.05em; }
+  .legal-note{ background:var(--warn-dim); border:1px solid var(--warn); color:var(--warn); border-radius:8px; padding:12px 14px; font-size:12.5px; line-height:1.55; margin-bottom:28px; }
+  .legal-wrap h2{ font-family:var(--serif); font-size:18px; font-weight:600; margin:30px 0 10px; }
+  .legal-wrap p{ font-size:14px; color:var(--text-dim); line-height:1.7; margin-bottom:12px; }
+  .legal-wrap ul{ margin:0 0 12px 20px; padding:0; }
+  .legal-wrap li{ font-size:14px; color:var(--text-dim); line-height:1.7; margin-bottom:6px; }
+  .legal-wrap strong{ color:var(--text); }
+  .legal-wrap a{ color:var(--calm); }
+  .landing-wrap{ width:100%; max-width:480px; margin:0 auto; padding:36px 22px 48px; text-align:left; }
+  /* el CTA ("Comenzar con Google") vive adentro del hero desde acá —
+     antes estaba mucho más abajo, después de todas las tarjetas de
+     "por qué confiar" — mismo criterio de cualquier landing: la acción
+     principal no debería necesitar tanto scroll para encontrarse. */
+  .hero-section-inner .cta-block{ margin:26px 0 8px; }
+  .hero-section-inner .cta-block .google-btn{ width:100%; justify-content:center; }
+  .hero-section-inner .cta-note{ text-align:center; font-size:11.5px; color:var(--text-faint); margin-top:9px; }
+
+  /* ---- hero de entrada: SIN el logo repetido (ya está en el header),
+     ancho completo (no acotado al mismo max-width que el resto del
+     landing, ese lo lleva .hero-section-inner por dentro). OJO: llegó a
+     tener min-height:100vh para "llenar la primera pantalla" — con el
+     contenido bien corto (título + párrafo + chips) eso dejaba un bache
+     enorme de aire vacío antes de la sección siguiente, bien visible en
+     widescreen. Ahora el alto lo pone el contenido + padding generoso,
+     no un forzado a ocupar el viewport entero. */
+  .hero-section{ width:100%; box-sizing:border-box; padding:56px 22px 44px; }
+  .hero-section-inner{ width:100%; max-width:480px; margin:0 auto; text-align:left; }
+  .hero-section-inner .tagline-center{ text-align:center; color:var(--text-faint); font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:0.07em; margin-bottom:22px; }
+  .hero-section-inner h1.screen-title{ text-align:center; font-size:30px; line-height:1.18; font-weight:700; }
+  .hero-section-inner .screen-sub{ text-align:center; font-size:15.5px; line-height:1.55; }
+  .hero-copy-solo{ max-width:640px; margin:0 auto; }
+
+  /* barra flotante de login con Google — acompaña al bajar, solo en mobile.
+     Empieza oculta; aparece con el scroll una vez que el CTA principal ya
+     quedó atrás, así siempre hay una forma rápida de entrar sin scrollear
+     de nuevo hacia arriba. background usa --header-bg (no un rgba fijo) para
+     que se vea bien en modo claro y oscuro, igual que el header sticky. */
+  .sticky-google-bar{
+    position: fixed; left:0; right:0; bottom:0; z-index:40;
+    padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px));
+    background: var(--header-bg);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    border-top: 1px solid var(--line);
+    opacity: 0; transform: translateY(100%); pointer-events: none;
+    transition: opacity .25s ease, transform .25s ease;
+  }
+  .sticky-google-bar.show{ opacity:1; transform: translateY(0); pointer-events:auto; }
+  .sticky-google-bar button{
+    width:100%; display:flex; align-items:center; justify-content:center; gap:8px;
+    padding:11px 16px; border-radius:8px; border:none; background:#fff; color:#1F1F1F;
+    font-family:var(--sans); font-size:13.5px; font-weight:600; cursor:pointer;
+  }
+  @media (min-width: 700px){ .sticky-google-bar{ display:none; } }
+  .section-heading{ font-family:var(--serif); font-size:17px; font-weight:600; margin:36px 0 14px; }
+
+  .steps{ display:flex; flex-direction:column; gap:14px; }
+  .step-item{ display:flex; gap:12px; align-items:flex-start; }
+  .step-item .step-num{ flex-shrink:0; width:26px; height:26px; border-radius:50%; background:var(--surface-2); border:1px solid var(--calm-dim); color:var(--calm); font-family:var(--mono); font-size:12px; display:flex; align-items:center; justify-content:center; }
+  .step-item .step-body .t{ font-size:14px; font-weight:600; margin-bottom:2px; }
+  .step-item .step-body .d{ font-size:13px; color:var(--text-dim); line-height:1.45; }
+
+  /* flexbox en vez de grid a propósito: con un número impar de tarjetas
+     (5), un grid deja la última sola pegada a la izquierda en pantallas
+     anchas — flex-wrap + justify-content:center centra esa fila incompleta
+     en vez de dejarla huérfana. */
+  .feature-grid{ display:flex; flex-wrap:wrap; justify-content:center; gap:12px; }
+  .feature-item{ background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:14px; flex:1 1 150px; max-width:220px; }
+  /* ---- íconos de "Qué incluye": SVG en línea vía mask-image (no emoji) —
+     nítidos a cualquier tamaño/densidad de pantalla y recoloreables con
+     background-color, así que siguen el tema claro/oscuro solos. ---- */
+  .feature-item .ic{ display:flex; align-items:center; justify-content:center; width:34px; height:34px; margin-bottom:10px; border-radius:9px; background:var(--calm-dim); flex-shrink:0; }
+  .feature-item .ic::before{ content:''; display:block; width:18px; height:18px; background:var(--calm); -webkit-mask-repeat:no-repeat; mask-repeat:no-repeat; -webkit-mask-position:center; mask-position:center; -webkit-mask-size:contain; mask-size:contain; }
+  .ic-chat::before{ -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z'/%3E%3C/svg%3E"); mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z'/%3E%3C/svg%3E"); }
+  .ic-calendar::before{ -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='5' width='18' height='16' rx='2'/%3E%3Cpath d='M16 3v4M8 3v4M3 10h18'/%3E%3C/svg%3E"); mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='5' width='18' height='16' rx='2'/%3E%3Cpath d='M16 3v4M8 3v4M3 10h18'/%3E%3C/svg%3E"); }
+  .ic-archive::before{ -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='4' rx='1'/%3E%3Cpath d='M4 8v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8M10 13h4'/%3E%3C/svg%3E"); mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='4' rx='1'/%3E%3Cpath d='M4 8v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8M10 13h4'/%3E%3C/svg%3E"); }
+  .ic-shield::before{ -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z'/%3E%3Cpath d='M9 12l2 2 4-4'/%3E%3C/svg%3E"); mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z'/%3E%3Cpath d='M9 12l2 2 4-4'/%3E%3C/svg%3E"); }
+  .ic-assistant::before{ -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='8' width='16' height='12' rx='3'/%3E%3Cpath d='M12 8V4M9 4h6'/%3E%3Ccircle cx='9' cy='14' r='1.1' fill='black' stroke='none'/%3E%3Ccircle cx='15' cy='14' r='1.1' fill='black' stroke='none'/%3E%3C/svg%3E"); mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='8' width='16' height='12' rx='3'/%3E%3Cpath d='M12 8V4M9 4h6'/%3E%3Ccircle cx='9' cy='14' r='1.1' fill='black' stroke='none'/%3E%3Ccircle cx='15' cy='14' r='1.1' fill='black' stroke='none'/%3E%3C/svg%3E"); }
+  .feature-item .t{ font-size:13px; font-weight:600; margin-bottom:4px; }
+  .feature-item .d{ font-size:12px; color:var(--text-dim); line-height:1.4; }
+
+  .guest-note{ background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:14px 16px; font-size:12.5px; color:var(--text-dim); line-height:1.5; }
+  .guest-note b{ color:var(--text); }
+
+  .faq-list{ border-top:1px solid var(--line); }
+  .faq-item{ border-bottom:1px solid var(--line); padding:14px 0; }
+  .faq-item summary{ cursor:pointer; font-size:14px; font-weight:600; color:var(--text); list-style:none; display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .faq-item summary::-webkit-details-marker{ display:none; }
+  .faq-item summary::after{ content:'+'; font-family:var(--mono); font-size:17px; color:var(--text-faint); flex-shrink:0; }
+  .faq-item[open] summary::after{ content:'–'; }
+  .faq-item p{ margin-top:10px; font-size:13px; color:var(--text-dim); line-height:1.55; }
+
+  .mini-event{ display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .mini-event:last-child{ border-bottom:none; }
+  .mini-event .day{ font-family:var(--mono); font-size:11px; color:var(--calm); width:50px; flex-shrink:0; }
+  .mini-event .what{ flex:1; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  .member-row{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .member-row:last-child{ border-bottom:none; }
+
+  .sync-actions{ display:flex; flex-direction:column; gap:8px; margin-top:2px; }
+  .sync-actions .sync-link{ display:flex; align-items:center; gap:10px; background:var(--surface-2); border:1px solid var(--line); color:var(--text); font-size:13px; padding:10px 12px; border-radius:8px; text-decoration:none; font-family:var(--sans); cursor:pointer; }
+  .sync-actions .sync-link:hover{ border-color:var(--calm-dim); }
+  .sync-actions .sync-link .ic{ font-size:15px; flex-shrink:0; }
+  @media (min-width:560px){ .sync-actions{ flex-direction:row; flex-wrap:wrap; } .sync-actions .sync-link{ flex:1 1 220px; } }
+
+  /* ---- Tablet and up: give the app shell breathing room instead of a full-bleed mobile column ---- */
+  @media (min-width:700px){
+    header.topbar{ max-width:728px; margin-left:auto; margin-right:auto; padding:10px 12px 10px 20px; }
+    /* la píldora no se estira a lo ancho de un monitor: se centra con el mismo
+       ancho de columna que el contenido, si no los tres ítems quedan flotando
+       a metros uno del otro. */
+    nav.tabs{ left:50%; right:auto; transform:translateX(-50%); width:min(calc(100% - 48px), 460px); }
+    .pad{ max-width:680px; margin:0 auto; padding:26px 24px; }
+    .chat-wrap{ height:calc(100vh - 300px); }
+
+    /* la barra contextual (Chat/Calendario/...) se armó pensando en mobile
+       (scroll horizontal como red de seguridad para que nunca envuelva a una
+       segunda línea) — en pantallas anchas los 5 ítems entran sobrados, así
+       que en vez de quedar pegada a la izquierda con lugar de sobra (y a
+       veces mostrando la barra de scroll del navegador), se alinea con el
+       resto del layout y las pestañas se centran sin scroll. */
+    .case-tabs-info{ padding-left:max(24px, calc((100% - 680px)/2)); padding-right:max(24px, calc((100% - 680px)/2)); }
+    .case-tabs-scroller{ justify-content:center; overflow-x:visible; padding-left:max(24px, calc((100% - 680px)/2)); padding-right:max(24px, calc((100% - 680px)/2)); }
+  }
+
+  /* ---- Desktop: landing gets a wider canvas ---- */
+  @media (min-width:900px){
+    .landing-wrap{ max-width:900px; padding:64px 40px 72px; }
+    .hero-section-inner{ max-width:760px; }
+    .hero-section-inner h1.screen-title{ font-size:44px; line-height:1.12; }
+    .hero-section-inner .screen-sub{ font-size:17px; }
+
+    /* misma especificidad que ".hero-section-inner .cta-block" de más
+       arriba (margin:26px 0 8px) — sin igualarla acá, ese margin
+       shorthand con left/right:0 le ganaba a este
+       margin-left/right:auto sin importar que esta regla viniera
+       después en la hoja de estilos (la especificidad manda por sobre
+       el orden), y el botón quedaba pegado a la izquierda en vez de
+       centrado. */
+    .hero-section-inner .cta-block{ max-width:360px; margin-left:auto; margin-right:auto; }
+
+    .steps{ flex-direction:row; gap:20px; }
+    .step-item{ flex-direction:column; flex:1; }
+
+    /* "Seguridad y privacidad" + "Antes de que preguntes" uno al lado del
+       otro en pantallas anchas — cada .split-card pierde el max-width:480
+       fijo (así puede crecer) y se reparte el espacio con flex. */
+    /* align-items:stretch (default) a propósito, no flex-start — con
+       contenido tan distinto entre las dos (4 puntos vs. 3 preguntas)
+       quedaban de alturas bien distintas una al lado de la otra, se
+       sentía descompensado. Estiradas a la misma altura leen como un
+       par a juego aunque el contenido de adentro no llegue a llenarla. */
+    .split-cards{ display:flex; gap:16px; max-width:900px; margin:0 auto 24px; }
+    .split-cards .split-card{ flex:1; max-width:none; margin:0; min-width:0; }
+
+    /* "Probalo vos mismo" + "Así se ve en la práctica" uno al lado del
+       otro — mismo criterio que .split-cards de acá arriba. */
+    .try-showcase-row{ flex-direction:row; align-items:flex-start; max-width:900px; margin-left:auto; margin-right:auto; }
+    .try-showcase-row .hero-demo, .try-showcase-row .showcase{ flex:1; max-width:none; margin:0; min-width:0; }
+  }
+
+  /* ---- Small phones: tighten up so nothing crowds ---- */
+  @media (max-width:380px){
+    .landing-wrap{ padding:28px 16px 40px; }
+    .hero-section{ padding:28px 16px; }
+    .feature-item{ flex-basis:100%; max-width:none; }
+  }
+
+  /* ---- Pantallas anchas (monitor grande, ventana maximizada): el
+     landing dejaba de crecer en 900px y quedaba una columna angosta
+     nadando en medio de mucho espacio vacío a los lados — acá se le da
+     más ancho real (no solo más margen) y una grilla de 5 columnas para
+     "Qué incluye" en vez de que se acomode como pueda con flex-wrap. ---- */
+  @media (min-width:1280px){
+    .landing-wrap{ max-width:1240px; padding:72px 56px 90px; }
+    .hero-section{ padding:40px 56px; }
+    /* el texto del hero se queda en un ancho de lectura cómodo (860px)
+       aunque .landing-wrap crezca a 1240 más abajo — ese ancho mayor es
+       para la grilla de "Qué incluye", no para un título suelto. */
+    .hero-section-inner{ max-width:860px; }
+    .hero-section-inner h1.screen-title{ font-size:54px; line-height:1.1; }
+    .hero-section-inner .screen-sub{ font-size:19px; }
+    .feature-grid{ flex-wrap:nowrap; }
+    .feature-item{ flex:1 1 0; max-width:none; }
+    .steps{ gap:28px; }
+  }
+
+  /* ---- fila de confianza bajo el hero: chips cortos, sin prometer nada
+     que no podamos sostener (nada de números inventados) — solo hechos
+     verificables en el momento (gratis para empezar, hecho en Argentina,
+     sin tarjeta). Empuja la sensación de "esto es serio" sin storytelling
+     de más. ---- */
+  .trust-row{ display:flex; flex-wrap:wrap; gap:10px 12px; justify-content:center; margin:22px 0 4px; }
+  .trust-chip{ display:flex; align-items:center; gap:7px; font-size:13px; color:var(--text-dim); background:var(--surface); border:1px solid var(--line); border-radius:20px; padding:8px 15px; }
+  .trust-chip svg{ width:15px; height:15px; color:var(--calm); flex-shrink:0; }
+
+  /* ---- escudos de confianza: a propósito más "sello" que los chips de
+     arriba (ícono grande en círculo, texto abajo) — chips = datos
+     puntuales cortos; esto = 4 razones de fondo para confiar, con más
+     peso visual porque van justo antes del botón de entrar. ---- */
+  .trust-badges{ display:grid; grid-template-columns:repeat(2,1fr); gap:14px 10px; max-width:420px; margin:8px auto 0; }
+  .trust-badge{ display:flex; flex-direction:column; align-items:center; text-align:center; gap:4px; }
+  .tb-ic{ width:40px; height:40px; border-radius:50%; background:var(--calm-dim); color:var(--calm); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .tb-ic svg{ width:19px; height:19px; }
+  .tb-label{ font-size:12.5px; font-weight:600; color:var(--text); line-height:1.25; }
+  .tb-sub{ font-size:10.5px; color:var(--text-faint); }
+  @media (min-width:560px){ .trust-badges{ grid-template-columns:repeat(4,1fr); max-width:560px; } }
+
+  /* ---- showcase animado: reformula un mensaje solo, en loop, para que
+     se vea el valor del producto sin que nadie tenga que escribir nada.
+     Dos burbujas fijas en el DOM (mismo layout que .bubble de siempre) —
+     el texto se cambia por JS cada pocos segundos con un fade corto; con
+     reduced-motion, el fade se salta y el texto cambia directo. ---- */
+  .showcase{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:18px; width:100%; max-width:480px; margin:0 auto; position:relative; overflow:hidden; }
+  .showcase::before{
+    content:''; position:absolute; inset:-40% -20%; z-index:0; pointer-events:none;
+    background:radial-gradient(circle at 30% 20%, var(--calm-dim), transparent 55%),
+               radial-gradient(circle at 80% 80%, var(--calm-dim), transparent 50%);
+    opacity:0.55; animation:showcase-drift 14s ease-in-out infinite alternate;
+  }
+  @media (prefers-reduced-motion: reduce){ .showcase::before{ animation:none; } }
+  @keyframes showcase-drift{ from{ transform:translate(0,0) scale(1); } to{ transform:translate(-3%,3%) scale(1.08); } }
+  .showcase > *{ position:relative; z-index:1; }
+  .showcase .bubble{ transition:opacity .35s ease; }
+  .showcase .bubble.swap{ opacity:0; }
+</style>
+</head>
+<body>
+
+<header class="topbar" id="topbar" style="display:none">
+  <div class="brand-slot">
+    <div class="brand bridge-logo">Puente<em>digital</em></div>
+  </div>
+  <div class="topbar-actions">
+    <button class="icon-btn install-btn only-wide" id="install-btn-app" onclick="promptInstall()" hidden title="Instalar app" aria-label="Instalar app"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11"/><path d="m7.5 9.5 4.5 4.5 4.5-4.5"/><path d="M4 16v2.5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V16"/></svg></button>
+    <button class="icon-btn only-wide" id="notify-toggle" title="Notificaciones" aria-label="Notificaciones"></button>
+    <button class="icon-btn theme-btn only-wide" onclick="toggleTheme()" title="Cambiar tema" aria-label="Cambiar tema"></button>
+    <button class="icon-btn only-wide" onclick="openAppSettingsModal()" title="Configuración" aria-label="Configuración"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M18.9 14.1a1.6 1.6 0 0 0 .32 1.76l.06.06a1.9 1.9 0 1 1-2.69 2.69l-.06-.06a1.6 1.6 0 0 0-1.76-.32 1.6 1.6 0 0 0-.97 1.46v.16a1.9 1.9 0 1 1-3.8 0v-.08a1.6 1.6 0 0 0-1.05-1.46 1.6 1.6 0 0 0-1.76.32l-.06.06a1.9 1.9 0 1 1-2.69-2.69l.06-.06a1.6 1.6 0 0 0 .32-1.76 1.6 1.6 0 0 0-1.46-.97H3.1a1.9 1.9 0 1 1 0-3.8h.08a1.6 1.6 0 0 0 1.46-1.05 1.6 1.6 0 0 0-.32-1.76l-.06-.06A1.9 1.9 0 1 1 6.95 4.85l.06.06a1.6 1.6 0 0 0 1.76.32h.08a1.6 1.6 0 0 0 .97-1.46V3.6a1.9 1.9 0 1 1 3.8 0v.08a1.6 1.6 0 0 0 .97 1.46 1.6 1.6 0 0 0 1.76-.32l.06-.06a1.9 1.9 0 1 1 2.69 2.69l-.06.06a1.6 1.6 0 0 0-.32 1.76v.08a1.6 1.6 0 0 0 1.46.97h.16a1.9 1.9 0 1 1 0 3.8h-.08a1.6 1.6 0 0 0-1.46.97Z"/></svg></button>
+    <a class="icon-btn only-wide" id="admin-link" href="/admin.html" hidden title="Panel de administración" aria-label="Panel de administración"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2 19 6v5.4c0 4.2-2.9 7.9-7 9-4.1-1.1-7-4.8-7-9V6l7-2.8Z"/><path d="m9.4 12.1 1.9 1.9 3.4-3.6"/></svg></a>
+    <button class="account-btn" id="account-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" onclick="toggleAccountMenu(event)">
+      <span id="account-avatar"></span>
+      <span class="account-name" id="account-name"></span>
+      <svg class="caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9.5 6 6 6-6"/></svg>
+    </button>
+  </div>
+  <div class="account-menu" id="account-menu" role="menu" aria-labelledby="account-btn"></div>
+</header>
+<div class="account-menu-backdrop" id="account-menu-backdrop" onclick="closeAccountMenu()"></div>
+
+<div id="connection-banner" class="status-banner warn" style="display:none; margin:0; border-radius:0; justify-content:center;">
+  <span class="dot"></span>Reconectando… los mensajes nuevos pueden tardar en aparecer.
+</div>
+
+<nav class="case-tabs" id="case-tabs">
+  <div class="case-tabs-info" id="case-tabs-info"></div>
+  <div class="case-switcher" id="case-switcher" style="display:none"></div>
+  <div class="case-switcher-backdrop" id="case-switcher-backdrop" onclick="closeCaseSwitcher()" style="display:none"></div>
+  <div class="case-tabs-scroller">
+    <button data-screen="chat" onclick="goTo('chat')"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v11.5H8.5L4 19.5V4Z"/></svg></span>Chat<span class="dot-alert" id="dot-chat"></span></button>
+    <button data-screen="calendario" onclick="goTo('calendario')"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg></span>Calendario<span class="dot-alert" id="dot-calendario"></span></button>
+    <button data-screen="gastos" onclick="goTo('gastos')"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6.5" width="19" height="12" rx="2"/><circle cx="12" cy="12.5" r="3"/><path d="M5.5 6.5v0M18.5 17.5v0"/></svg></span>Gastos</button>
+    <button data-screen="historial" onclick="goTo('historial')"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/><path d="M10 13h4"/></svg></span>Historial</button>
+    <button data-screen="asistente" onclick="goTo('asistente')"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="11" rx="2"/><path d="M12 8V5M9 5h6"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M9 17h6"/></svg></span>Asistente</button>
+  </div>
+</nav>
+
+<main id="main" style="display:none">
+
+  <section class="screen active" id="screen-inicio">
+    <div class="pad">
+      <h1 class="screen-title">Mis casos</h1>
+      <p class="screen-sub" id="inicio-sub">Todos los canales de los que sos parte.</p>
+      <div id="inicio-content"></div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-borrador">
+    <div class="pad">
+      <h1 class="screen-title">Borrador privado</h1>
+      <p class="screen-sub">Probá la reformulación sin crear ni unirte a ningún canal. Nada de esto se guarda — cada vez que entrás acá arranca en blanco. Copiá el resultado y pegalo donde ya le escribís a la otra persona.</p>
+      <div id="borrador-content"></div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-config">
+    <div class="pad">
+      <h1 class="screen-title">Configurar caso</h1>
+      <p class="screen-sub">Integrantes, invitaciones y accesos de este canal.</p>
+      <div id="config-content"></div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-chat">
+    <div class="pad" style="padding-bottom:0; padding-top:10px">
+      <h1 class="screen-title" style="font-size:20px; margin-bottom:2px" id="chat-title">Chat mediado</h1>
+      <p class="screen-sub" style="margin-bottom:10px" id="chat-sub"></p>
+      <div id="case-summary-slot"></div>
+    </div>
+    <div class="pad" style="padding-top:0" id="chat-body"></div>
+  </section>
+
+  <section class="screen" id="screen-calendario">
+    <div class="pad">
+      <h1 class="screen-title">Calendario y acuerdos</h1>
+      <p class="screen-sub">Entregas, horarios y acuerdos. Un pedido queda pendiente hasta que la otra parte lo confirma.</p>
+      <div id="calendario-content"></div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-gastos">
+    <div class="pad">
+      <h1 class="screen-title">Gastos compartidos</h1>
+      <p class="screen-sub">Registrá un gasto para dividir. Queda pendiente hasta que la otra parte lo confirma. No se procesan pagos reales, solo el registro.</p>
+      <div id="gastos-content"></div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-historial">
+    <div class="pad">
+      <h1 class="screen-title">Historial</h1>
+      <p class="screen-sub">Registro completo. Incluye mensajes, intervenciones de la IA y alertas de patrón.</p>
+      <div id="historial-content"></div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-asistente">
+    <div class="pad" style="padding-bottom:6px">
+      <h1 class="screen-title" style="font-size:20px; margin-bottom:2px">Asistente</h1>
+      <p class="screen-sub" style="margin-bottom:10px">Preguntale sobre lo que pasó o lo que viene en este canal — responde solo con datos reales del historial, no da consejo legal ni terapéutico.</p>
+    </div>
+    <div class="pad" style="padding-top:0" id="asistente-body"></div>
+  </section>
+
+</main>
+
+<div id="login-screen" class="landing-screen" style="display:none;">
+<header class="site-header">
+  <a href="/chat.html" class="brand bridge-logo">Puente<em>digital</em></a>
+  <div class="site-header-actions">
+    <button class="icon-btn install-btn" id="install-btn-landing" onclick="promptInstall()" hidden title="Instalar app" aria-label="Instalar app"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11"/><path d="m7.5 9.5 4.5 4.5 4.5-4.5"/><path d="M4 16v2.5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V16"/></svg></button>
+    <button class="icon-btn theme-btn" onclick="toggleTheme()" title="Cambiar tema" aria-label="Cambiar tema"></button>
+    <button class="icon-btn hamburger-btn" id="hamburger-btn" onclick="toggleMobileNav()" aria-label="Menú" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  </div>
+  <nav class="site-nav" id="site-nav">
+    <div class="site-nav-drawer-head">
+      <span class="brand bridge-logo">Puente<em>digital</em></span>
+      <button class="site-nav-close" onclick="toggleMobileNav()" aria-label="Cerrar menú">✕</button>
+    </div>
+    <a href="/chat.html" class="active">Inicio</a>
+    <a href="/chat.html#faq">FAQ</a>
+    <a href="/legal.html">Marco legal</a>
+    <a href="/terminos.html">Términos</a>
+    <a href="/privacidad.html">Privacidad</a>
+    <div class="site-nav-divider" aria-hidden="true"></div>
+    <button class="site-nav-action" id="site-nav-theme-btn" onclick="toggleThemeWash(event)">
+      <span class="ic" id="site-nav-theme-ic">🌙</span><span id="site-nav-theme-label">Apariencia: oscuro</span>
+    </button>
+    <button class="site-nav-action install-btn" id="site-nav-install-btn" onclick="promptInstall()" hidden>
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="m7.5 9.5 4.5 4.5 4.5-4.5"/><path d="M4 16v2.5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V16"/></svg></span>Instalar app
+    </button>
+    <button class="site-nav-action site-nav-google" onclick="location.href='/auth/google?next=/chat.html'">
+      <svg width="16" height="16" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
+      Continuar con Google
+    </button>
+  </nav>
+</header>
+<div class="site-nav-backdrop" id="site-nav-backdrop" onclick="toggleMobileNav()"></div>
+
+<section class="hero-section">
+  <div class="hero-section-inner">
+    <div class="hero-copy hero-copy-solo">
+      <h1 class="screen-title">Antes de mandarlo, mirá cómo sonaría distinto.</h1>
+      <p class="screen-sub">Un tercer canal, no un árbitro. Para cuando hay que seguir coordinando con la otra persona —horarios, entregas, acuerdos— pero cada mensaje corre el riesgo de escalar. Nadie decide quién tiene razón acá: te ayudamos a que lo que decís quede centrado en hechos.</p>
+      <div class="trust-row">
+        <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>Cifrado en tránsito</span>
+        <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/></svg>Gratis para empezar</span>
+        <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg>Sin tarjeta</span>
+        <span class="trust-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 12l2 2 4-4"/></svg>Hecho en Argentina</span>
+      </div>
+
+      <!-- ---- escudos de confianza: más visuales que los chips de arriba
+           a propósito (ícono grande en círculo + texto abajo, como un
+           sello) — mismos hechos ya verificados contra privacidad.html
+           y el resto del sitio, nada inventado para la ocasión. ---- -->
+      <div class="trust-badges">
+        <div class="trust-badge">
+          <span class="tb-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg></span>
+          <div class="tb-label">Conexión cifrada</div>
+          <div class="tb-sub">HTTPS de punta a punta</div>
+        </div>
+        <div class="trust-badge">
+          <span class="tb-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-3.3 3.6-6 8-6s8 2.7 8 6"/></svg></span>
+          <div class="tb-label">Cuentas reales</div>
+          <div class="tb-sub">No un código adivinable</div>
+        </div>
+        <div class="trust-badge">
+          <span class="tb-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/><path d="M9.5 12l1.8 1.8L15 10"/></svg></span>
+          <div class="tb-label">Tus datos no se venden</div>
+          <div class="tb-sub">Nunca, a nadie</div>
+        </div>
+        <div class="trust-badge">
+          <span class="tb-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></span>
+          <div class="tb-label">Vos ves todo antes</div>
+          <div class="tb-sub">Nada cambia en silencio</div>
+        </div>
+      </div>
+
+      <div class="cta-block">
+        <button class="ghost cta-3d" style="width:fit-content; max-width:260px; margin:0 auto; display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 18px; background:#fff; color:#1F1F1F; border:none;" onclick="location.href='/auth/google?next=/chat.html'">
+          <svg width="16" height="16" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
+          Comenzar con Google
+        </button>
+        <p class="cta-note">Gratis para empezar, sin tarjeta ni plan pago todavía. El canal queda atado a tu cuenta (de Google o tu número de WhatsApp), no a un código que cualquiera pueda adivinar.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="landing-wrap">
+
+  <div class="try-showcase-row">
+    <div class="hero-demo" id="hero-demo">
+      <div class="eyebrow">Probalo vos mismo — sin registrarte</div>
+      <textarea id="demo-input" placeholder="Escribí un mensaje como el que le mandarías a la otra persona…" style="min-height:70px; margin-bottom:10px;"></textarea>
+      <button class="ghost cta-3d cta-3d-glow" style="width:100%;" onclick="runDemo()" id="demo-btn">Revisar mensaje</button>
+      <div id="demo-result" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="showcase reveal" id="showcase">
+      <div class="eyebrow">Así se ve en la práctica</div>
+      <div class="bubble-label">Mensaje original</div>
+      <div class="bubble original" id="showcase-orig">Sos un desastre, siempre llegás tarde.</div>
+      <div class="bubble-label">Lo que sugiere la IA antes de enviarlo</div>
+      <div class="bubble suggested" id="showcase-sug">Llegaste 15 minutos tarde a la entrega de hoy. ¿Podemos coordinar un margen para la próxima vez?</div>
+    </div>
+  </div>
+
+  <div class="split-cards">
+    <div class="card reveal split-card">
+      <div class="eyebrow">Seguridad y privacidad</div>
+      <div style="display:flex; gap:10px; margin-bottom:14px;">
+        <span style="flex-shrink:0; color:var(--calm);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg></span>
+        <p style="font-size:13px;"><strong>Cifrado en tránsito</strong><br><span style="color:var(--text-dim)">Todo lo que escribís viaja cifrado (HTTPS) de tu dispositivo a nuestro servidor, como cualquier banco o app seria.</span></p>
+      </div>
+      <div style="display:flex; gap:10px; margin-bottom:14px;">
+        <span style="flex-shrink:0; color:var(--calm);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v11.5H8.5L4 19.5V4Z"/></svg></span>
+        <p style="font-size:13px;"><strong>Acceso restringido</strong><br><span style="color:var(--text-dim)">Solo ven el canal las personas que vos invitaste — ni siquiera un profesional puede entrar sin que se lo asignen explícitamente.</span></p>
+      </div>
+      <div style="display:flex; gap:10px; margin-bottom:14px;">
+        <span style="flex-shrink:0; color:var(--calm);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></span>
+        <p style="font-size:13px;"><strong>Transparencia</strong><br><span style="color:var(--text-dim)">Nunca cambiamos un mensaje en silencio. Todo lo que la IA sugiere, lo ves vos antes de decidir si lo mandás.</span></p>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <span style="flex-shrink:0; color:var(--calm);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 7.5-1.9"/></svg></span>
+        <p style="font-size:13px;"><strong>Acceso revocable</strong><br><span style="color:var(--text-dim)">Si invitaste a un profesional a un caso y ya no hace falta que esté, su acceso se puede revocar — no queda ahí para siempre.</span></p>
+      </div>
+    </div>
+
+    <div class="card reveal split-card">
+      <div class="eyebrow">Antes de que preguntes</div>
+      <p style="font-size:13px; margin-bottom:12px;"><strong>¿Alguien lee mis mensajes?</strong><br><span style="color:var(--text-dim)">Pasan por un sistema automático antes de enviarse. Nadie de una oficina los mira.</span></p>
+      <p style="font-size:13px; margin-bottom:12px;"><strong>¿Esto va a cambiar cómo me responde la otra persona?</strong><br><span style="color:var(--text-dim)">Eso no está en nuestras manos. Sí te ayuda a que lo que vos mandás no te juegue en contra.</span></p>
+      <p style="font-size:13px;"><strong>¿Necesito instalar algo?</strong><br><span style="color:var(--text-dim)">No — funciona desde el navegador. Podés instalarla como acceso directo si querés notificaciones más rápidas, pero nunca es obligatorio.</span></p>
+    </div>
+  </div>
+
+  <div class="section-heading reveal">Cómo empezar</div>
+  <div class="steps">
+    <div class="step-item reveal" style="--i:0">
+      <div class="step-num">1</div>
+      <div class="step-body"><div class="t">Creá tu canal</div><div class="d">Iniciás sesión con Google y armás un canal en segundos. Queda atado a tu cuenta, no a un link que cualquiera pueda reusar.</div></div>
+    </div>
+    <div class="step-item reveal" style="--i:1">
+      <div class="step-num">2</div>
+      <div class="step-body"><div class="t">Invitás a la otra persona</div><div class="d">Le compartís el link. Puede entrar con su propia cuenta de Google, o como invitada sin crear nada si todavía no está lista para eso.</div></div>
+    </div>
+    <div class="step-item reveal" style="--i:2">
+      <div class="step-num">3</div>
+      <div class="step-body"><div class="t">Se comunican por el canal</div><div class="d">Cada mensaje pasa por la IA antes de llegar. Si detecta un tono que puede escalar, propone una alternativa antes de enviarlo.</div></div>
+    </div>
+  </div>
+
+  <div class="section-heading reveal">Qué incluye</div>
+  <div class="feature-grid">
+    <div class="feature-item reveal" style="--i:0"><span class="ic ic-chat" aria-hidden="true"></span><div class="t">Chat moderado en vivo</div><div class="d">Mensajes y alertas en tiempo real, sin refrescar la página.</div></div>
+    <div class="feature-item reveal" style="--i:1"><span class="ic ic-calendar" aria-hidden="true"></span><div class="t">Calendario de acuerdos</div><div class="d">Horarios y entregas quedan pendientes hasta que la otra parte los confirma.</div></div>
+    <div class="feature-item reveal" style="--i:2"><span class="ic ic-archive" aria-hidden="true"></span><div class="t">Historial exportable</div><div class="d">Registro completo de mensajes e intervenciones de la IA, por si lo necesitás después.</div></div>
+    <div class="feature-item reveal" style="--i:3"><span class="ic ic-shield" aria-hidden="true"></span><div class="t">Cuenta real, no un código</div><div class="d">Cada canal está atado a cuentas de Google verdaderas — no a un código adivinable.</div></div>
+    <div class="feature-item reveal" style="--i:4"><span class="ic ic-assistant" aria-hidden="true"></span><div class="t">Asistente de historial</div><div class="d">Preguntale qué pasó o qué viene — responde solo con datos reales de tu canal.</div></div>
+  </div>
+
+  <div class="section-heading reveal">Para quién es</div>
+  <p class="guest-note reveal">Pensado para <b>padres y madres separados</b> que necesitan seguir coordinando la crianza compartida, pero también sirve para cualquier situación —familiar, de convivencia, entre socios— donde hace falta un canal con registro y con menos fricción que un chat común.</p>
+
+  <div class="section-heading reveal" id="faq">Preguntas frecuentes</div>
+  <div class="faq-list">
+    <details class="faq-item reveal" name="faq">
+      <summary>¿Cómo funciona la moderación con IA?</summary>
+      <p>Cada mensaje pasa por un análisis antes de enviarse. Si detecta lenguaje que puede escalar el conflicto (insultos, acusaciones, sarcasmo), te muestra una alternativa más neutral antes de que decidas — vos elegís si usarla o mandar el mensaje original igual.</p>
+    </details>
+    <details class="faq-item reveal" name="faq">
+      <summary>¿La otra persona necesita crear una cuenta de Google?</summary>
+      <p>No. Podés invitarla con un link que no requiere cuenta ni instalar nada — entra desde el navegador, escribe su nombre y ya puede leer y responder.</p>
+    </details>
+    <details class="faq-item reveal" name="faq">
+      <summary>¿Quién puede ver los mensajes del canal?</summary>
+      <p>Por defecto, solo las dos partes del canal. La única "tercera parte" automática es la IA, que analiza cada mensaje al momento de enviarse, no un archivo que alguien revisa después. Opcionalmente, cualquiera de las dos partes puede invitar a un mediador/a o a un estudio jurídico con acceso de <strong>solo lectura</strong> (no pueden escribir mensajes ni resolver acuerdos) — y ese ingreso nunca es un acceso oculto: siempre queda visible para ambas partes en la lista de integrantes del canal y en el chat. Quien invita puede elegir si además se anuncia con un mensaje en medio de la conversación.</p>
+    </details>
+    <details class="faq-item reveal" name="faq">
+      <summary>¿Esto reemplaza a un abogado, mediador o terapeuta?</summary>
+      <p>No. Es una herramienta de comunicación, no asesoramiento legal ni profesional. En situaciones de violencia o riesgo, contactá a las autoridades correspondientes o a la línea 144 / 137.</p>
+    </details>
+    <details class="faq-item reveal" name="faq">
+      <summary>¿Qué pasa con los horarios y entregas que acordamos?</summary>
+      <p>Quedan en el Calendario del canal: un pedido queda "pendiente" hasta que la otra parte lo confirma o rechaza, se pueden repetir automáticamente (semanal, quincenal, mensual) y podés sincronizarlos con tu Google o Apple Calendar.</p>
+    </details>
+    <details class="faq-item reveal" name="faq">
+      <summary>¿Puedo exportar el historial?</summary>
+      <p>Sí. Desde Historial podés descargar un informe con todos los mensajes, intervenciones de la IA y acuerdos del canal.</p>
+    </details>
+    <details class="faq-item" name="faq">
+      <summary>¿Es gratis?</summary>
+      <p>Sí, para empezar no tiene costo.</p>
+    </details>
+  </div>
+
+  <div class="card" style="max-width:600px; margin:32px auto 24px; text-align:center; border-style:dashed;">
+    <div class="eyebrow">¿Sos profesional? — aparte de lo anterior</div>
+    <p style="font-size:13px; color:var(--text-dim); margin-bottom:14px;">Si sos mediador/a o abogado/a de familia, armamos un plan pensado para varios casos a la vez, con informes en formato prolijo para adjuntar a un expediente.</p>
+    <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+      <a href="/auth/google?next=%2Fchat.html%3FproSignup%3D1" class="primary" style="display:inline-block; text-decoration:none; padding:10px 20px; color:#0E1A19;">Registrate</a>
+      <a href="https://wa.me/15753222446?text=SOY%20MEDIADOR" target="_blank" rel="noopener" class="ghost" style="display:inline-block; text-decoration:none; padding:10px 20px;">O contanos más por WhatsApp</a>
+    </div>
+  </div>
+
+  <p class="disclaimer">Esta app no reemplaza a un abogado, mediador, terapeuta o a la Justicia. En situaciones de violencia o riesgo, contactá a las autoridades correspondientes o a la línea 144 / 137.</p>
+
+  <div class="sticky-google-bar" id="sticky-google-bar">
+    <button onclick="location.href='/auth/google?next=/chat.html'">
+      <svg width="16" height="16" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
+      Continuar con Google
+    </button>
+  </div>
+
+</div>
+
+<footer class="site-footer">
+  <div class="site-footer-inner">
+    <a href="/chat.html" class="brand">Puente<em>digital</em></a>
+    <nav class="site-nav">
+      <a href="/chat.html#faq">FAQ</a>
+      <a href="/legal.html">Marco legal</a>
+      <a href="/terminos.html">Términos</a>
+      <a href="/privacidad.html">Privacidad</a>
+    </nav>
+  </div>
+  <p class="disclaimer">Puente Digital es una herramienta de comunicación, no asesoramiento legal, terapéutico ni una mediación homologada. Su objetivo es ayudar a desescalar el conflicto y dar tranquilidad, no reemplazar a un profesional.</p>
+</footer>
+
+</div>
+
+<div id="guest-name-screen" class="center-pad" style="display:none; margin-top:15vh;">
+  <div class="brand" style="font-size:26px;">Puente<em>digital</em></div>
+  <p class="screen-sub" style="max-width:320px;">Te invitaron a un canal de comunicación mediada. No hace falta que instales nada ni crees una cuenta — solo decinos cómo te llamás.</p>
+  <div class="card" style="width:100%; max-width:320px; text-align:left;">
+    <label class="field-label">Tu nombre</label>
+    <input type="text" id="guest-name-input" placeholder="Ej: María" style="margin-bottom:12px;">
+    <button class="primary" style="width:100%" onclick="submitGuestName()">Entrar al canal</button>
+    <p id="guest-name-error" style="color:var(--danger); font-size:12px; margin-top:8px;"></p>
+  </div>
+</div>
+
+<div id="guest-error-screen" class="center-pad" style="display:none; margin-top:15vh;">
+  <div class="brand" style="font-size:26px;">Puente<em>digital</em></div>
+  <p class="screen-sub" style="max-width:320px;" id="guest-error-text">Este enlace no es válido.</p>
+</div>
+
+<div id="pro-login-screen" class="center-pad" style="display:none; margin-top:15vh;">
+  <div class="brand" style="font-size:26px;">Puente<em>digital</em></div>
+  <p class="screen-sub" style="max-width:340px;">Te invitaron a este canal como <strong id="pro-login-role"></strong> (<span id="pro-login-label"></span>). Iniciá sesión con tu cuenta de Google para acceder — vas a poder ver la conversación, el calendario y el historial, pero no enviar mensajes ni resolver acuerdos en nombre de las partes.</p>
+  <button class="google-btn" id="pro-login-btn">
+    <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
+    Iniciar sesión con Google
+  </button>
+  <p class="disclaimer" style="max-width:340px;">Es de solo lectura: no queda como parte del canal, sino como acceso de acompañamiento profesional.</p>
+</div>
+
+<div id="pro-signup-screen" class="center-pad" style="display:none; margin-top:12vh;">
+  <div class="brand" style="font-size:26px;">Puente<em>digital</em></div>
+  <div id="pro-signup-content" style="width:100%; max-width:360px;"></div>
+</div>
+
+<!-- "Nuevo caso" es un modal, no una pantalla del nav: cancelarlo tiene que
+     devolver a donde se estaba, no forzar una navegación a Inicio. -->
+<div class="modal-overlay" id="nuevo-modal" onclick="if(event.target===this) closeNuevoModal()">
+  <div class="modal-sheet">
+    <div class="modal-head">
+      <h2 class="screen-title" style="font-size:19px; margin:0;">Nuevo caso</h2>
+      <button class="modal-close" onclick="closeNuevoModal()" aria-label="Cerrar">✕</button>
+    </div>
+    <p class="screen-sub" style="margin-top:4px;">Creá un canal nuevo, unite con un código, o vinculate a un caso existente como mediador/a o estudio jurídico.</p>
+    <div id="nuevo-content"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="install-modal" onclick="if(event.target===this) closeInstallModal()">
+  <div class="modal-sheet" style="max-width:360px;">
+    <div class="modal-head">
+      <h2 class="screen-title" style="font-size:18px; margin:0;">Instalar en iPhone</h2>
+      <button class="modal-close" onclick="closeInstallModal()" aria-label="Cerrar">✕</button>
+    </div>
+    <ol style="margin:14px 0 0 18px; font-size:13.5px; color:var(--text-dim); line-height:1.85;">
+      <li>Abrí este sitio en <strong>Safari</strong> (no funciona desde dentro de otra app).</li>
+      <li>Tocá el ícono de <strong>Compartir</strong> <span style="font-family:var(--mono)">(⬆️, en la barra de abajo)</span>.</li>
+      <li>Elegí <strong>"Agregar a la pantalla de inicio"</strong>.</li>
+      <li>Confirmá tocando <strong>"Agregar"</strong> arriba a la derecha.</li>
+    </ol>
+    <p class="field-hint" style="margin-top:12px;">Así abre en pantalla completa, sin la barra de Safari, y podés recibir notificaciones.</p>
+  </div>
+</div>
+
+<div class="modal-overlay" id="app-settings-modal" onclick="if(event.target===this) closeAppSettingsModal()">
+  <div class="modal-sheet" style="max-width:400px;">
+    <div class="modal-head">
+      <h2 class="screen-title" style="font-size:18px; margin:0;">Configuración</h2>
+      <button class="modal-close" onclick="closeAppSettingsModal()" aria-label="Cerrar">✕</button>
+    </div>
+    <div id="app-settings-content" style="margin-top:6px;"></div>
+  </div>
+</div>
+
+<!-- pantalla de bloqueo: tapa TODA la app (incluso por encima de modales)
+     hasta que se ingresa el PIN correcto o pasa la verificación
+     biométrica — ver applock.js. No es parte del flujo de login/auth de
+     verdad, es un cerrojo LOCAL del dispositivo (mismo criterio que el
+     bloqueo con PIN de WhatsApp): la sesión sigue activa del lado del
+     server, esto solo tapa la pantalla. -->
+<div id="app-lock-screen">
+  <div class="lock-inner">
+    <div class="brand bridge-logo" style="font-size:24px; margin-bottom:6px;">Puente<em>digital</em></div>
+    <p class="screen-sub" style="margin-bottom:22px;">Ingresá tu PIN para continuar</p>
+    <div class="lock-pin-dots" id="lock-pin-dots"></div>
+    <div class="lock-pin-error" id="lock-pin-error"></div>
+    <div class="lock-keypad" id="lock-keypad"></div>
+    <button class="ghost" id="lock-biometric-btn" style="display:none; margin-top:16px;" onclick="attemptBiometricUnlock()">👆 Usar Face ID / Touch ID</button>
+  </div>
+</div>
+
+<nav class="tabs" id="tabs" style="display:none">
+  <button class="active" data-screen="inicio" onclick="goTo('inicio')"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20a1 1 0 0 0 1 1H9a1 1 0 0 0 1-1v-4.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V20a1 1 0 0 0 1 1h2.5a1 1 0 0 0 1-1V9.5"/></svg></span><span class="tab-label">Inicio</span><span class="dot-alert" id="dot-inicio"></span></button>
+  <button data-screen="borrador" onclick="goTo('borrador')"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h8"/><path d="M16.5 4.5a2 2 0 0 1 2.83 2.83L7 20 3 21l1-4Z"/></svg></span><span class="tab-label">Borrador</span></button>
+  <button data-screen="nuevo" onclick="openNuevoModal()"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></span><span class="tab-label">Nuevo</span></button>
+</nav>
+
+<script src="/app.js"></script>
+</body>
+</html>

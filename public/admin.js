@@ -123,7 +123,7 @@ function renderNoAccess(app, me){
     <div class="center-note">
       <span class="brand">Puente<em>digital</em></span>
       La cuenta <strong>${escapeHtml(me.name)}</strong> (${escapeHtml(me.email || '')}) no tiene acceso al panel de administración.
-      <div><a href="/" style="color:var(--calm);">Volver a la app</a></div>
+      <div><a href="/chat.html" style="color:var(--calm);">Volver a la app</a></div>
     </div>
   `;
 }
@@ -159,7 +159,7 @@ function renderShell(){
           ${STATE.me.avatar ? `<img src="${STATE.me.avatar}" alt="">` : ''}
           <span>${escapeHtml(STATE.me.name)}</span>
           <a href="/api/admin/backup" title="Descarga un snapshot completo de la base de datos (.sqlite)">Descargar backup</a>
-          <a href="/">Ir a la app</a>
+          <a href="/chat.html">Ir a la app</a>
           <button onclick="logout()">Salir</button>
         </div>
       </header>
