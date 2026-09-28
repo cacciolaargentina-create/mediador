@@ -83,6 +83,17 @@ const EMPTY_DB = {
   competitorPrices: [], // { id, sourceId, plan|null, price|null, currency|null, periodicity|null, mediationLimit|null, featuresText|null, detectedAt } — histórico, append-only, nunca se borra ni se modifican precios de Mediador automáticamente
   competitorOpportunities: [], // { id, title, observation, evidence, sourceId|null, changeId|null, status:'pendiente'|'confirmada'|'descartada', createdAt, confirmedBy|null, confirmedAt|null } — siempre creada a mano desde un cambio (§9/§13: el sistema nunca decide solo)
 
+  // ===== Bloque 29. Billing + Mercado Pago (ver billingService.js/
+  // entitlements.js/services/mercadoPago.js). Mercado Pago es SOLO el
+  // proveedor de cobro — Mediador es dueño del estado comercial real
+  // (billingAccounts.status), nunca se activa un plan solo porque el
+  // usuario volvió del checkout (ver syncSubscription). NUNCA se guardan
+  // datos de tarjeta acá — solo referencias/estados de Mercado Pago =====
+  billingPlans: [], // { id, code:'FREE'|'PROFESIONAL'|'ESTUDIO', name, description, price, currency, interval:'month'|'year', active, providerPlanId|null, createdAt, updatedAt } — precios configurables en DB, nunca hardcodeados en el frontend
+  billingAccounts: [], // { id, userId|null, studioId|null, planCode, status:'inactive'|'trial'|'active'|'pending'|'past_due'|'cancelled'|'expired'|'suspended', provider:'mercadopago'|null, providerCustomerId|null, providerSubscriptionId|null, currentPeriodStart|null, currentPeriodEnd|null, cancelAtPeriodEnd, trialEndsAt|null, pastDueSince|null, createdAt, updatedAt } — userId XOR studioId (cuenta personal vs. de estudio, nunca las dos). Sin fila = FREE implícito (ver entitlements.js) — así una base existente no necesita backfill
+  billingEvents: [], // { id, provider, eventId, eventType, subscriptionId|null, paymentId|null, payloadHash, status:'processed'|'ignored'|'error', processedAt|null, createdAt } — provider+eventId es la clave de idempotencia (§11): un mismo webhook nunca se procesa dos veces
+  billingPayments: [], // { id, billingAccountId, provider, providerPaymentId, subscriptionId|null, amount, currency, status:'approved'|'pending'|'rejected'|'cancelled'|'refunded', approvedAt|null, paidAt|null, createdAt, updatedAt } — NUNCA número de tarjeta/CVV/vencimiento, solo lo que Mercado Pago informa sobre el pago en sí
+
   // ===== Bloque 29 (Admin Console 2.0) — soporte, acceso excepcional e
   // impersonación. NINGUNA de estas tres tablas reemplaza mediation_access
   // ni el chequeo normal de autorización — son mecanismos EXPLÍCITOS,
@@ -384,6 +395,42 @@ CREATE TABLE IF NOT EXISTS video_provider_accounts (
   connectedAt INTEGER, updatedAt INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_video_provider_accounts_user ON video_provider_accounts(userId);
+-- Bloque 29 — billing + Mercado Pago. Mercado Pago es solo el proveedor de
+-- cobro; estas tablas son la fuente de verdad COMERCIAL de Mediador. Sin
+-- fila en billing_accounts = plan FREE implícito (§27: FREE funciona sin
+-- Mercado Pago configurado, y una base existente no necesita backfill).
+CREATE TABLE IF NOT EXISTS billing_plans (
+  id TEXT PRIMARY KEY, code TEXT, name TEXT, description TEXT,
+  price REAL DEFAULT 0, currency TEXT DEFAULT 'ARS', interval TEXT DEFAULT 'month',
+  active INTEGER DEFAULT 1, providerPlanId TEXT, createdAt INTEGER, updatedAt INTEGER
+);
+CREATE TABLE IF NOT EXISTS billing_accounts (
+  id TEXT PRIMARY KEY, userId TEXT, studioId TEXT, planCode TEXT DEFAULT 'FREE',
+  status TEXT DEFAULT 'inactive', provider TEXT, providerCustomerId TEXT, providerSubscriptionId TEXT,
+  currentPeriodStart INTEGER, currentPeriodEnd INTEGER, cancelAtPeriodEnd INTEGER DEFAULT 0,
+  trialEndsAt INTEGER, pastDueSince INTEGER, createdAt INTEGER, updatedAt INTEGER
+);
+-- provider+eventId es UNIQUE a propósito (§11 idempotencia): un INSERT
+-- duplicado del mismo webhook falla solo, sin necesitar un SELECT previo
+-- con condición de carrera entre dos webhooks casi simultáneos.
+CREATE TABLE IF NOT EXISTS billing_events (
+  id TEXT PRIMARY KEY, provider TEXT, eventId TEXT, eventType TEXT,
+  subscriptionId TEXT, paymentId TEXT, payloadHash TEXT, status TEXT DEFAULT 'processed',
+  processedAt INTEGER, createdAt INTEGER,
+  UNIQUE(provider, eventId)
+);
+CREATE TABLE IF NOT EXISTS billing_payments (
+  id TEXT PRIMARY KEY, billingAccountId TEXT, provider TEXT, providerPaymentId TEXT,
+  subscriptionId TEXT, amount REAL, currency TEXT, status TEXT,
+  approvedAt INTEGER, paidAt INTEGER, createdAt INTEGER, updatedAt INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_billing_accounts_user ON billing_accounts(userId);
+CREATE INDEX IF NOT EXISTS idx_billing_accounts_studio ON billing_accounts(studioId);
+CREATE INDEX IF NOT EXISTS idx_billing_accounts_subscription ON billing_accounts(providerSubscriptionId);
+CREATE INDEX IF NOT EXISTS idx_billing_accounts_status ON billing_accounts(status);
+CREATE INDEX IF NOT EXISTS idx_billing_events_subscription ON billing_events(subscriptionId);
+CREATE INDEX IF NOT EXISTS idx_billing_payments_account ON billing_payments(billingAccountId);
+CREATE INDEX IF NOT EXISTS idx_billing_payments_provider_payment ON billing_payments(providerPaymentId);
 
 CREATE TABLE IF NOT EXISTS support_tickets (
   id TEXT PRIMARY KEY, userId TEXT, studioId TEXT, mediationId TEXT,
@@ -419,18 +466,20 @@ const BOOL_COLUMNS = {
   messages: ['flagged', 'pattern'],
   parties: ['allowDocumentUpload'],
   competitorSources: ['active'],
+  billingPlans: ['active'],
+  billingAccounts: ['cancelAtPeriodEnd'],
   featureFlags: ['enabled'],
 };
 // columnas que viajan como objeto/array en JS pero se guardan como texto JSON
 const JSON_COLUMNS = {
   channels: ['professionalInvites', 'lastSummary'],
   auditLog: ['meta'],
-  supportAccessGrants: ['resourcesAccessed'],
   users: ['aiUsage'],
   pushSubscriptions: ['keys'],
   messages: ['attachment'],
   mediationEvents: ['metadata'],
   hearings: ['meetingMetadata'],
+  supportAccessGrants: ['resourcesAccessed'],
 };
 const TABLE_NAMES = {
   users: 'users', channels: 'channels', members: 'members', messages: 'messages',
@@ -454,6 +503,8 @@ const TABLE_NAMES = {
   competitorSources: 'competitor_sources', competitorSnapshots: 'competitor_snapshots',
   competitorChanges: 'competitor_changes', competitorFeatureDetections: 'competitor_feature_detections',
   competitorPrices: 'competitor_prices', competitorOpportunities: 'competitor_opportunities',
+  billingPlans: 'billing_plans', billingAccounts: 'billing_accounts',
+  billingEvents: 'billing_events', billingPayments: 'billing_payments',
   supportTickets: 'support_tickets', supportAccessGrants: 'support_access_grants',
   impersonationSessions: 'impersonation_sessions', featureFlags: 'feature_flags',
 };

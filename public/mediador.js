@@ -222,6 +222,10 @@ function renderAccountMenu(){
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 10 5-3v10l-5-3"/><rect x="2" y="6" width="13" height="12" rx="2"/></svg>
       <span>Videoconferencias</span>
     </button>
+    <button class="row" role="menuitem" onclick="closeAccountMenu(); goTo('billing');">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19"/></svg>
+      <span>Mi Plan</span>
+    </button>
     <button class="row" role="menuitem" onclick="closeAccountMenu(); logoutMediador();">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15.5 16.5 4.5-4.5-4.5-4.5"/><path d="M20 12H9.5"/><path d="M9.5 4H6.5A2.5 2.5 0 0 0 4 6.5v11A2.5 2.5 0 0 0 6.5 20h3"/></svg>
       <span>Cerrar sesión</span>
@@ -339,6 +343,18 @@ function showToast(message, kind){
   }, 3600);
 }
 
+// Bloque 29 §17 — paywall contextual: nunca una pantalla agresiva que
+// bloquea todo, solo un mensaje claro en el punto exacto donde la persona
+// intentó usar algo que su plan no incluye, con una salida directa a Mi
+// Plan. Si el error no es de este tipo, cae al toast de siempre.
+function showPaywallOrError(e, fallbackMessage){
+  if(e && e.code === 'PLAN_LIMIT_REACHED'){
+    if(confirm(`${e.upgradeMessage || e.error}\n\n¿Ver los planes disponibles?`)) goTo('billing');
+    return;
+  }
+  showToast((e && e.error) || fallbackMessage, 'danger');
+}
+
 // pantallas que no son pestaña propia resaltan la pestaña de la que
 // "cuelgan" — el detalle de una mediación resalta Mediaciones, las
 // solicitudes de cambio resaltan Agenda, etc. — así el nav inferior
@@ -371,6 +387,7 @@ function goTo(screen, id){
   else if(screen === 'requests') renderPromise = renderRequests();
   else if(screen === 'comms') renderPromise = renderComunicaciones();
   else if(screen === 'videoSettings') renderPromise = renderVideoSettings();
+  else if(screen === 'billing') renderPromise = renderBilling();
   window.scrollTo(0, 0);
   return renderPromise;
 }
@@ -412,6 +429,35 @@ const ATTENTION_ACTION_SECTION = {
 // centro de atención: esto es "qué tenés en el radar hoy", no "qué está
 // mal" (una audiencia de hoy ya confirmada no es un problema, pero sigue
 // siendo relevante saber que es hoy).
+// Bloque 29 §26 — tarjeta discreta, nunca el elemento principal del
+// dashboard. Si billing es null (falló el fetch) o no hay entitlements, no
+// se muestra nada — mejor ausente que roto.
+function renderPlanCard(billing){
+  if(!billing) return '';
+  const acc = billing.account;
+  const isFree = billing.effectivePlanCode === 'FREE';
+  if(acc.status === 'past_due'){
+    return `
+      <div class="card-highlight is-overdue">
+        <strong>Hay un problema con tu pago.</strong><br>
+        <span style="font-size:13px;">Actualizá tu medio de pago para mantener activo tu plan.</span>
+        <div style="margin-top:8px;"><button class="ghost" onclick="goTo('billing')">Resolver</button></div>
+      </div>
+    `;
+  }
+  return `
+    <div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+      <div>
+        <div class="eyebrow" style="margin-bottom:2px;">PLAN</div>
+        <strong>${escapeHtml(isFree ? 'Gratuito' : billing.effectivePlanCode)}</strong>
+        ${!isFree ? ` · <span class="pill ${BILLING_STATUS_CLASS[acc.status]||''}">${BILLING_STATUS_LABELS[acc.status]||acc.status}</span>` : ''}
+        ${acc.currentPeriodEnd ? `<div class="empty-hint" style="padding:0; text-align:left; margin-top:2px;">Próximo período: ${fmtDate(new Date(acc.currentPeriodEnd).toISOString())}</div>` : ''}
+      </div>
+      <a href="#" onclick="event.preventDefault(); goTo('billing');" style="color:var(--calm); font-size:13px; white-space:nowrap;">Ver facturación →</a>
+    </div>
+  `;
+}
+
 function renderTuDiaCard(d){
   const todayStr = new Date().toISOString().slice(0, 10);
   const hoy = d.proximasAudiencias.filter(h => h.date === todayStr);
@@ -501,9 +547,10 @@ async function handleAttentionAction(idx, action){
 async function renderDashboard(){
   const main = document.getElementById('main');
   main.innerHTML = `<p class="empty-hint">Cargando…</p>`;
-  let d;
+  let d, billing;
   try{ d = await api('/api/mediations/dashboard'); }
   catch(e){ main.innerHTML = `<p class="empty-hint">No se pudo cargar el dashboard.</p>`; return; }
+  try{ billing = await api('/api/billing/me'); }catch(e){ billing = null; } // §26 — nunca bloquea el resto del dashboard si esto falla
 
   currentAttentionItems = d.centroAtencion || [];
   updateCommsBadge(d.comunicacionesPendientes);
@@ -536,6 +583,8 @@ async function renderDashboard(){
       <p class="empty-hint" style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); goTo('comms');" style="color:var(--calm);">Ver todas →</a></p>
     </div>
     ` : ''}
+
+    ${renderPlanCard(billing)}
 
     ${renderTuDiaCard(d)}
 
@@ -1419,7 +1468,7 @@ async function createMediation(){
       description: document.getElementById('new-description').value.trim() || null,
     })});
     goTo('detail', m.id);
-  }catch(e){ showToast(e.error || 'No se pudo crear la mediación.', 'danger'); }
+  }catch(e){ showPaywallOrError(e, 'No se pudo crear la mediación.'); }
 }
 
 // ================= EXPEDIENTE (detalle) =================
@@ -1505,6 +1554,99 @@ async function disconnectVideoProvider(provider){
     showToast('Cuenta desconectada.', 'success');
     renderVideoSettings();
   }catch(e){ showToast(e.error || 'No se pudo desconectar la cuenta.', 'danger'); }
+}
+
+// ================= MI PLAN (Bloque 29 — Billing + Mercado Pago) =================
+const BILLING_STATUS_LABELS = { inactive:'Inactivo', trial:'Prueba', active:'Activo', pending:'Pendiente', past_due:'Pago pendiente', cancelled:'Cancelado', expired:'Vencido', suspended:'Suspendido' };
+const BILLING_STATUS_CLASS = { active:'calm', trial:'calm', pending:'warn', past_due:'warn', suspended:'danger', expired:'danger', cancelled:'', inactive:'' };
+
+async function renderBilling(){
+  const main = document.getElementById('main');
+  main.innerHTML = `<p class="empty-hint">Cargando…</p>`;
+  let data, plans, payments;
+  try{
+    [data, plans, payments] = await Promise.all([
+      api('/api/billing/me'), api('/api/billing/plans'), api('/api/billing/payments'),
+    ]);
+  }catch(e){ main.innerHTML = `<p class="empty-hint">No se pudo cargar tu plan.</p>`; return; }
+
+  const acc = data.account;
+  const isFree = data.effectivePlanCode === 'FREE';
+  const currentPlan = plans.find(p => p.code === data.effectivePlanCode);
+
+  main.innerHTML = `
+    <span class="back-link" onclick="goTo('dashboard')">← Volver</span>
+    <h1 style="font-size:21px;">Mi Plan</h1>
+
+    <div class="card">
+      <div class="eyebrow">PLAN ${escapeHtml((currentPlan && currentPlan.name || 'Gratuito').toUpperCase())}</div>
+      ${isFree ? `
+        <p>Estás usando el plan gratuito.</p>
+        <p class="empty-hint" style="margin-top:6px;">Hasta ${data.entitlements.maxActiveMediations} mediaciones activas${data.entitlements.videoMeetings ? '' : ', sin videoconferencias integradas'}.</p>
+      ` : `
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
+          <span class="pill ${BILLING_STATUS_CLASS[acc.status]||''}">${BILLING_STATUS_LABELS[acc.status]||acc.status}</span>
+          ${acc.cancelAtPeriodEnd ? `<span class="pill warn">Tu suscripción seguirá activa hasta ${acc.currentPeriodEnd ? fmtDate(new Date(acc.currentPeriodEnd).toISOString()) : '—'}.</span>` : ''}
+        </div>
+        ${currentPlan ? `<p>Próximo cobro: <strong>${escapeHtml(currentPlan.currency)} ${Number(currentPlan.price).toLocaleString('es-AR')}</strong></p>` : ''}
+        <p class="empty-hint">Próximo período: ${acc.currentPeriodEnd ? fmtDate(new Date(acc.currentPeriodEnd).toISOString()) : '—'} · Facturación: Mensual</p>
+        ${acc.status === 'past_due' ? `
+          <div class="card-highlight is-overdue" style="margin-top:10px;">
+            <strong>Hay un problema con tu pago.</strong><br>
+            Actualizá tu medio de pago para mantener activo tu plan.
+          </div>
+        ` : ''}
+        <div style="margin-top:10px;">
+          ${acc.cancelAtPeriodEnd
+            ? `<button class="ghost" onclick="reactivateBilling()">Reactivar suscripción</button>`
+            : `<button class="ghost" onclick="cancelBillingSubscription()">Cancelar suscripción</button>`}
+        </div>
+      `}
+    </div>
+
+    <div class="card">
+      <h2>Planes</h2>
+      ${plans.filter(p => p.code !== 'FREE').map(p => `
+        <div class="status-history-item" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <div><strong>${escapeHtml(p.name)}</strong><br><span class="empty-hint" style="text-align:left; padding:0;">${escapeHtml(p.description||'')}</span></div>
+          <div style="text-align:right;">
+            <div style="margin-bottom:6px;">${escapeHtml(p.currency)} ${Number(p.price).toLocaleString('es-AR')}/mes</div>
+            ${data.effectivePlanCode === p.code
+              ? `<span class="pill calm">Tu plan actual</span>`
+              : `<button class="primary" style="padding:8px 14px;" onclick="subscribeToPlan('${p.code}')" ${data.mercadoPagoConfigured ? '' : 'disabled title="Mercado Pago no está configurado todavía"'}>Elegir</button>`}
+          </div>
+        </div>
+      `).join('')}
+      ${!data.mercadoPagoConfigured ? `<p class="empty-hint" style="margin-top:8px;">Los pagos todavía no están habilitados en este servidor.</p>` : ''}
+    </div>
+
+    <div class="card">
+      <h2>Historial de pagos</h2>
+      ${payments.length ? payments.map(p => `
+        <div class="status-history-item">
+          ${fmtDateTime(p.createdAt)} — ${escapeHtml(p.currency)} ${p.amount} —
+          <span class="pill ${p.status==='approved'?'calm':p.status==='rejected'?'danger':'warn'}">${escapeHtml(p.status)}</span>
+        </div>
+      `).join('') : `<p class="empty-hint">Todavía no hay pagos registrados.</p>`}
+    </div>
+  `;
+}
+
+async function subscribeToPlan(planCode){
+  try{
+    const result = await api('/api/billing/subscribe', { method:'POST', body: JSON.stringify({ planCode }) });
+    if(result.initPoint) location.href = result.initPoint;
+    else showToast('No se pudo iniciar el pago — Mercado Pago no devolvió un link.', 'danger');
+  }catch(e){ showToast(e.error || 'No se pudo iniciar la suscripción.', 'danger'); }
+}
+async function cancelBillingSubscription(){
+  if(!confirm('¿Cancelar tu suscripción?\n\nVas a seguir teniendo acceso hasta el final del período actual.')) return;
+  try{ await api('/api/billing/cancel', { method:'POST' }); showToast('Cancelación programada.', 'success'); renderBilling(); }
+  catch(e){ showToast(e.error || 'No se pudo cancelar la suscripción.', 'danger'); }
+}
+async function reactivateBilling(){
+  try{ await api('/api/billing/reactivate', { method:'POST' }); showToast('Suscripción reactivada.', 'success'); renderBilling(); }
+  catch(e){ showToast(e.error || 'No se pudo reactivar.', 'danger'); }
 }
 
 async function createHearingMeetingNow(mediationId, hearingId, provider){
@@ -2690,7 +2832,7 @@ async function addHearing(mediationId, afterSave){
   try{
     await api(`/api/mediations/${mediationId}/hearings`, { method:'POST', body: JSON.stringify(body) });
     if(afterSave) afterSave(); else renderDetail(mediationId);
-  }catch(e){ showToast(e.error || 'No se pudo agendar la audiencia.', 'danger'); }
+  }catch(e){ showPaywallOrError(e, 'No se pudo agendar la audiencia.'); }
 }
 
 // Bloque 17 §4 — la audiencia necesita UNA acción principal que cambie

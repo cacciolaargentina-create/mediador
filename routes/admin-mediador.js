@@ -117,6 +117,16 @@ module.exports = function () {
     if (videoErrors.length >= 3) {
       attention.push({ type: 'videoconferencias_con_error', level: 'MEDIUM', detail: `${videoErrors.length} audiencia(s) con la videoconferencia en estado de error` });
     }
+    // Bloque 29 §18 — pagos rechazados y suscripciones suspendidas SÍ son
+    // señales reales de "requiere atención" (nunca artificiales).
+    const rejectedPayments7d = db.billingPayments.filter((p) => p.status === 'rejected' && now - p.createdAt <= 7 * day);
+    if (rejectedPayments7d.length >= 3) {
+      attention.push({ type: 'pagos_rechazados', level: 'HIGH', detail: `${rejectedPayments7d.length} pago(s) rechazado(s) en los últimos 7 días` });
+    }
+    const suspendedAccounts = db.billingAccounts.filter((a) => a.status === 'suspended');
+    if (suspendedAccounts.length) {
+      attention.push({ type: 'cuentas_suspendidas', level: 'MEDIUM', detail: `${suspendedAccounts.length} cuenta(s) suspendida(s) por falta de pago` });
+    }
 
     res.json({
       kpis: {
@@ -131,7 +141,13 @@ module.exports = function () {
         notificacionesFallidas7d: recentFailedNotifications.length,
         erroresRecientes24h: recentErrors.length,
       },
-      billing: { enabled: false, note: 'Billing todavía no está habilitado — sin datos de suscripciones.' },
+      billing: {
+        enabled: require('../services/mercadoPago').configured(),
+        activeAccounts: db.billingAccounts.filter((a) => a.status === 'active').length,
+        pendingAccounts: db.billingAccounts.filter((a) => a.status === 'pending').length,
+        pastDueAccounts: db.billingAccounts.filter((a) => a.status === 'past_due').length,
+        suspendedAccounts: suspendedAccounts.length,
+      },
       radar: {
         totalSources: db.competitorSources.length,
         pendingChanges: radarPending,
@@ -250,9 +266,13 @@ module.exports = function () {
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, 20)
       .map((e) => ({ type: e.type, title: e.title, createdAt: e.createdAt, mediationId: e.mediationId }));
+    const { getBillingAccount, getEffectivePlanCode } = require('../entitlements');
+    const billingAccount = getBillingAccount(db, u);
     res.json({
       ...serializeUserRow(db, u),
-      billing: { enabled: false, note: 'Billing todavía no está habilitado.' },
+      billing: billingAccount
+        ? { planCode: getEffectivePlanCode(db, u), status: billingAccount.status, currentPeriodEnd: billingAccount.currentPeriodEnd || null, cancelAtPeriodEnd: !!billingAccount.cancelAtPeriodEnd }
+        : { planCode: 'FREE', status: 'inactive', currentPeriodEnd: null, cancelAtPeriodEnd: false },
       mediations,
       recentActivity,
     });
@@ -455,9 +475,76 @@ module.exports = function () {
     res.json(checks);
   });
 
-  // ================= BILLING (§13) =================
+  // ================= BILLING (Bloque 29 §18/§19) =================
+  // Mercado Pago es solo el proveedor de cobro — acá se ve/controla el
+  // estado COMERCIAL que decide billing_accounts, nunca datos de tarjeta
+  // (§18: "NO mostrar datos sensibles de tarjetas" — no hay ninguno acá,
+  // ni Mediador los guarda).
+  function accountOwnerLabel(db, account) {
+    if (account.studioId) {
+      const studio = db.studios.find((s) => s.id === account.studioId);
+      return studio ? `Estudio: ${studio.name}` : `Estudio ${account.studioId}`;
+    }
+    const user = db.users.find((u) => u.id === account.userId);
+    return user ? user.email || user.name : account.userId;
+  }
+  function serializeBillingAccountRow(db, account) {
+    return {
+      id: account.id, userId: account.userId || null, studioId: account.studioId || null,
+      ownerLabel: accountOwnerLabel(db, account), planCode: account.planCode, status: account.status,
+      currentPeriodEnd: account.currentPeriodEnd || null, cancelAtPeriodEnd: !!account.cancelAtPeriodEnd,
+      provider: account.provider || null, providerSubscriptionId: account.providerSubscriptionId || null,
+      updatedAt: account.updatedAt,
+    };
+  }
   router.get('/billing', (req, res) => {
-    res.json({ enabled: false, message: 'Billing todavía no está habilitado.' });
+    const db = getDB();
+    let list = [...db.billingAccounts];
+    if (req.query.plan) list = list.filter((a) => a.planCode === req.query.plan);
+    if (req.query.status) list = list.filter((a) => a.status === req.query.status);
+    if (req.query.studioId) list = list.filter((a) => a.studioId === req.query.studioId);
+    if (req.query.q) {
+      const q = req.query.q.toLowerCase();
+      list = list.filter((a) => {
+        const user = a.userId ? db.users.find((u) => u.id === a.userId) : null;
+        const studio = a.studioId ? db.studios.find((s) => s.id === a.studioId) : null;
+        return (user && ((user.email || '').toLowerCase().includes(q) || user.id === req.query.q)) ||
+          (studio && (studio.name.toLowerCase().includes(q) || studio.id === req.query.q)) ||
+          (a.providerSubscriptionId && a.providerSubscriptionId === req.query.q) ||
+          a.id === req.query.q;
+      });
+    }
+    list.sort((a, b) => b.updatedAt - a.updatedAt);
+    const activeStatuses = ['trial', 'active', 'pending', 'past_due'];
+    const since30d = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    res.json({
+      ...paginate(list.map((a) => serializeBillingAccountRow(db, a)), clampPaging(req)),
+      summary: {
+        active: db.billingAccounts.filter((a) => a.status === 'active').length,
+        pending: db.billingAccounts.filter((a) => a.status === 'pending').length,
+        pastDue: db.billingAccounts.filter((a) => a.status === 'past_due').length,
+        suspended: db.billingAccounts.filter((a) => a.status === 'suspended').length,
+        cancelled: db.billingAccounts.filter((a) => ['cancelled', 'expired'].includes(a.status)).length,
+        ingresos30d: db.billingPayments.filter((p) => p.status === 'approved' && p.createdAt >= since30d).reduce((sum, p) => sum + (p.amount || 0), 0),
+      },
+      plans: db.billingPlans.map((p) => ({ code: p.code, name: p.name, price: p.price, currency: p.currency, interval: p.interval, active: p.active, accountsCount: db.billingAccounts.filter((a) => a.planCode === p.code && activeStatuses.includes(a.status)).length })),
+    });
+  });
+
+  router.get('/billing/payments', (req, res) => {
+    const db = getDB();
+    let list = [...db.billingPayments];
+    if (req.query.status) list = list.filter((p) => p.status === req.query.status);
+    list.sort((a, b) => b.createdAt - a.createdAt);
+    const rows = list.map((p) => {
+      const account = db.billingAccounts.find((a) => a.id === p.billingAccountId);
+      return {
+        id: p.id, createdAt: p.createdAt, ownerLabel: account ? accountOwnerLabel(db, account) : '—',
+        planCode: account ? account.planCode : null, amount: p.amount, currency: p.currency,
+        status: p.status, providerPaymentId: p.providerPaymentId,
+      };
+    });
+    res.json(paginate(rows, clampPaging(req)));
   });
 
   // ================= RADAR — resumen (§14) =================

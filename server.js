@@ -20,6 +20,15 @@ if (process.env.NODE_ENV === 'production' && !process.env.FRONTEND_URL) {
   process.exit(1);
 }
 
+// Bloque 29 — carga los 3 planes de billing si todavía no existen (base
+// nueva o existente da igual, es idempotente). No depende de que Mercado
+// Pago esté configurado — FREE tiene que existir siempre (§27).
+(async () => {
+  const { ensureBillingPlansSeeded } = require('./billingService');
+  const { created } = ensureBillingPlansSeeded(getDB());
+  if (created > 0) await commit();
+})().catch((e) => console.error('Error sembrando planes de billing:', e));
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -134,6 +143,8 @@ const agendaRoutes = require('./routes/agenda')();
 const radarRoutes = require('./routes/radar')();
 const adminMediadorRoutes = require('./routes/admin-mediador')();
 const videoProviderRoutes = require('./routes/video-providers')();
+const billingRoutes = require('./routes/billing')();
+const mercadoPagoWebhookRoutes = require('./routes/webhooks-mercadopago')();
 
 app.use('/auth', authRoutes);
 app.use('/api/channels', channelRoutes);
@@ -152,6 +163,9 @@ app.use('/api/agenda', agendaRoutes);
 app.use('/api/radar', radarRoutes);
 app.use('/api/admin-mediador', adminMediadorRoutes);
 app.use('/api/video-providers', videoProviderRoutes);
+app.use('/api/billing', billingRoutes);
+// mismo criterio que /webhook/whatsapp: público, sin auth, Mercado Pago es quien lo llama.
+app.use('/api/webhooks/mercadopago', mercadoPagoWebhookRoutes);
 
 app.get('/api/health', (req, res) => res.json({ ok: true, users: getDB().users.length }));
 
@@ -300,3 +314,13 @@ setInterval(() => runTrackedJob('checkHearingsStartingSoon', 'job de "audiencia 
 const { checkDueSources } = require('./radarJobs');
 setTimeout(() => runTrackedJob('checkDueSources', 'job del radar competitivo', checkDueSources), 30 * 1000);
 setInterval(() => runTrackedJob('checkDueSources', 'job del radar competitivo', checkDueSources), 60 * 60 * 1000);
+
+// Bloque 29 §22 — reconciliación de billing (respaldo ante webhook perdido)
+// cada hora, igual que el resto. runBillingMaintenance (grace period →
+// suspended, cancelAtPeriodEnd vencido → expired) corre más seguido porque
+// es puro/liviano (sin red salvo para las cuentas recién expiradas).
+const { reconcileBillingSubscriptions, runBillingMaintenance } = require('./billingJobs');
+setTimeout(() => runTrackedJob('reconcileBillingSubscriptions', 'job de reconciliación de billing', reconcileBillingSubscriptions), 40 * 1000);
+setInterval(() => runTrackedJob('reconcileBillingSubscriptions', 'job de reconciliación de billing', reconcileBillingSubscriptions), 60 * 60 * 1000);
+setTimeout(() => runTrackedJob('runBillingMaintenance', 'job de mantenimiento de billing', runBillingMaintenance), 45 * 1000);
+setInterval(() => runTrackedJob('runBillingMaintenance', 'job de mantenimiento de billing', runBillingMaintenance), 60 * 60 * 1000);

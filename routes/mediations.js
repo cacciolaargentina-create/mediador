@@ -26,6 +26,20 @@ const archiver = require('archiver');
 const { postMessage } = require('../messaging');
 const { serializeMessage } = require('../serializers');
 const { createHearingMeeting, updateHearingMeeting, cancelHearingMeeting, serializeHearingVideo } = require('../videoConferencing');
+const { canCreateMediation, canUseVideoMeetings } = require('../entitlements');
+
+// ENABLE_FAKE_LOGIN nunca está seteado en producción (mismo flag que
+// habilita /auth/fake-login, ver routes/auth.js) — los paywalls de billing
+// se desactivan bajo ese modo para que las baterías de regresión existentes
+// (bloque22/22-automation/24, que crean varias mediaciones bajo un mismo
+// usuario de prueba para testear cosas sin relación con billing) sigan
+// corriendo sin reescribirlas. BILLING_ENFORCE_IN_TEST=1 reactiva el
+// paywall real aun con fake-login, para poder testear el wiring HTTP en sí
+// (scripts/regression-test-bloque31-paywall.js) — el límite en sí ya está
+// cubierto exhaustivamente por scripts/regression-test-bloque29-engine.js.
+function billingPaywallActive() {
+  return process.env.ENABLE_FAKE_LOGIN !== '1' || process.env.BILLING_ENFORCE_IN_TEST === '1';
+}
 
 // Bloque 17 §14/15 — "YYYY-MM-DD" a "DD/MM/YYYY", mismo formato que ya
 // usa fmtDate() en todo el frontend. Sin esto, texto pensado para una
@@ -265,6 +279,17 @@ module.exports = function (io, presence) {
     }
 
     const db = getDB();
+
+    // Bloque 29 §17 — paywall contextual: nunca bloquea toda la app, solo
+    // esta acción puntual cuando el plan no la permite. isAdminUser sigue
+    // sin límites (mismo criterio que el resto de los chequeos comerciales).
+    if (!isAdminUser(req.user) && billingPaywallActive() && !canCreateMediation(db, req.user)) {
+      return res.status(402).json({
+        error: 'Llegaste al límite de mediaciones activas de tu plan actual.',
+        upgradeMessage: 'Esta función está disponible en el plan Profesional.',
+        code: 'PLAN_LIMIT_REACHED',
+      });
+    }
 
     // el canal de comunicación se crea junto con la mediación, siempre
     // 1:1 — el mediador entra como observador profesional de su propio
@@ -1617,6 +1642,18 @@ module.exports = function (io, presence) {
     const modalityError = validateModalityData(modality || 'presencial', location, meetingUrl, provider);
     if (modalityError) return res.status(400).json({ error: modalityError });
     const db = getDB();
+
+    // Bloque 29 §17 — paywall contextual: un proveedor REAL de
+    // videoconferencia (Google Meet/Zoom/Teams) es una función paga; el
+    // enlace manual de siempre (provider ausente o 'manual') sigue gratis
+    // para todos los planes, nunca se bloquea acá.
+    if (provider && provider !== 'manual' && !isAdminUser(req.user) && billingPaywallActive() && !canUseVideoMeetings(db, req.user)) {
+      return res.status(402).json({
+        error: 'Las videoconferencias integradas están disponibles en el plan Profesional.',
+        upgradeMessage: 'Esta función está disponible en el plan Profesional.',
+        code: 'PLAN_LIMIT_REACHED',
+      });
+    }
 
     // Bloque 15 — duración: reusa endTime (ya existía en el esquema desde
     // el Bloque 4, nunca se poblaba). Si mandan duración en vez de

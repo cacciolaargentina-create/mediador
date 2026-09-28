@@ -174,7 +174,9 @@ async function renderDashboard(body){
     </section>
     <section class="block">
       <h2 class="block-title">Billing</h2>
-      <div class="empty-hint">${escapeHtml(d.billing.note)}</div>
+      ${d.billing.enabled ? `
+        <p class="block-note">${d.billing.activeAccounts} activa(s) · ${d.billing.pendingAccounts} pendiente(s) · ${d.billing.pastDueAccounts} con pago en gracia · ${d.billing.suspendedAccounts} suspendida(s). <a href="#" onclick="event.preventDefault(); goSection('billing');" style="color:var(--calm);">Ver facturación completa →</a></p>
+      ` : `<div class="empty-hint">Mercado Pago todavía no está configurado en este servidor — el plan FREE sigue funcionando normalmente.</div>`}
     </section>
     <section class="block">
       <h2 class="block-title">Radar competitivo</h2>
@@ -576,10 +578,88 @@ async function renderSystem(body){
   `;
 }
 
-// ================= BILLING (§13) =================
+// ================= BILLING (Bloque 29 §18/§19) =================
+const BILLING_ACCOUNT_STATUS_CLASS = { active:'ok', trial:'ok', pending:'warn', past_due:'warn', suspended:'danger', expired:'danger', cancelled:'neutral', inactive:'neutral' };
+
 async function renderBilling(body){
-  const b = await api('/api/admin-mediador/billing');
-  body.innerHTML = `<section class="block"><h2 class="block-title">Billing</h2><div class="empty-hint">${escapeHtml(b.message)}</div></section>`;
+  const f = STATE.filters.billing || {};
+  const data = await api('/api/admin-mediador/billing' + qs({ ...f, offset: STATE.page.billing||0, limit:25 }));
+  const s = data.summary;
+  body.innerHTML = `
+    <div class="stat-grid">
+      <div class="stat-card"><div class="num">${s.active}</div><div class="lab">activas</div></div>
+      <div class="stat-card"><div class="num">${s.pending}</div><div class="lab">pendientes</div></div>
+      <div class="stat-card"><div class="num">${s.pastDue}</div><div class="lab">pagos rechazados / en gracia</div></div>
+      <div class="stat-card"><div class="num">${s.suspended}</div><div class="lab">suspendidas</div></div>
+      <div class="stat-card"><div class="num">${s.cancelled}</div><div class="lab">canceladas / vencidas</div></div>
+      <div class="stat-card"><div class="num">$${Math.round(s.ingresos30d).toLocaleString('es-AR')}</div><div class="lab">ingresos aprobados (30 días)</div></div>
+    </div>
+    <section class="block">
+      <h2 class="block-title">Planes</h2>
+      <div class="table-wrap"><table class="min-w">
+        <tr><th>Plan</th><th>Precio</th><th>Cuentas activas</th><th>Estado</th></tr>
+        ${data.plans.map(p => `<tr><td class="strong">${escapeHtml(p.name)}</td><td>${escapeHtml(p.currency)} ${Number(p.price).toLocaleString('es-AR')}/${p.interval==='year'?'año':'mes'}</td><td>${p.accountsCount}</td><td>${p.active?'<span class="pill ok">Activo</span>':'<span class="pill neutral">Inactivo</span>'}</td></tr>`).join('')}
+      </table></div>
+    </section>
+    <section class="block">
+      <h2 class="block-title">Suscripciones</h2>
+      <p class="block-note">Nunca se muestran datos de tarjeta — solo el estado comercial que decide Mediador.</p>
+      <div class="filter-row">
+        <input placeholder="Buscar por email, userId, studioId o subscriptionId…" value="${escapeHtml(f.q||'')}" onchange="setBillingFilter('q', this.value)">
+        <select onchange="setBillingFilter('status', this.value)">
+          <option value="">Todos los estados</option>
+          ${['active','pending','past_due','suspended','cancelled','expired','trial','inactive'].map(st => `<option value="${st}" ${f.status===st?'selected':''}>${st}</option>`).join('')}
+        </select>
+        <select onchange="setBillingFilter('plan', this.value)">
+          <option value="">Todos los planes</option>
+          ${data.plans.map(p => `<option value="${p.code}" ${f.plan===p.code?'selected':''}>${escapeHtml(p.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table class="min-w">
+          <tr><th>Cuenta</th><th>Plan</th><th>Estado</th><th>Próximo período</th><th>Mercado Pago ID</th><th>Última actualización</th></tr>
+          ${data.items.map(a => `
+            <tr>
+              <td class="strong">${escapeHtml(a.ownerLabel||'—')}</td>
+              <td>${escapeHtml(a.planCode)}</td>
+              <td><span class="pill ${BILLING_ACCOUNT_STATUS_CLASS[a.status]||'neutral'}">${escapeHtml(a.status)}</span>${a.cancelAtPeriodEnd?' <span class="pill warn">cancela</span>':''}</td>
+              <td>${fmtDate(a.currentPeriodEnd)}</td>
+              <td style="font-family:var(--mono); font-size:10.5px;">${escapeHtml(a.providerSubscriptionId||'—')}</td>
+              <td>${fmtDateTime(a.updatedAt)}</td>
+            </tr>
+          `).join('') || '<tr><td colspan="6" class="empty-hint">Sin cuentas de billing todavía.</td></tr>'}
+        </table>
+      </div>
+      ${renderPager('billing', data)}
+    </section>
+    <section class="block">
+      <h2 class="block-title">Facturación → Pagos</h2>
+      <div id="billing-payments"><p class="empty-hint">Cargando…</p></div>
+    </section>
+  `;
+  renderBillingPayments();
+}
+function setBillingFilter(key, value){ STATE.filters.billing = { ...(STATE.filters.billing||{}), [key]: value }; STATE.page.billing = 0; renderSection(); }
+
+async function renderBillingPayments(){
+  const el = document.getElementById('billing-payments');
+  if(!el) return;
+  const data = await api('/api/admin-mediador/billing/payments' + qs({ offset: STATE.page.billingPayments||0, limit:25 }));
+  el.innerHTML = `
+    <div class="table-wrap">
+      <table class="min-w">
+        <tr><th>Fecha</th><th>Cuenta</th><th>Plan</th><th>Importe</th><th>Estado</th><th>Mercado Pago ID</th></tr>
+        ${data.items.map(p => `
+          <tr>
+            <td>${fmtDateTime(p.createdAt)}</td><td class="strong">${escapeHtml(p.ownerLabel||'—')}</td>
+            <td>${escapeHtml(p.planCode||'—')}</td><td>${escapeHtml(p.currency||'')} ${p.amount}</td>
+            <td><span class="pill ${p.status==='approved'?'ok':p.status==='rejected'?'danger':'warn'}">${escapeHtml(p.status)}</span></td>
+            <td style="font-family:var(--mono); font-size:10.5px;">${escapeHtml(p.providerPaymentId||'—')}</td>
+          </tr>
+        `).join('') || '<tr><td colspan="6" class="empty-hint">Sin pagos registrados todavía.</td></tr>'}
+      </table>
+    </div>
+  `;
 }
 
 // ================= RADAR — resumen (§14) =================
@@ -599,6 +679,7 @@ async function renderRadarSummary(body){
     </section>
   `;
 }
+
 // ================= SOPORTE — tickets (§7) =================
 async function renderSupport(body){
   const f = STATE.filters.support || {};
@@ -802,4 +883,3 @@ async function toggleFlag(key){
   try{ await api(`/api/admin-mediador/feature-flags/${key}/toggle`, { method:'POST' }); renderSection(); }
   catch(e){ alert(e.error || 'No se pudo actualizar el flag.'); }
 }
-
