@@ -19,7 +19,7 @@
   height: 40px; padding: 0 var(--space-4);
   border-radius: var(--radius-md); border: 1px solid transparent;
   font-family: var(--font-family); font-size: var(--font-size-md); font-weight: var(--font-weight-semibold);
-  cursor: pointer; white-space: nowrap;
+  cursor: pointer; white-space: nowrap; text-decoration: none;
   transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast);
 }
 .mediador-app .btn:disabled, .mediador-app button:disabled{ opacity: .55; cursor: not-allowed; }
@@ -47,6 +47,7 @@
 .mediador-app .btn-ghost:hover:not(:disabled){ background: var(--color-surface-2); color: var(--color-text); }
 
 .mediador-app .btn-sm, .mediador-app button.btn-sm{ height: 32px; padding: 0 var(--space-3); font-size: var(--font-size-sm); border-radius: var(--radius-sm); }
+.mediador-app .btn-lg, .mediador-app a.btn-lg{ height: 44px; padding: 0 var(--space-5); font-size: var(--font-size-body); }
 
 /* botón "cargando…" — spinner inline, sin bloquear toda la pantalla */
 .mediador-app .btn.is-loading, .mediador-app button.is-loading{ position: relative; color: transparent !important; pointer-events: none; }

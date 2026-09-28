@@ -6,7 +6,11 @@
   .mediador-app .sidebar{ width: 220px; }
   .mediador-app .main{ margin-left: 220px; }
   .mediador-app .page-content{ padding: var(--space-6) var(--space-5) var(--space-8); }
-  .mediador-app .login-panel{ width: 380px; }
+
+  .mediador-app .landing-container{ padding-left: var(--space-6); padding-right: var(--space-6); }
+  .mediador-app .landing-hero{ grid-template-columns: minmax(0,1fr) 360px; gap: var(--space-6); }
+  .mediador-app .landing-hero-content h1{ font-size: 38px; }
+  .mediador-app .trust-strip-inner{ grid-template-columns: repeat(2, minmax(0,1fr)); }
 }
 
 /* ---- mobile: sidebar se convierte en drawer, topbar gana botón de menú ---- */
@@ -25,16 +29,38 @@
   .mediador-app h1{ font-size: var(--font-size-xl); }
   .mediador-app h2{ font-size: var(--font-size-lg); }
 
-  .mediador-app .feature-grid{ grid-template-columns: 1fr; }
-  .mediador-app .steps-row{ flex-direction: column; }
+  /* ---- landing (nueva página principal): todo se apila a una columna,
+     el menú se compacta (solo marca + Ingresar + Empezar gratis) y los
+     botones quedan de al menos 44px de alto para uso táctil. ---- */
+  .mediador-app .landing-container{ padding-left: var(--space-4); padding-right: var(--space-4); }
+  .mediador-app .landing-header{ min-height: 0; }
+  .mediador-app .landing-nav{ min-height: 0; padding: var(--space-4) 0; }
+  .mediador-app .landing-nav-links{ display: none; }
+  .mediador-app .landing-nav-actions{ gap: var(--space-3); }
+  .mediador-app .landing-nav-login{ font-size: var(--font-size-sm); }
+  .mediador-app .btn-lg{ height: 44px; padding: 0 var(--space-4); font-size: var(--font-size-sm); }
 
-  /* la burbuja sigue siendo una burbuja en mobile — apilada debajo del
-     branding, pero con margen a los costados (nunca de punta a punta)
-     para que la foto se siga viendo alrededor. */
-  .mediador-app .login-split{ flex-direction: column; align-items: stretch; }
-  .mediador-app .login-branding{ padding: var(--space-6) var(--space-5) var(--space-4); min-height: 200px; justify-content: flex-end; }
-  .mediador-app .login-branding h1{ font-size: var(--font-size-xl); }
-  .mediador-app .login-panel{ width: auto; margin: var(--space-4); padding: var(--space-6) var(--space-5); max-height: none; }
+  .mediador-app .landing-hero{ grid-template-columns: 1fr; gap: var(--space-7); padding: var(--space-6) 0 var(--space-7); }
+  .mediador-app .landing-hero-content h1{ font-size: 30px; }
+  .mediador-app .landing-hero-content p{ font-size: var(--font-size-body); }
+  .mediador-app .landing-hero-actions .google-btn, .mediador-app .landing-hero-actions .btn-outline-light{ height: 48px; width: 100%; justify-content: center; }
+  .mediador-app .landing-hero-actions{ flex-direction: column; align-items: stretch; width: 100%; }
+
+  .mediador-app .trust-strip-inner{ grid-template-columns: 1fr; gap: var(--space-4); }
+
+  .mediador-app .landing-split{ grid-template-columns: 1fr; gap: var(--space-6); padding-top: var(--space-7); padding-bottom: var(--space-7); }
+  .mediador-app .landing-split h2, .mediador-app .landing-roles h2, .mediador-app .landing-dark h2, .mediador-app .landing-faq h2{ font-size: 26px; }
+  .mediador-app .landing-roles, .mediador-app .landing-dark, .mediador-app .landing-faq{ padding-top: var(--space-7); padding-bottom: var(--space-7); }
+  .mediador-app .role-grid{ grid-template-columns: 1fr; gap: var(--space-4); margin-top: var(--space-5); }
+  .mediador-app .landing-dark-grid{ grid-template-columns: 1fr; gap: var(--space-7); }
+  .mediador-app .faq-grid{ grid-template-columns: 1fr; gap: 0; }
+  .mediador-app .faq-item{ border-bottom: none !important; }
+  .mediador-app .faq-item:last-child{ border-bottom: 1px solid var(--color-border) !important; }
+  .mediador-app .landing-cta-dark{ padding: var(--space-7) var(--space-4); }
+  .mediador-app .landing-cta-dark h2{ font-size: 26px; }
+  .mediador-app .landing-cta-dark .google-btn{ width: 100%; height: 48px; }
+  .mediador-app .landing-footer-inner{ flex-direction: column; align-items: flex-start; gap: var(--space-4); text-align: left; }
+  .mediador-app .landing-footer-links{ gap: var(--space-4); row-gap: var(--space-2); }
 
   .mediador-app .modal{ max-width: calc(100vw - 32px); }
   .mediador-app .modal-body, .mediador-app .modal-header, .mediador-app .modal-footer{ padding-left: var(--space-4); padding-right: var(--space-4); }
@@ -44,5 +70,5 @@
 }
 
 @media (min-width: 768px) and (max-width: 1023px){
-  .mediador-app .feature-grid{ grid-template-columns: repeat(2, 1fr); }
+  .mediador-app .role-grid{ grid-template-columns: repeat(2, 1fr); }
 }

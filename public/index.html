@@ -21,113 +21,238 @@
 <body>
 
 <div id="login-gate" class="mediador-app" style="display:none;">
-  <div class="login-split">
-    <div class="login-branding">
-      <div class="login-branding-content">
-        <div class="mediador-logo">
+
+  <header class="landing-header">
+    <img class="landing-header-bg" src="/images/bridge.jpeg" alt="">
+    <div class="landing-header-scrim"></div>
+    <div class="landing-header-inner landing-container">
+      <nav class="landing-nav">
+        <a class="mediador-logo" href="#" onclick="event.preventDefault();">
           <img class="mediador-logo-mark" src="/mediador-icon.svg" alt="">
           <span class="mediador-logo-text">Mediador</span>
+        </a>
+        <div class="landing-nav-links">
+          <a href="#como-funciona">Cómo funciona</a>
+          <a href="#estudios">Para estudios</a>
+          <a href="#seguridad">Seguridad</a>
+          <a href="#preguntas">Preguntas</a>
         </div>
-        <h1>El sistema operativo de tu mediación.</h1>
-        <p class="tagline">
-          <strong>Sabé qué pasó.</strong>
-          <strong>Sabé qué falta.</strong>
-          <strong>Sabé qué sigue.</strong>
-        </p>
+        <div class="landing-nav-actions">
+          <a class="landing-nav-login" href="/auth/google?next=/">Ingresar</a>
+          <a class="btn btn-primary btn-lg" href="/auth/google?next=/">Empezar gratis</a>
+        </div>
+      </nav>
+      <div class="landing-hero">
+        <div class="landing-hero-content">
+          <h1>El sistema operativo de tu mediación.</h1>
+          <p>Expedientes, audiencias, documentos y comunicaciones en un solo lugar. Cada caso te muestra qué pasó, qué falta y qué sigue.</p>
+          <div class="landing-hero-actions">
+            <a class="google-btn" style="width:auto; height:54px; padding:0 24px;" href="/auth/google?next=/">
+              <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
+              Empezar gratis con Google
+            </a>
+            <a class="btn-outline-light" href="#como-funciona">Ver cómo funciona</a>
+          </div>
+          <p class="cta-note">Sin tarjeta ni instalación.</p>
+        </div>
+        <div class="hero-card">
+          <div class="hero-card-head">
+            <span class="code">MED-2026-0047</span>
+            <span class="badge badge-success">En mediación</span>
+          </div>
+          <div class="hero-card-parties">García / López</div>
+          <div class="hero-card-action">
+            <div>
+              <div class="label">Próxima acción</div>
+              <div class="title">Confirmar audiencia</div>
+              <div class="sub">Parte requirente, vence el 18/04/2026</div>
+            </div>
+            <span class="go">Ver audiencia</span>
+          </div>
+          <div class="hero-card-confirmations">
+            <div class="cf-label">Confirmaciones</div>
+            <div class="cf-row"><span>Martín García</span><span class="badge badge-success">Confirmó</span></div>
+            <div class="cf-row"><span>Lucía López</span><span class="badge badge-warning">Pendiente</span></div>
+          </div>
+          <div class="hero-card-foot">
+            <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+            Aviso enviado por WhatsApp a ambas partes
+          </div>
+        </div>
       </div>
     </div>
-    <div class="login-panel">
-      <div class="login-panel-inner">
-        <div class="eyebrow">Para mediadores y estudios jurídicos</div>
-        <h2>Entrá a tu cuenta</h2>
-        <p class="sub">Dejá de perseguir confirmaciones por teléfono y de armar el informe a mano.</p>
-        <button class="google-btn" onclick="location.href='/auth/google?next=/'">
-          <svg width="16" height="16" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
-          Continuar con Google
-        </button>
-        <p class="cta-note">Sin tarjeta. Creás tu primer caso en menos de dos minutos.</p>
-        <div class="trust-row">
-          <span class="trust-chip"><svg viewBox="0 0 24 24"><path d="M12 3.2 19 6v5.4c0 4.2-2.9 7.9-7 9-4.1-1.1-7-4.8-7-9V6l7-2.8Z"/><path d="m9.4 12.1 1.9 1.9 3.4-3.6"/></svg>Firma electrónica</span>
-          <span class="trust-chip"><svg viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>Cifrado en tránsito</span>
-          <span class="trust-chip"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 12l2 2 4-4"/></svg>Hecho en Argentina</span>
-        </div>
-      </div>
-    </div>
-  </div>
+  </header>
 
-  <section class="landing-section">
-    <h2>Todo lo operativo, resuelto</h2>
-    <p class="section-sub">No es un CRM genérico adaptado a la fuerza — cada pantalla está pensada para el día a día de una mediación real.</p>
-    <div class="feature-grid">
-      <div class="feature-card">
-        <div class="fc-ic"><svg viewBox="0 0 24 24"><path d="M6 4h9l5 5v11a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"/><path d="M15 4v5h5"/></svg></div>
-        <h3>Expediente completo</h3>
-        <p>Partes, abogados y documentos con control de versiones — nunca se pierde una constancia ni se confunde cuál es la última.</p>
+  <section class="trust-strip">
+    <div class="landing-container trust-strip-inner">
+      <div class="trust-strip-item">
+        <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+        <div><div class="t">Informes con firma electrónica</div><div class="s">Verificables por quien los recibe</div></div>
       </div>
-      <div class="feature-card">
-        <div class="fc-ic"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/></svg></div>
-        <h3>Audiencias sin ida y vuelta</h3>
-        <p>Proponés varios horarios candidatos, cada parte confirma cuál le sirve, y el sistema avisa solo si hay un conflicto de agenda.</p>
+      <div class="trust-strip-item">
+        <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <div><div class="t">Portales sin cuenta</div><div class="s">Para partes y abogados</div></div>
       </div>
-      <div class="feature-card">
-        <div class="fc-ic"><svg viewBox="0 0 24 24"><path d="M4 4h16v12H7l-3 3V4Z"/></svg></div>
-        <h3>WhatsApp de verdad</h3>
-        <p>Propuesta, confirmación, cancelación o reprogramación: cada aviso sale solo, y si no pudo salir te lo dice — nunca finge un envío que no pasó.</p>
+      <div class="trust-strip-item">
+        <svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>
+        <div><div class="t">Avisos por WhatsApp</div><div class="s">Con el estado real de cada envío</div></div>
       </div>
-      <div class="feature-card">
-        <div class="fc-ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-3.3 3.6-6 8-6s8 2.7 8 6"/></svg></div>
-        <h3>Portal sin cuenta</h3>
-        <p>Partes y abogados entran con un link propio, sin crear usuario ni recordar contraseña, y ven solo lo que les corresponde.</p>
-      </div>
-      <div class="feature-card">
-        <div class="fc-ic"><svg viewBox="0 0 24 24"><path d="M12 3.2 19 6v5.4c0 4.2-2.9 7.9-7 9-4.1-1.1-7-4.8-7-9V6l7-2.8Z"/><path d="m9.4 12.1 1.9 1.9 3.4-3.6"/></svg></div>
-        <h3>Informes certificados</h3>
-        <p>PDF con hash de integridad y firma electrónica, con una página pública de verificación para quien lo reciba fuera de la app.</p>
-      </div>
-      <div class="feature-card">
-        <div class="fc-ic"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17.5" cy="9.5" r="2.3"/><path d="M15.8 14c2.4.4 4.2 2.5 4.2 5"/></svg></div>
-        <h3>Equipos y estudios</h3>
-        <p>Sumá mediadores y asistentes con roles distintos, e invitalos por email — el administrador ve todas las mediaciones del equipo.</p>
+      <div class="trust-strip-item">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+        <div><div class="t">Hecho en Argentina</div><div class="s">Para la mediación de acá</div></div>
       </div>
     </div>
   </section>
 
-  <section class="landing-section">
-    <h2>Cómo empezás</h2>
-    <p class="section-sub">Ningún paso previo, ninguna instalación.</p>
-    <div class="steps-row">
-      <div class="step">
-        <div class="step-num">1</div>
-        <h3>Entrás con tu cuenta de Google</h3>
-        <p>No hay formulario largo ni contraseña nueva que recordar.</p>
+  <section class="landing-split-section" id="como-funciona">
+    <div class="landing-container landing-split">
+      <div>
+        <h2>Sabé qué pasó.</h2>
+        <p>Cada cambio queda registrado con fecha, responsable y motivo. Si alguien pregunta qué pasó, la respuesta ya está escrita.</p>
+        <div class="check-list">
+          <div><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Historial completo de cada mediación, en orden</div>
+          <div><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Documentos con versiones, sin confundir cuál es la última</div>
+          <div><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Informe exportable con firma e integridad verificable</div>
+        </div>
       </div>
-      <div class="step">
-        <div class="step-num">2</div>
-        <h3>Cargás el caso</h3>
-        <p>Partes, abogados y la primera audiencia — lo esencial para arrancar.</p>
-      </div>
-      <div class="step">
-        <div class="step-num">3</div>
-        <h3>La plataforma avisa por vos</h3>
-        <p>Confirmaciones, recordatorios y cambios de horario le llegan solos a cada parte.</p>
+      <div class="mock-card">
+        <div class="mock-card-head"><span class="title">Historial</span><span class="sub">MED-2026-0047</span></div>
+        <div class="mock-timeline">
+          <div class="mock-timeline-item"><span class="time">12/04 10:14</span><span class="dot"></span><div><div class="title">Audiencia propuesta</div><div class="desc">Dos horarios enviados a ambas partes</div></div></div>
+          <div class="mock-timeline-item"><span class="time">12/04 18:02</span><span class="dot"></span><div><div class="title">García confirmó</div><div class="desc">Eligió el 18/04 a las 15:00</div></div></div>
+          <div class="mock-timeline-item is-warn"><span class="time">13/04 09:40</span><span class="dot"></span><div><div class="title">López pidió un cambio</div><div class="desc">Motivo: viaje laboral</div></div></div>
+          <div class="mock-timeline-item"><span class="time">13/04 11:05</span><span class="dot"></span><div><div class="title">Audiencia reprogramada</div><div class="desc">Del 18/04 al 22/04 a las 15:00</div></div></div>
+          <div class="mock-timeline-item is-done"><span class="time">13/04 11:06</span><span class="dot"></span><div><div class="title">Aviso enviado por WhatsApp</div><div class="desc">A ambas partes y sus abogados</div></div></div>
+        </div>
       </div>
     </div>
   </section>
 
-  <section class="landing-section">
-    <div class="landing-cta-block">
-      <h2>¿Listo para dejar de perseguir confirmaciones?</h2>
-      <p class="section-sub">Gratis para empezar, sin plan pago todavía.</p>
-      <button class="google-btn" style="width:auto; padding:0 24px;" onclick="location.href='/auth/google?next=/'">
-        <svg width="16" height="16" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
-        Empezar gratis con Google
-      </button>
+  <section class="landing-split-section on-surface">
+    <div class="landing-container landing-split">
+      <div class="mock-card">
+        <div class="mock-card-head"><span class="title">¿Qué requiere tu atención?</span><span class="sub">4 mediaciones</span></div>
+        <div class="mock-attention-row"><div><div class="code">MED-2026-0142</div><div class="title">Audiencia mañana, faltan 2 confirmaciones</div><a href="#">Enviar aviso</a></div><span class="badge badge-warning">Requiere atención</span></div>
+        <div class="mock-attention-row"><div><div class="code">MED-2026-0138</div><div class="title">Compromiso vencido hace 3 días</div><a href="#">Contactar a la parte</a></div><span class="badge badge-danger">Vencido</span></div>
+        <div class="mock-attention-row"><div><div class="code">MED-2026-0129</div><div class="title">Sin próxima acción definida</div><a href="#">Definir próxima acción</a></div><span class="badge badge-warning">Pendiente</span></div>
+        <div class="mock-attention-row"><div><div class="code">MED-2026-0121</div><div class="title">Documento nuevo sin revisar</div><a href="#">Revisar documento</a></div><span class="badge badge-info">Nuevo</span></div>
+      </div>
+      <div>
+        <h2>Sabé qué falta.</h2>
+        <p>Mediador revisa tus casos todos los días y te muestra lo que requiere atención antes de que se convierta en un problema.</p>
+        <div class="check-list">
+          <div><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Confirmaciones de audiencia pendientes</div>
+          <div><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Compromisos y tareas vencidas</div>
+          <div><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Casos sin próxima acción definida</div>
+        </div>
+      </div>
     </div>
+  </section>
+
+  <section class="landing-split-section">
+    <div class="landing-container landing-split">
+      <div>
+        <h2>Sabé qué sigue.</h2>
+        <p>Proponé horarios, recibí confirmaciones y reprogramá sin llamadas. La agenda detecta los choques de horario antes de confirmar.</p>
+        <div class="check-list">
+          <div><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Propuesta de varios horarios a la vez</div>
+          <div><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Cada parte confirma desde su portal</div>
+          <div><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Entrás a la videollamada desde la audiencia</div>
+        </div>
+      </div>
+      <div class="mock-card">
+        <div class="mock-card-head"><span class="title">Jueves 16 de abril</span><span class="sub">Agenda</span></div>
+        <div class="mock-agenda-row"><span class="time">09:00</span><div class="info"><div class="title">Audiencia, Silva / Martínez</div><div class="sub">MED-2026-0045, presencial</div></div><span class="badge badge-success">Confirmada</span></div>
+        <div class="mock-agenda-row"><span class="time">11:30</span><div class="info"><div class="title">Reunión de equipo</div><div class="sub">Bloqueo interno</div></div><span class="badge badge-neutral">Interna</span></div>
+        <div class="mock-agenda-row"><span class="time">15:00</span><div class="info"><div class="title">Audiencia, García / López</div><a href="#">Entrar a la videollamada</a></div><span class="badge badge-warning">Sin confirmar</span></div>
+        <div class="mock-agenda-row"><span class="time">17:00</span><div class="info"><div class="title">Propuesta, MED-2026-0048</div><div class="sub">Choca con otra audiencia</div></div><span class="badge badge-danger">Conflicto</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="landing-roles">
+    <div class="landing-container">
+      <h2>Cada persona ve lo que le corresponde.</h2>
+      <p>Las partes y sus abogados entran con un link propio, sin crear usuario ni recordar contraseña.</p>
+      <div class="role-grid">
+        <div class="role-card">
+          <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          <h3>El mediador</h3>
+          <p>Todo el caso en una pantalla: partes, audiencias, documentos, tareas e historial.</p>
+        </div>
+        <div class="role-card">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-3.3 3.6-6 8-6s8 2.7 8 6"/></svg>
+          <h3>La parte</h3>
+          <p>Su próxima audiencia, sus documentos y sus compromisos. Confirma o pide un cambio en un toque.</p>
+        </div>
+        <div class="role-card">
+          <svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 14h6M9 18h4"/></svg>
+          <h3>El abogado</h3>
+          <p>Solo lo de su representado. Puede confirmar en su nombre y seguir el caso sin llamar.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="landing-dark" id="estudios">
+    <div class="landing-container landing-dark-grid">
+      <div>
+        <h2>Un tablero para todo el estudio.</h2>
+        <p>Sumá mediadores y asistentes con permisos claros. Cada uno trabaja lo suyo.</p>
+        <div class="role-list-dark">
+          <div class="item"><div class="t">Administrador</div><div class="s">Asigna casos y ve todas las mediaciones del estudio.</div></div>
+          <div class="item"><div class="t">Mediador</div><div class="s">Trabaja sus casos con control total del expediente.</div></div>
+          <div class="item"><div class="t">Asistente</div><div class="s">Colabora en agenda, documentos y comunicaciones de lo que tiene asignado.</div></div>
+        </div>
+      </div>
+      <div id="seguridad">
+        <h2>Tus casos, protegidos.</h2>
+        <p>La información de una mediación es sensible. Mediador está construido alrededor de eso.</p>
+        <div class="check-list-dark">
+          <div><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>Los permisos se verifican en el servidor, no solo en la pantalla.</span></div>
+          <div><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>Cada parte ve solo su información, nunca la de la otra.</span></div>
+          <div><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>Los informes llevan hash de integridad y firma electrónica, verificables en una página pública.</span></div>
+          <div><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>Toda la conexión viaja cifrada por HTTPS.</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="landing-faq" id="preguntas">
+    <div class="landing-container">
+      <h2>Preguntas frecuentes</h2>
+      <div class="faq-grid">
+        <div class="faq-item"><h3>¿Cuánto cuesta?</h3><p>Hoy podés empezar gratis, sin tarjeta.</p></div>
+        <div class="faq-item"><h3>¿Las partes necesitan crear una cuenta?</h3><p>No. Reciben un link propio y ven solo lo que les corresponde.</p></div>
+        <div class="faq-item"><h3>¿Reemplaza al sistema oficial de mediación?</h3><p>No. Mediador organiza tu trabajo diario: agenda, seguimiento, documentos y comunicaciones. Los trámites oficiales siguen por su canal.</p></div>
+        <div class="faq-item"><h3>¿Puedo trabajar con mi equipo?</h3><p>Sí. Invitás mediadores y asistentes por email, cada uno con su rol.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="landing-cta-dark">
+    <h2>Tu próxima mediación, ordenada desde el primer día.</h2>
+    <p>Gratis para empezar. Sin tarjeta ni instalación.</p>
+    <a class="google-btn" style="width:auto; height:54px; padding:0 24px;" href="/auth/google?next=/">
+      <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.59-5.05-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l2.99-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
+      Empezar gratis con Google
+    </a>
   </section>
 
   <footer class="landing-footer">
-    <div class="mediador-logo" style="justify-content:center; margin-bottom:6px;"><img class="mediador-logo-mark" style="width:22px; height:22px;" src="/mediador-icon.svg" alt=""><span class="mediador-logo-text" style="font-size:13px; color:var(--color-text-secondary);">Mediador</span></div>
-    Parte de Puente Digital.
+    <div class="landing-container landing-footer-inner">
+      <div class="landing-footer-brand">
+        <div class="mediador-logo on-light"><img class="mediador-logo-mark" style="width:28px; height:28px;" src="/mediador-icon.svg" alt=""><span class="mediador-logo-text" style="font-size:17px;">Mediador</span></div>
+        <span class="tag">El sistema operativo de tu mediación.</span>
+      </div>
+      <div class="landing-footer-links">
+        <a href="/terminos.html">Términos y condiciones</a>
+        <a href="/privacidad.html">Privacidad</a>
+        <a href="/legal.html">Aviso legal</a>
+        <a href="mailto:soporte@puentedigital.app">soporte@puentedigital.app</a>
+        <span>© 2026 Mediador</span>
+      </div>
+    </div>
   </footer>
 </div>
 
