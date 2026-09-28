@@ -34,6 +34,11 @@
 .mediador-app .sidebar-item:hover{ background: var(--color-sidebar-hover); color: var(--color-text-on-dark); }
 .mediador-app .sidebar-item.active{ background: var(--color-sidebar-active); color: var(--color-text-on-dark); }
 .mediador-app .sidebar-item.active svg{ color: var(--color-brand); }
+.mediador-app .sidebar-item .sidebar-badge{
+  margin-left: auto; background: var(--color-brand); color: var(--color-sidebar);
+  font-size: 11px; font-weight: var(--font-weight-bold); line-height: 1; border-radius: var(--radius-pill);
+  padding: 3px 7px; flex-shrink: 0;
+}
 
 .mediador-app .sidebar-footer{ border-top: 1px solid rgba(255,255,255,.08); padding-top: var(--space-3); margin-top: var(--space-3); }
 

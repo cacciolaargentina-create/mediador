@@ -567,6 +567,11 @@ module.exports = function (io, presence) {
       // un buzón de mensajes, solo dice cuántas conversaciones tienen
       // algo sin leer.
       comunicacionesPendientes,
+      // Bloque 30 — las últimas conversaciones con actividad, para la
+      // sección "Comunicaciones recientes" del dashboard (spec §10). Las
+      // 3 más recientes alcanzan para eso; "Ver todas" lleva a la bandeja
+      // completa (GET /inbox), que es la que soporta paginación/búsqueda.
+      comunicacionesRecientes: buildCommunicationsInbox(db, req.user, { limit: 3 }),
       // Bloque 22 — "¿Qué requiere tu atención?": el mismo criterio que
       // los bloques de arriba, pero unificado en una sola lista plana y
       // priorizada (vencido > crítico > próximo > pendiente, sin ranking
@@ -717,6 +722,60 @@ module.exports = function (io, presence) {
     if (req.query.sinAsignar === '1') enriched = enriched.filter((m) => m.assigned.length === 0);
 
     res.json(enriched.sort((a, b) => b.createdAt - a.createdAt));
+  });
+
+  // Bloque 30 — bandeja global de comunicaciones: junta las conversaciones
+  // (parte/abogado/interno) de TODAS las mediaciones del usuario en una
+  // sola lista, para poder entrar al chat correcto en 1 clic desde
+  // Dashboard/Comunicaciones sin pasar por cada expediente. Reusa
+  // getMyMediations (mismo control de acceso que el resto de la app,
+  // nunca un filtro nuevo) y lastMessagePreview/unreadCountFor tal cual
+  // los usa GET /:id/communications — ningún cálculo de "no leído"
+  // paralelo. Solo aparecen hilos que YA tienen al menos un mensaje: una
+  // bandeja llena de canales internos vacíos de cada mediación sería puro
+  // ruido (spec §7/§9).
+  function buildCommunicationsInbox(db, user, { limit = 20, q = '' } = {}) {
+    const mine = getMyMediations(db, user);
+    const items = [];
+    for (const m of mine) {
+      for (const ch of db.channels.filter((c) => c.mediationId === m.id)) {
+        const last = lastMessagePreview(db, ch.id);
+        if (!last) continue;
+        let type = 'interno';
+        let participantName = 'Equipo interno';
+        if (ch.partyId) { type = 'parte'; participantName = partyDisplayName(db, ch.partyId) || 'Parte'; }
+        else if (ch.lawyerId) {
+          type = 'abogado';
+          const lawyer = db.lawyers.find((l) => l.id === ch.lawyerId);
+          participantName = lawyer ? lawyer.name : 'Abogado';
+        }
+        items.push({
+          mediationId: m.id, mediationCode: m.code, mediationObject: m.object,
+          channelCode: ch.code, type, participantName,
+          lastMessage: last, unreadCount: unreadCountFor(db, ch.id, user.id),
+        });
+      }
+    }
+    items.sort((a, b) => (b.lastMessage?.createdAt || 0) - (a.lastMessage?.createdAt || 0));
+    let filtered = items;
+    const needle = (q || '').trim().toLowerCase();
+    if (needle) {
+      filtered = items.filter((it) =>
+        it.mediationCode.toLowerCase().includes(needle) ||
+        it.mediationObject.toLowerCase().includes(needle) ||
+        it.participantName.toLowerCase().includes(needle) ||
+        (it.lastMessage.text || '').toLowerCase().includes(needle)
+      );
+    }
+    return filtered.slice(0, limit);
+  }
+
+  // límite duro (no solo el default) — evitar que alguien pida ?limit=99999
+  // y fuerce recorrer/serializar de más (spec §20, performance).
+  router.get('/inbox', requireAuth, (req, res) => {
+    const db = getDB();
+    const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 50);
+    res.json(buildCommunicationsInbox(db, req.user, { limit, q: req.query.q }));
   });
 
   // ---------- expediente (registro básico — el resumen agregado con

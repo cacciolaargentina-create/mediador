@@ -103,6 +103,11 @@
 .mediador-app .mediation-row .top{ display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); }
 .mediador-app .mediation-row .code{ font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--color-text-muted); margin-top: 2px; }
 
+/* Bloque 30 — [Chat] [Historial] [Abrir] reusado en Mis Mediaciones,
+   Comunicaciones, Agenda, Dashboard. */
+.mediador-app .quick-actions{ display: flex; gap: var(--space-2); margin-top: var(--space-3); flex-wrap: wrap; }
+.mediador-app .quick-actions button{ flex: 1; min-width: 80px; }
+
 .mediador-app .stat-row{ display: flex; gap: var(--space-6); flex-wrap: wrap; }
 .mediador-app .stat{ font-size: var(--font-size-xxl); font-weight: var(--font-weight-bold); color: var(--color-text); }
 .mediador-app .stat-label{ font-size: var(--font-size-xs); color: var(--color-text-secondary); }

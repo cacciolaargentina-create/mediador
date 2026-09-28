@@ -25,6 +25,68 @@ function fmtDate(iso){
 function fmtDateTime(ms){
   return new Date(ms).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
 }
+// Bloque 30 — "Hace 8 min" / "Ayer" para la bandeja de Comunicaciones y el
+// widget del dashboard (spec §7/§10). Nunca se usa para nada que dependa
+// de precisión (eso sigue usando fmtDateTime).
+function fmtRelativeTime(ms){
+  const diffMin = Math.round((Date.now() - ms) / 60000);
+  if(diffMin < 1) return 'Recién';
+  if(diffMin < 60) return `Hace ${diffMin} min`;
+  const diffH = Math.round(diffMin / 60);
+  if(diffH < 24) return `Hace ${diffH} h`;
+  const diffD = Math.round(diffH / 24);
+  if(diffD === 1) return 'Ayer';
+  if(diffD < 7) return `Hace ${diffD} días`;
+  return fmtDate(new Date(ms).toISOString());
+}
+
+// Bloque 30 — acceso rápido a Chat/Historial desde cualquier lugar donde
+// haya una mediación identificable (Mis Mediaciones, Dashboard, Agenda,
+// Comunicaciones). Un solo componente reusado en vez de repetir el mismo
+// bloque de botones en cada pantalla — spec §17 ("<MediationQuickActions/>").
+// "Chat" ancla a #section-comunicaciones y "Historial" a #section-timeline,
+// que son las secciones ya existentes del Bloque 19/expediente — nunca un
+// chat/historial paralelo.
+function mediationQuickActionsHtml(id, opts = {}){
+  const sizeClass = opts.compact ? 'btn-sm' : '';
+  return `
+    <div class="quick-actions" onclick="event.stopPropagation();">
+      <button class="ghost ${sizeClass}" onclick="openMediationSection('${id}','comunicaciones')">Chat</button>
+      <button class="ghost ${sizeClass}" onclick="openMediationSection('${id}','timeline')">Historial</button>
+      ${opts.hideOpen ? '' : `<button class="ghost ${sizeClass}" onclick="goTo('detail','${id}')">Abrir</button>`}
+    </div>`;
+}
+// Bloque 30 §13/14 — "Ver contexto" en un evento del Timeline: usa
+// SOLO referencias reales ya presentes en el evento (entityType,
+// metadata.sourceMessageId), nunca relaciones inventadas. Un mensaje
+// que generó una tarea/compromiso/solicitud de cambio guarda
+// sourceMessageId en el metadata del evento (ver routes/mediations.js) —
+// eso es lo que habilita "Ver chat" acá; si no está, no se muestra nada.
+function timelineContextLink(mediationId, e){
+  if(e.entityType === 'hearing' || e.entityType === 'hearing_reschedule_request'){
+    return `<div style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); document.getElementById('section-audiencias')?.scrollIntoView({behavior:'smooth', block:'start'});" style="font-size:12px; font-weight:600;">Ver audiencia</a></div>`;
+  }
+  if(e.metadata && e.metadata.sourceMessageId){
+    return `<div style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); document.getElementById('section-comunicaciones')?.scrollIntoView({behavior:'smooth', block:'start'});" style="font-size:12px; font-weight:600;">Ver chat</a></div>`;
+  }
+  return '';
+}
+// Bloque 30 §8 — "Comunicaciones ● 4" en el sidebar. Reusa el MISMO
+// número que ya calcula el dashboard (comunicacionesPendientes, Bloque
+// 19) — nunca un contador paralelo. Se actualiza cada vez que se pide
+// el dashboard; alcanza para que quede razonablemente al día sin abrir
+// un socket dedicado solo para esto.
+function updateCommsBadge(count){
+  const badge = document.getElementById('comms-badge');
+  if(!badge) return;
+  if(count > 0){ badge.textContent = String(count); badge.style.display = ''; }
+  else { badge.style.display = 'none'; }
+}
+function openMediationSection(mediationId, sectionSuffix){
+  Promise.resolve(goTo('detail', mediationId)).then(() => {
+    document.getElementById('section-' + sectionSuffix)?.scrollIntoView({ behavior:'smooth', block:'start' });
+  });
+}
 
 const STATUS_LABELS = {
   borrador:'Borrador', iniciada:'Iniciada', contactando_partes:'Contactando partes',
@@ -284,7 +346,7 @@ function showToast(message, kind){
 const TAB_FOR_SCREEN = {
   dashboard:'dashboard', list:'list', detail:'list', new:'list',
   stats:'stats', team:'team', studioMediations:'team',
-  agenda:'agenda', requests:'requests',
+  agenda:'agenda', requests:'requests', comms:'comms',
 };
 function goTo(screen, id){
   currentMediationId = id || null;
@@ -307,6 +369,7 @@ function goTo(screen, id){
   else if(screen === 'studioMediations') renderPromise = renderStudioMediations();
   else if(screen === 'agenda') renderPromise = renderAgenda();
   else if(screen === 'requests') renderPromise = renderRequests();
+  else if(screen === 'comms') renderPromise = renderComunicaciones();
   else if(screen === 'videoSettings') renderPromise = renderVideoSettings();
   window.scrollTo(0, 0);
   return renderPromise;
@@ -443,6 +506,7 @@ async function renderDashboard(){
   catch(e){ main.innerHTML = `<p class="empty-hint">No se pudo cargar el dashboard.</p>`; return; }
 
   currentAttentionItems = d.centroAtencion || [];
+  updateCommsBadge(d.comunicacionesPendientes);
   const moreHearings = d.proximasAudiencias.length > 3;
 
   main.innerHTML = `
@@ -457,12 +521,19 @@ async function renderDashboard(){
       </div>
     </div>
 
-    ${d.comunicacionesPendientes ? `
+    ${d.comunicacionesRecientes && d.comunicacionesRecientes.length ? `
     <div class="card">
-      <div class="alert-row" onclick="goTo('list')" style="cursor:pointer;">
-        <div style="font-weight:600; font-size:13.5px;">Comunicaciones sin leer</div>
-        <span class="pill warn">${d.comunicacionesPendientes}</span>
-      </div>
+      <h2>Comunicaciones recientes${d.comunicacionesPendientes ? ` <span class="pill warn" style="font-weight:400;">${d.comunicacionesPendientes}</span>` : ''}</h2>
+      ${d.comunicacionesRecientes.map(c => `
+        <div class="alert-row" onclick="openMediationSection('${c.mediationId}','comunicaciones')" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+          <div style="min-width:0;">
+            <div style="font-weight:600; font-size:13.5px;">${escapeHtml(c.mediationCode)} — ${escapeHtml(c.participantName)}</div>
+            <div style="font-size:12px; color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(c.lastMessage.text)} · ${fmtRelativeTime(c.lastMessage.createdAt)}</div>
+          </div>
+          ${c.unreadCount ? `<span class="pill warn" style="flex-shrink:0;">${c.unreadCount}</span>` : ''}
+        </div>
+      `).join('')}
+      <p class="empty-hint" style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); goTo('comms');" style="color:var(--calm);">Ver todas →</a></p>
     </div>
     ` : ''}
 
@@ -797,6 +868,10 @@ async function renderAgenda(){
               <span class="pill ${h.confirmationSummary==='todas'?'calm':h.confirmationSummary==='ninguna'||h.confirmationSummary==='pendientes'?'warn':'warn'}">${AGENDA_CONFIRMATION_LABELS[h.confirmationSummary]||h.confirmationSummary}</span>
               ${h.alerts.recentlyRescheduled ? '<span class="pill warn">reprogramada</span>' : ''}
             </div>
+            <div class="quick-actions" onclick="event.stopPropagation();">
+              <button class="ghost btn-sm" onclick="goTo('detail','${h.mediationId}')">Ver mediación</button>
+              <button class="ghost btn-sm" onclick="openMediationSection('${h.mediationId}','comunicaciones')">Chat</button>
+            </div>
           </div>
         `).join('') : `<p class="empty-hint">Sin audiencias.</p>`}
       </div>
@@ -1003,6 +1078,48 @@ async function addBlock(){
 async function deleteBlock(id){
   try{ await api(`/api/agenda/blocks/${id}`, { method:'DELETE' }); loadAvailabilityPanel(); }
   catch(e){ showToast(e.error || 'No se pudo quitar.', 'danger'); }
+}
+
+// ================= COMUNICACIONES (Bloque 30 — bandeja global) =================
+// Junta las conversaciones de TODAS las mediaciones del mediador — reusa
+// GET /api/mediations/inbox (que a su vez reusa lastMessagePreview/
+// unreadCountFor del Bloque 19) y goTo('detail')+scroll para entrar al
+// chat correcto. No es un chat nuevo: es una lista que lleva al chat de
+// siempre de cada mediación.
+let commsSearchQuery = '';
+async function renderComunicaciones(q){
+  const main = document.getElementById('main');
+  main.innerHTML = `<p class="empty-hint">Cargando…</p>`;
+  if(q !== undefined) commsSearchQuery = q;
+  const params = new URLSearchParams();
+  if(commsSearchQuery) params.set('q', commsSearchQuery);
+  params.set('limit', '30');
+  let items;
+  try{ items = await api('/api/mediations/inbox?' + params.toString()); }
+  catch(e){ main.innerHTML = `<p class="empty-hint">No se pudieron cargar las comunicaciones.</p>`; return; }
+
+  main.innerHTML = `
+    <h1>Comunicaciones</h1>
+    <p style="color:var(--text-dim); font-size:15px; margin-bottom:18px;">Todas tus conversaciones recientes, de todas tus mediaciones.</p>
+    <div class="card">
+      <input id="comms-search" placeholder="Buscar mediación, parte, abogado o mensaje…" value="${escapeHtml(commsSearchQuery)}" onkeyup="if(event.key==='Enter') renderComunicaciones(document.getElementById('comms-search').value.trim())">
+    </div>
+    <div class="card">
+      ${items.length ? items.map(c => `
+        <div class="alert-row" onclick="openMediationSection('${c.mediationId}','comunicaciones')" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+          <div style="min-width:0;">
+            <div style="font-weight:600; font-size:13.5px;">${escapeHtml(c.mediationCode)} — ${escapeHtml(c.participantName)}</div>
+            <div class="code" style="margin-top:0;">${escapeHtml(c.mediationObject)}</div>
+            <div style="font-size:12.5px; color:var(--text-dim); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">"${escapeHtml(c.lastMessage.text)}" · ${fmtRelativeTime(c.lastMessage.createdAt)}</div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+            ${c.unreadCount ? `<span class="pill warn">${c.unreadCount}</span>` : ''}
+            <span style="font-size:12px; font-weight:600; color:var(--calm);">Entrar al chat</span>
+          </div>
+        </div>
+      `).join('') : `<p class="empty-hint">${commsSearchQuery ? 'No hay conversaciones que coincidan con la búsqueda.' : 'Todavía no hay conversaciones con mensajes.'}</p>`}
+    </div>
+  `;
 }
 
 async function renderTeam(){
@@ -1254,6 +1371,7 @@ async function renderList(){
               → ${escapeHtml(m.nextActionText)}${m.nextActionDueDate ? ` <span style="color:${new Date(m.nextActionDueDate).getTime()<Date.now()?'var(--danger)':'var(--text-faint)'};">· vence ${fmtDate(m.nextActionDueDate)}</span>` : ''}
             </div>
           ` : `<div style="font-size:11.5px; color:var(--warn); margin-top:4px;">Sin próxima acción cargada</div>`}
+          ${mediationQuickActionsHtml(m.id, { compact:true })}
         </div>
       `).join('') : `<p class="empty-hint">Ninguna mediación coincide con estos filtros.</p>`}
     </div>
@@ -1715,6 +1833,7 @@ async function renderDetail(id){
       <span class="badge badge-neutral">${STATUS_LABELS[m.status] || m.status}</span>
     </div>
     <h1>${escapeHtml(m.object)}</h1>
+    ${mediationQuickActionsHtml(m.id, { hideOpen:true })}
 
     <div class="card-highlight${nextActionOverdue ? ' is-overdue' : ''}" style="margin-top:16px;">
       <div class="eyebrow" style="color:inherit; opacity:.7; margin-bottom:6px;">Próxima acción</div>
@@ -2002,6 +2121,7 @@ async function renderDetail(id){
           <strong>${EVENT_TYPE_LABELS[e.type] || e.type}</strong>${e.title ? ': ' + escapeHtml(e.title) : ''}
           ${e.description ? `<br><span style="color:var(--text-faint);">${escapeHtml(e.description)}</span>` : ''}
           <br><span style="color:var(--text-faint);">${fmtDateTime(e.createdAt)}</span>
+          ${timelineContextLink(m.id, e)}
         </div>
       `).join('') : `<p class="empty-hint">Sin actividad todavía.</p>`}
     </div>
