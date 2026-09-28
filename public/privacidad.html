@@ -3,219 +3,126 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Puente Digital — Política de privacidad</title>
-<link rel="manifest" href="/manifest-puente.json">
-<link rel="icon" href="/icons/icon-192.png" type="image/png">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<meta name="theme-color" content="#0F1517">
-<!-- corre ANTES de pintar: si no, quien eligió modo claro ve un flash oscuro
-     (el tema por default) hasta que site-common.js carga al final del body. -->
-<script>(function(){try{var t=localStorage.getItem('pd_theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<title>Mediador — Política de privacidad</title>
+<link rel="icon" type="image/svg+xml" href="/mediador-icon.svg">
+<link rel="manifest" href="/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles/tokens.css">
+<link rel="stylesheet" href="/styles/base.css">
+<link rel="stylesheet" href="/styles/components.css">
+<link rel="stylesheet" href="/styles/layout.css">
+<link rel="stylesheet" href="/styles/responsive.css">
 <style>
-  :root{
-    --bg:#0F1517; --surface:#172326; --surface-2:#193033; --line:#2A3A3D;
-    --text:#F4F7F7; --text-dim:#93A3A2; --text-faint:#5E6E6D;
-    --calm:#22C7B8; --calm-dim:#123B38; --warn:#D79B2B; --warn-dim:#4A3712;
-    --danger:#D95353; --danger-dim:#4A1F1F; --header-bg:rgba(15,21,23,0.92);
-    --serif:'Inter',sans-serif; --sans:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
-  }
-  :root[data-theme="light"]{
-    --bg:#F5F8F8; --surface:#FFFFFF; --surface-2:#F2F6F6; --line:#DDE5E6;
-    --text:#172124; --text-dim:#667477; --text-faint:#8A989A;
-    --calm:#159B91; --calm-dim:#E6FAF7; --warn:#D79B2B; --warn-dim:#FFF6DF;
-    --danger:#D95353; --danger-dim:#FCEBEC; --header-bg:rgba(245,248,248,0.92);
-  }
-  *{ box-sizing:border-box; margin:0; padding:0; }
-  html,body{ height:100%; }
-  body{ background:var(--bg); color:var(--text); font-family:var(--sans); -webkit-font-smoothing:antialiased; min-height:100vh; display:flex; flex-direction:column; overflow-x:hidden; }
-
-  html.theme-anim, html.theme-anim *{ transition:background-color .35s ease, color .35s ease, border-color .35s ease, box-shadow .35s ease !important; }
-  .icon-btn{ background:none; border:1px solid var(--line); color:var(--text-dim); width:32px; height:32px; border-radius:8px; font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-  .icon-btn:hover{ border-color:var(--calm-dim); color:var(--text); }
-  @keyframes theme-icon-pop{ 0%{ transform:rotate(0) scale(1); } 45%{ transform:rotate(160deg) scale(0.65); } 100%{ transform:rotate(360deg) scale(1); } }
-  .icon-btn.animating{ animation:theme-icon-pop .5s ease; }
-
-  .bridge-logo{ position:relative; display:inline-block; }
-  .bridge-logo .bridge-arc{ position:absolute; left:0; top:100%; width:100%; height:0.5em; pointer-events:none; overflow:visible; }
-
-  /* sin justify-content:space-between a propósito — ver el comentario
-     largo en index.html. margin-right:auto en .brand logra el mismo
-     "todo lo demás pegado a la derecha" sin que el nav quede centrado. */
-  .site-header{ position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:14px 18px; padding:14px 20px; background:var(--header-bg); backdrop-filter:blur(6px); border-bottom:1px solid var(--line); flex-wrap:wrap; }
-  .site-header .brand{ font-family:var(--serif); font-weight:600; font-size:17px; color:var(--text); text-decoration:none; flex-shrink:0; margin-right:auto; }
-  .site-header .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
-  .site-footer-inner .brand{ font-family:var(--serif); font-weight:600; font-size:16px; color:var(--text); text-decoration:none; }
-  .site-footer-inner .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
-  .site-header-actions{ display:flex; align-items:center; gap:8px; order:2; }
-  .hamburger-btn{ display:none; }
-  .site-nav{ display:flex; gap:18px; flex-wrap:wrap; align-items:center; width:auto; order:1; }
-  .site-nav a{ font-size:12.5px; color:var(--text-dim); text-decoration:none; font-family:var(--sans); white-space:nowrap; }
-  .site-nav a:hover, .site-nav a.active{ color:var(--calm); }
-  @media (max-width:639px){
-    .hamburger-btn{ display:flex; }
-    .site-header-actions{ order:1; }
-    /* backdrop-filter en .site-header crea containing block para hijos
-       position:fixed — rompe el drawer de acá abajo (ver comentario largo
-       en index.html). Se saca acá, queda solo el tinte de --header-bg. */
-    /* .site-nav-backdrop (z-index:44) es hermano de .site-header
-       (z-index:20), no de .site-nav — el backdrop pintaba arriba del
-       drawer entero y se comía los clics reales (ver index.html). */
-    .site-header{ backdrop-filter:none; -webkit-backdrop-filter:none; z-index:50; }
-    .site-nav{
-      display:flex; flex-direction:column; align-items:stretch; gap:2px;
-      position:fixed; top:0; right:0; bottom:0; width:min(80vw,320px);
-      margin:0; padding:78px 20px 28px; border:none; border-left:1px solid var(--line);
-      background:var(--header-bg); -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
-      box-shadow:-10px 0 36px rgba(0,0,0,0.35);
-      transform:translateX(105%); transition:transform .32s cubic-bezier(.32,.72,.35,1);
-      z-index:45; overflow-y:auto; -webkit-overflow-scrolling:touch;
-    }
-    .site-nav.open{ transform:translateX(0); }
-    .site-nav a{ padding:10px 4px; font-size:14px; width:100%; }
-    .site-nav-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:44; opacity:0; pointer-events:none; transition:opacity .3s ease; }
-    .site-nav-backdrop.open{ opacity:1; pointer-events:auto; }
-  }
-  .site-nav-divider{ display:none; }
-  .site-nav-action{ display:none; }
-  .site-nav-drawer-head{ display:none; }
-  @media (max-width:639px){
-    .site-nav-divider{ display:block; height:1px; background:var(--line); margin:14px 2px; flex-shrink:0; }
-    .site-nav-action{
-      display:flex; align-items:center; gap:10px; width:100%;
-      background:none; border:1px solid var(--line); color:var(--text);
-      font-family:var(--sans); font-size:13.5px; padding:11px 12px; border-radius:9px;
-      cursor:pointer; margin-bottom:8px; text-align:left;
-    }
-    .site-nav-action .ic{ font-size:15px; flex-shrink:0; width:18px; text-align:center; }
-    .site-nav-drawer-head{
-      display:flex; align-items:center; justify-content:space-between;
-      margin:0 0 16px; padding-bottom:14px; border-bottom:1px solid var(--line); flex-shrink:0;
-    }
-    .site-nav-drawer-head .brand{ font-family:var(--serif); font-weight:600; font-size:17px; color:var(--text); }
-    .site-nav-drawer-head .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
-    .site-nav-close{
-      background:none; border:1px solid var(--line); color:var(--text-dim);
-      width:30px; height:30px; border-radius:8px; font-size:15px; cursor:pointer;
-      display:flex; align-items:center; justify-content:center; flex-shrink:0;
-    }
-    .site-nav-close:hover{ border-color:var(--calm-dim); color:var(--text); }
-  }
-
-  .site-footer{ border-top:1px solid var(--line); padding:24px 20px 30px; margin-top:auto; }
-  .site-footer-inner{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px; max-width:720px; margin:0 auto 14px; }
-  .site-footer .disclaimer{ max-width:720px; margin:0 auto; font-size:11px; color:var(--text-faint); line-height:1.5; }
-
-  .legal-wrap{ max-width:720px; width:100%; margin:0 auto; padding:40px 22px 20px; box-sizing:border-box; flex:1; }
-  .legal-wrap h1{ font-family:var(--serif); font-size:28px; font-weight:600; margin-bottom:8px; }
-  .legal-wrap .updated{ font-family:var(--mono); font-size:11px; color:var(--text-faint); margin-bottom:22px; text-transform:uppercase; letter-spacing:0.05em; }
-  .legal-note{ background:var(--warn-dim); border:1px solid var(--warn); color:var(--warn); border-radius:8px; padding:12px 14px; font-size:12.5px; line-height:1.55; margin-bottom:28px; }
-  .legal-wrap h2{ font-family:var(--serif); font-size:18px; font-weight:600; margin:30px 0 10px; }
-  .legal-wrap p{ font-size:14px; color:var(--text-dim); line-height:1.7; margin-bottom:12px; }
+  .legal-header{ position:sticky; top:0; z-index:20; background:var(--color-surface); border-bottom:1px solid var(--color-border-light); }
+  .legal-header-inner{ max-width:760px; margin:0 auto; padding:16px 20px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+  .legal-wrap{ max-width:760px; margin:0 auto; padding:40px 20px 24px; }
+  .legal-wrap h1{ margin-bottom:6px; }
+  .legal-wrap .updated{ font-family:var(--font-mono); font-size:11px; color:var(--color-text-muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:26px; }
+  .legal-wrap h2{ font-size:var(--font-size-lg); margin:28px 0 8px; }
+  .legal-wrap p, .legal-wrap li{ color:var(--color-text-secondary); line-height:1.7; }
   .legal-wrap ul{ margin:0 0 12px 20px; padding:0; }
-  .legal-wrap li{ font-size:14px; color:var(--text-dim); line-height:1.7; margin-bottom:6px; }
-  .legal-wrap strong{ color:var(--text); }
-  .legal-wrap a{ color:var(--calm); }
+  .legal-wrap li{ margin-bottom:6px; }
+  .legal-wrap strong{ color:var(--color-text); }
   .legal-wrap table{ width:100%; border-collapse:collapse; margin:14px 0 20px; font-size:13px; }
-  .legal-wrap th, .legal-wrap td{ text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
-  .legal-wrap th{ font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-faint); font-weight:500; }
-  .legal-wrap td{ color:var(--text-dim); }
+  .legal-wrap th, .legal-wrap td{ text-align:left; padding:9px 10px; border-bottom:1px solid var(--color-border-light); vertical-align:top; }
+  .legal-wrap th{ font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--color-text-muted); font-weight:500; }
+  .legal-wrap td{ color:var(--color-text-secondary); }
+  .legal-callout{ background:var(--color-brand-soft); border:1px solid var(--color-brand); border-radius:var(--radius-md); padding:16px 18px; margin:20px 0; }
+  .legal-callout .lab{ font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--color-brand-dark); margin-bottom:6px; font-weight:700; }
+  .legal-callout p{ margin-bottom:0; color:var(--color-text); }
+  .legal-footer{ border-top:1px solid var(--color-border-light); padding:24px 20px 20px; margin-top:32px; }
+  .legal-footer-inner{ max-width:760px; margin:0 auto; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:14px; }
+  .legal-footer-links{ display:flex; flex-wrap:wrap; gap:20px; }
+  .legal-footer-links a{ font-size:13px; color:var(--color-text-secondary); text-decoration:none; }
+  .legal-footer-links a:hover{ color:var(--color-text); }
+  .legal-disclaimer{ max-width:760px; margin:16px auto 0; font-size:11px; color:var(--color-text-muted); line-height:1.5; }
 </style>
 </head>
 <body>
+<div class="mediador-app">
 
-<header class="site-header">
-  <a href="/chat.html" class="brand bridge-logo">Puente<em>digital</em></a>
-  <div class="site-header-actions">
-    <button class="icon-btn theme-btn" onclick="toggleTheme()" title="Cambiar a modo claro" aria-label="Cambiar tema">🌙</button>
-    <button class="icon-btn hamburger-btn" id="hamburger-btn" onclick="toggleMobileNav()" aria-label="Menú" aria-expanded="false">☰</button>
-  </div>
-  <nav class="site-nav" id="site-nav">
-    <div class="site-nav-drawer-head">
-      <span class="brand bridge-logo">Puente<em>digital</em></span>
-      <button class="site-nav-close" onclick="toggleMobileNav()" aria-label="Cerrar menú">✕</button>
+  <header class="legal-header">
+    <div class="legal-header-inner">
+      <a href="/" class="mediador-logo on-light"><img class="mediador-logo-mark" style="width:26px; height:26px;" src="/mediador-icon.svg" alt=""><span class="mediador-logo-text" style="font-size:16px;">Mediador</span></a>
+      <a href="/auth/google?next=/" class="btn btn-primary btn-sm" style="text-decoration:none;">Ingresar</a>
     </div>
-    <a href="/chat.html">Inicio</a>
-    <a href="/chat.html#faq">FAQ</a>
-    <a href="/legal.html">Marco legal</a>
-    <a href="/terminos.html">Términos</a>
-    <a href="/privacidad.html" class="active">Privacidad</a>
-    <div class="site-nav-divider" aria-hidden="true"></div>
-    <button class="site-nav-action" id="site-nav-theme-btn" onclick="toggleThemeWash(event)">
-      <span class="ic" id="site-nav-theme-ic">🌙</span><span id="site-nav-theme-label">Apariencia: oscuro</span>
-    </button>
-  </nav>
-</header>
-<div class="site-nav-backdrop" id="site-nav-backdrop" onclick="toggleMobileNav()"></div>
+  </header>
 
-<div class="legal-wrap">
-  <h1>Política de privacidad</h1>
-  <div class="updated">Última actualización: agosto de 2026</div>
+  <div class="legal-wrap">
+    <h1>Política de privacidad</h1>
+    <div class="updated">Última actualización: septiembre de 2026</div>
 
-  <h2>1. Qué datos recolectamos</h2>
-  <table>
-    <tr><th>Dato</th><th>De dónde sale</th></tr>
-    <tr><td>Nombre, email y foto de perfil</td><td>De tu cuenta de Google, si iniciás sesión así</td></tr>
-    <tr><td>Nombre</td><td>Escrito a mano, si entrás como invitado/a sin cuenta de Google</td></tr>
-    <tr><td>Mensajes del canal</td><td>Lo que escribís en el chat</td></tr>
-    <tr><td>Eventos del calendario</td><td>Horarios, entregas y detalles que cargás</td></tr>
-    <tr><td>Preguntas al asistente</td><td>Lo que le consultás sobre el historial del canal</td></tr>
-  </table>
+    <h2>1. Qué datos recolectamos</h2>
+    <table>
+      <tr><th>Dato</th><th>De dónde sale</th></tr>
+      <tr><td>Nombre, email y foto de perfil</td><td>De tu cuenta de Google, al iniciar sesión</td></tr>
+      <tr><td>Datos de partes, abogados y expedientes</td><td>Cargados por el mediador/a o su equipo</td></tr>
+      <tr><td>Documentos adjuntos</td><td>Subidos por el mediador/a, una parte o un abogado, según los permisos de cada mediación</td></tr>
+      <tr><td>Mensajes de las comunicaciones</td><td>Lo que se escribe en el chat de cada mediación</td></tr>
+      <tr><td>Datos de facturación (nunca de tarjeta)</td><td>Estado de la suscripción, confirmado por Mercado Pago</td></tr>
+      <tr><td>Notas para el asistente</td><td>Lo que le consultás o le pedís que resuma</td></tr>
+    </table>
 
-  <h2>2. Para qué usamos estos datos</h2>
-  <ul>
-    <li>Para darte acceso a tu canal y mostrarle tus mensajes y acuerdos a la otra persona del canal.</li>
-    <li>Para que la IA analice cada mensaje antes de enviarse y sugiera una alternativa más neutral cuando corresponda.</li>
-    <li>Para que el asistente pueda responder preguntas sobre el historial de ese mismo canal.</li>
-    <li>Para generar el informe exportable que pedís desde Historial.</li>
-    <li>Para el feed de calendario (.ics) que sincronizás con tu Google o Apple Calendar, si activás esa opción.</li>
-  </ul>
-  <p>No usamos tus mensajes para entrenar modelos de inteligencia artificial ni con fines publicitarios.</p>
+    <h2>2. Para qué usamos estos datos</h2>
+    <ul>
+      <li>Para darte acceso a tus mediaciones y mostrarle a cada persona (parte, abogado, integrante del equipo) solo lo que le corresponde.</li>
+      <li>Para generar audiencias, recordatorios y avisos por WhatsApp o notificaciones push.</li>
+      <li>Para que el asistente pueda sugerir tareas o resumir un documento, cuando se lo pedís explícitamente.</li>
+      <li>Para generar los informes certificados que exportás.</li>
+      <li>Para administrar tu plan y tu suscripción, si tenés un plan pago.</li>
+    </ul>
+    <p>No usamos el contenido de tus mediaciones para entrenar modelos de inteligencia artificial ni con fines publicitarios.</p>
 
-  <h2>3. Con quién se comparten tus datos</h2>
-  <p>Puente Digital funciona con dos proveedores externos:</p>
-  <ul>
-    <li><strong>Google</strong> (inicio de sesión con Google OAuth) — recibe lo necesario para autenticarte, según la política de privacidad de Google.</li>
-    <li><strong>Anthropic</strong> (proveedor de la inteligencia artificial) — recibe el texto de cada mensaje al momento de enviarse, para analizarlo y, si corresponde, sugerir una alternativa. También recibe el historial del canal cuando usás el Asistente, para poder responder tu pregunta.</li>
-  </ul>
-  <p>No vendemos tus datos a terceros ni los compartimos con fines comerciales.</p>
+    <h2>3. Con quién se comparten tus datos</h2>
+    <p>Mediador funciona con estos proveedores externos:</p>
+    <ul>
+      <li><strong>Google</strong> (inicio de sesión con Google OAuth) — recibe lo necesario para autenticarte, según la política de privacidad de Google.</li>
+      <li><strong>Anthropic</strong> (proveedor de la inteligencia artificial del asistente) — recibe el texto que le consultás o el documento que le pedís resumir, únicamente cuando usás esa función.</li>
+      <li><strong>Meta / WhatsApp Business</strong> — recibe el número de teléfono y el contenido de los avisos automáticos que se envían (confirmaciones de audiencia, recordatorios).</li>
+      <li><strong>Mercado Pago</strong> — recibe lo necesario para procesar el pago de un plan. Mediador nunca ve ni almacena el número de tarjeta, el CVV ni el vencimiento.</li>
+    </ul>
+    <p>No vendemos tus datos a terceros ni los compartimos con fines comerciales.</p>
 
-  <h2>4. Quién puede ver tus mensajes</h2>
-  <p>Por defecto, dentro de un canal solo las dos partes que lo integran pueden ver los mensajes y acuerdos. Opcionalmente, cualquiera de las dos partes puede invitar a un mediador/a o a un estudio jurídico a ese canal puntual, con acceso de solo lectura (no pueden escribir ni resolver acuerdos) — su ingreso queda siempre anunciado en el chat y visible en la lista de integrantes, para ambas partes. Quien administra el sistema puede acceder a los datos almacenados solo para mantenimiento técnico o si es requerido por ley — no hay una persona revisando conversaciones de forma rutinaria.</p>
+    <h2>4. Quién puede ver los datos de una mediación</h2>
+    <p>Cada parte ve solo su propia información. Cada abogado/a ve solo lo de su representado/a. El equipo del estudio ve lo que su rol permite (mediador/a, asistente, administrador/a de estudio). Los permisos se verifican siempre en el servidor, no solo en la pantalla.</p>
+    <div class="legal-callout">
+      <div class="lab">Sobre el acceso de administración de la plataforma</div>
+      <p>Quien administra la plataforma Mediador normalmente <strong>no</strong> puede ver los mensajes ni los documentos privados de una mediación ajena. Solo puede hacerlo mediante un mecanismo explícito, temporal y auditado de acceso de soporte (por ejemplo, para resolver un problema técnico que reportaste vos), con motivo obligatorio y vencimiento automático — nunca como un acceso permanente ni oculto.</p>
+    </div>
 
-  <h2>5. Cómo protegemos tus datos</h2>
-  <p>Las conexiones al Servicio usan HTTPS. El acceso a un canal requiere una cuenta de Google real o un link de invitado con un código largo no adivinable. Aun así, ningún sistema es 100% infalible — te recomendamos no compartir el link de tu canal fuera del contexto para el que fue creado.</p>
+    <h2>5. Cómo protegemos tus datos</h2>
+    <p>Las conexiones al Servicio usan HTTPS. El acceso de partes y abogados requiere un link con un token largo no adivinable, revocable por el mediador/a. Aun así, ningún sistema es 100% infalible — te recomendamos no compartir esos links fuera del contexto para el que fueron generados.</p>
 
-  <h2>6. Cuánto tiempo guardamos tus datos</h2>
-  <p>Guardamos los mensajes y acuerdos de un canal mientras la cuenta esté activa, y hasta 12 meses después de la última actividad del canal. Pasado ese plazo de inactividad, los datos se eliminan.</p>
+    <h2>6. Cuánto tiempo guardamos tus datos</h2>
+    <p>Guardamos los expedientes, documentos y comunicaciones mientras tu cuenta o la de tu estudio esté activa. Si querés eliminar tu cuenta o los datos de una mediación en particular, escribinos (ver Contacto) — no es un proceso automático todavía.</p>
 
-  <h2>7. Tus derechos</h2>
-  <p>De acuerdo con la Ley de Protección de Datos Personales (Ley 25.326) de Argentina, tenés derecho a acceder, rectificar y solicitar la supresión de tus datos personales.</p>
+    <h2>7. Tus derechos</h2>
+    <p>De acuerdo con la Ley de Protección de Datos Personales (Ley 25.326) de Argentina, tenés derecho a acceder, rectificar y solicitar la supresión de tus datos personales.</p>
 
-  <h2>8. Información sobre niños, niñas y adolescentes</h2>
-  <p>Puente Digital está pensado para ser usado por personas adultas. Es posible que en los mensajes o el calendario se mencione información sobre hijos e hijas (horarios, salud, colegio) — esa información es cargada y gestionada por las personas adultas del canal bajo su propia responsabilidad, no directamente por niños, niñas o adolescentes.</p>
+    <h2>8. Información sobre niños, niñas y adolescentes</h2>
+    <p>Mediador está pensado para ser usado por mediadores, estudios, partes y abogados adultos. Es posible que un expediente incluya datos de niños, niñas o adolescentes (por ejemplo, en una mediación de familia) — esa información es cargada y gestionada por las personas adultas responsables del caso bajo su propia responsabilidad profesional, no directamente por menores de edad.</p>
 
-  <h2>9. Cambios a esta política</h2>
-  <p>Podemos actualizar esta Política ocasionalmente. Los cambios importantes se van a reflejar en la fecha de "Última actualización" de esta página.</p>
+    <h2>9. Cambios a esta política</h2>
+    <p>Podemos actualizar esta Política ocasionalmente. Los cambios importantes se van a reflejar en la fecha de "Última actualización" de esta página.</p>
 
-  <h2>10. Contacto</h2>
-  <p>Ante dudas sobre esta Política de privacidad, escribinos por <a href="https://wa.me/15753222446" target="_blank" rel="noopener">WhatsApp</a>. Para entender el resto de las condiciones de uso, mirá los <a href="/terminos.html">Términos y condiciones</a> y el <a href="/legal.html">Marco legal</a>.</p>
-</div>
-
-<footer class="site-footer">
-  <div class="site-footer-inner">
-    <a href="/chat.html" class="brand">Puente<em>digital</em></a>
-    <nav class="site-nav">
-      <a href="/chat.html#faq">FAQ</a>
-      <a href="/legal.html">Marco legal</a>
-      <a href="/terminos.html">Términos</a>
-      <a href="/privacidad.html">Privacidad</a>
-    </nav>
+    <h2>10. Contacto</h2>
+    <p>Ante dudas sobre esta Política de privacidad, escribinos a <a href="mailto:soporte@puentedigital.app">soporte@puentedigital.app</a>. Para el resto de las condiciones de uso, mirá los <a href="/terminos.html">Términos y condiciones</a> y el <a href="/legal.html">Marco legal</a>.</p>
   </div>
-  <p class="disclaimer">Puente Digital es una herramienta de comunicación, no asesoramiento legal, terapéutico ni una mediación homologada. Su objetivo es ayudar a desescalar el conflicto y dar tranquilidad, no reemplazar a un profesional.</p>
-</footer>
 
-<script src="/site-common.js"></script>
+  <footer class="legal-footer">
+    <div class="legal-footer-inner">
+      <div class="mediador-logo on-light"><img class="mediador-logo-mark" style="width:22px; height:22px;" src="/mediador-icon.svg" alt=""><span class="mediador-logo-text" style="font-size:14px;">Mediador</span></div>
+      <div class="legal-footer-links">
+        <a href="/terminos.html">Términos y condiciones</a>
+        <a href="/privacidad.html">Privacidad</a>
+        <a href="/legal.html">Aviso legal</a>
+        <a href="mailto:soporte@puentedigital.app">soporte@puentedigital.app</a>
+      </div>
+    </div>
+    <p class="legal-disclaimer">Mediador es una herramienta de gestión para mediadores y estudios jurídicos. No reemplaza a SIGIM ni a ningún sistema oficial de mediación, y no brinda asesoramiento legal.</p>
+  </footer>
+
+</div>
 </body>
 </html>

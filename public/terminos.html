@@ -3,220 +3,133 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Puente Digital — Términos y condiciones</title>
-<link rel="manifest" href="/manifest-puente.json">
-<link rel="icon" href="/icons/icon-192.png" type="image/png">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<meta name="theme-color" content="#0F1517">
-<!-- corre ANTES de pintar: si no, quien eligió modo claro ve un flash oscuro
-     (el tema por default) hasta que site-common.js carga al final del body. -->
-<script>(function(){try{var t=localStorage.getItem('pd_theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<title>Mediador — Términos y condiciones</title>
+<link rel="icon" type="image/svg+xml" href="/mediador-icon.svg">
+<link rel="manifest" href="/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles/tokens.css">
+<link rel="stylesheet" href="/styles/base.css">
+<link rel="stylesheet" href="/styles/components.css">
+<link rel="stylesheet" href="/styles/layout.css">
+<link rel="stylesheet" href="/styles/responsive.css">
 <style>
-  :root{
-    --bg:#0F1517; --surface:#172326; --surface-2:#193033; --line:#2A3A3D;
-    --text:#F4F7F7; --text-dim:#93A3A2; --text-faint:#5E6E6D;
-    --calm:#22C7B8; --calm-dim:#123B38; --warn:#D79B2B; --warn-dim:#4A3712;
-    --danger:#D95353; --danger-dim:#4A1F1F; --header-bg:rgba(15,21,23,0.92);
-    --serif:'Inter',sans-serif; --sans:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
-  }
-  :root[data-theme="light"]{
-    --bg:#F5F8F8; --surface:#FFFFFF; --surface-2:#F2F6F6; --line:#DDE5E6;
-    --text:#172124; --text-dim:#667477; --text-faint:#8A989A;
-    --calm:#159B91; --calm-dim:#E6FAF7; --warn:#D79B2B; --warn-dim:#FFF6DF;
-    --danger:#D95353; --danger-dim:#FCEBEC; --header-bg:rgba(245,248,248,0.92);
-  }
-  *{ box-sizing:border-box; margin:0; padding:0; }
-  html,body{ height:100%; }
-  body{ background:var(--bg); color:var(--text); font-family:var(--sans); -webkit-font-smoothing:antialiased; min-height:100vh; display:flex; flex-direction:column; overflow-x:hidden; }
-
-  html.theme-anim, html.theme-anim *{ transition:background-color .35s ease, color .35s ease, border-color .35s ease, box-shadow .35s ease !important; }
-  .icon-btn{ background:none; border:1px solid var(--line); color:var(--text-dim); width:32px; height:32px; border-radius:8px; font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-  .icon-btn:hover{ border-color:var(--calm-dim); color:var(--text); }
-  @keyframes theme-icon-pop{ 0%{ transform:rotate(0) scale(1); } 45%{ transform:rotate(160deg) scale(0.65); } 100%{ transform:rotate(360deg) scale(1); } }
-  .icon-btn.animating{ animation:theme-icon-pop .5s ease; }
-
-  .bridge-logo{ position:relative; display:inline-block; }
-  .bridge-logo .bridge-arc{ position:absolute; left:0; top:100%; width:100%; height:0.5em; pointer-events:none; overflow:visible; }
-
-  /* sin justify-content:space-between a propósito — ver el comentario
-     largo en index.html. margin-right:auto en .brand logra el mismo
-     "todo lo demás pegado a la derecha" sin que el nav quede centrado. */
-  .site-header{ position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:14px 18px; padding:14px 20px; background:var(--header-bg); backdrop-filter:blur(6px); border-bottom:1px solid var(--line); flex-wrap:wrap; }
-  .site-header .brand{ font-family:var(--serif); font-weight:600; font-size:17px; color:var(--text); text-decoration:none; flex-shrink:0; margin-right:auto; }
-  .site-header .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
-  .site-footer-inner .brand{ font-family:var(--serif); font-weight:600; font-size:16px; color:var(--text); text-decoration:none; }
-  .site-footer-inner .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
-  .site-header-actions{ display:flex; align-items:center; gap:8px; order:2; }
-  .hamburger-btn{ display:none; }
-  .site-nav{ display:flex; gap:18px; flex-wrap:wrap; align-items:center; width:auto; order:1; }
-  .site-nav a{ font-size:12.5px; color:var(--text-dim); text-decoration:none; font-family:var(--sans); white-space:nowrap; }
-  .site-nav a:hover, .site-nav a.active{ color:var(--calm); }
-  @media (max-width:639px){
-    .hamburger-btn{ display:flex; }
-    .site-header-actions{ order:1; }
-    /* backdrop-filter en .site-header crea containing block para hijos
-       position:fixed — rompe el drawer de acá abajo (ver comentario largo
-       en index.html). Se saca acá, queda solo el tinte de --header-bg. */
-    /* .site-nav-backdrop (z-index:44) es hermano de .site-header
-       (z-index:20), no de .site-nav — el backdrop pintaba arriba del
-       drawer entero y se comía los clics reales (ver index.html). */
-    .site-header{ backdrop-filter:none; -webkit-backdrop-filter:none; z-index:50; }
-    .site-nav{
-      display:flex; flex-direction:column; align-items:stretch; gap:2px;
-      position:fixed; top:0; right:0; bottom:0; width:min(80vw,320px);
-      margin:0; padding:78px 20px 28px; border:none; border-left:1px solid var(--line);
-      background:var(--header-bg); -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
-      box-shadow:-10px 0 36px rgba(0,0,0,0.35);
-      transform:translateX(105%); transition:transform .32s cubic-bezier(.32,.72,.35,1);
-      z-index:45; overflow-y:auto; -webkit-overflow-scrolling:touch;
-    }
-    .site-nav.open{ transform:translateX(0); }
-    .site-nav a{ padding:10px 4px; font-size:14px; width:100%; }
-    .site-nav-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:44; opacity:0; pointer-events:none; transition:opacity .3s ease; }
-    .site-nav-backdrop.open{ opacity:1; pointer-events:auto; }
-  }
-  .site-nav-divider{ display:none; }
-  .site-nav-action{ display:none; }
-  .site-nav-drawer-head{ display:none; }
-  @media (max-width:639px){
-    .site-nav-divider{ display:block; height:1px; background:var(--line); margin:14px 2px; flex-shrink:0; }
-    .site-nav-action{
-      display:flex; align-items:center; gap:10px; width:100%;
-      background:none; border:1px solid var(--line); color:var(--text);
-      font-family:var(--sans); font-size:13.5px; padding:11px 12px; border-radius:9px;
-      cursor:pointer; margin-bottom:8px; text-align:left;
-    }
-    .site-nav-action .ic{ font-size:15px; flex-shrink:0; width:18px; text-align:center; }
-    .site-nav-drawer-head{
-      display:flex; align-items:center; justify-content:space-between;
-      margin:0 0 16px; padding-bottom:14px; border-bottom:1px solid var(--line); flex-shrink:0;
-    }
-    .site-nav-drawer-head .brand{ font-family:var(--serif); font-weight:600; font-size:17px; color:var(--text); }
-    .site-nav-drawer-head .brand em{ font-style:italic; color:var(--calm); font-weight:500; }
-    .site-nav-close{
-      background:none; border:1px solid var(--line); color:var(--text-dim);
-      width:30px; height:30px; border-radius:8px; font-size:15px; cursor:pointer;
-      display:flex; align-items:center; justify-content:center; flex-shrink:0;
-    }
-    .site-nav-close:hover{ border-color:var(--calm-dim); color:var(--text); }
-  }
-
-  .site-footer{ border-top:1px solid var(--line); padding:24px 20px 30px; margin-top:auto; }
-  .site-footer-inner{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px; max-width:720px; margin:0 auto 14px; }
-  .site-footer .disclaimer{ max-width:720px; margin:0 auto; font-size:11px; color:var(--text-faint); line-height:1.5; }
-
-  .legal-wrap{ max-width:720px; width:100%; margin:0 auto; padding:40px 22px 20px; box-sizing:border-box; flex:1; }
-  .legal-wrap h1{ font-family:var(--serif); font-size:28px; font-weight:600; margin-bottom:8px; }
-  .legal-wrap .updated{ font-family:var(--mono); font-size:11px; color:var(--text-faint); margin-bottom:22px; text-transform:uppercase; letter-spacing:0.05em; }
-  .legal-note{ background:var(--warn-dim); border:1px solid var(--warn); color:var(--warn); border-radius:8px; padding:12px 14px; font-size:12.5px; line-height:1.55; margin-bottom:28px; }
-  .legal-wrap h2{ font-family:var(--serif); font-size:18px; font-weight:600; margin:30px 0 10px; }
-  .legal-wrap p{ font-size:14px; color:var(--text-dim); line-height:1.7; margin-bottom:12px; }
+  .legal-header{ position:sticky; top:0; z-index:20; background:var(--color-surface); border-bottom:1px solid var(--color-border-light); }
+  .legal-header-inner{ max-width:760px; margin:0 auto; padding:16px 20px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+  .legal-wrap{ max-width:760px; margin:0 auto; padding:40px 20px 24px; }
+  .legal-wrap h1{ margin-bottom:6px; }
+  .legal-wrap .updated{ font-family:var(--font-mono); font-size:11px; color:var(--color-text-muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:26px; }
+  .legal-wrap h2{ font-size:var(--font-size-lg); margin:28px 0 8px; }
+  .legal-wrap p, .legal-wrap li{ color:var(--color-text-secondary); line-height:1.7; }
   .legal-wrap ul{ margin:0 0 12px 20px; padding:0; }
-  .legal-wrap li{ font-size:14px; color:var(--text-dim); line-height:1.7; margin-bottom:6px; }
-  .legal-wrap strong{ color:var(--text); }
-  .legal-wrap a{ color:var(--calm); }
+  .legal-wrap li{ margin-bottom:6px; }
+  .legal-wrap strong{ color:var(--color-text); }
+  .legal-note{ background:var(--color-warning-soft); border:1px solid var(--color-warning); color:#7A5310; border-radius:var(--radius-md); padding:12px 14px; font-size:13px; line-height:1.55; margin-bottom:28px; }
+  .legal-footer{ border-top:1px solid var(--color-border-light); padding:24px 20px 20px; margin-top:32px; }
+  .legal-footer-inner{ max-width:760px; margin:0 auto; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:14px; }
+  .legal-footer-links{ display:flex; flex-wrap:wrap; gap:20px; }
+  .legal-footer-links a{ font-size:13px; color:var(--color-text-secondary); text-decoration:none; }
+  .legal-footer-links a:hover{ color:var(--color-text); }
+  .legal-disclaimer{ max-width:760px; margin:16px auto 0; font-size:11px; color:var(--color-text-muted); line-height:1.5; }
 </style>
 </head>
 <body>
+<div class="mediador-app">
 
-<header class="site-header">
-  <a href="/chat.html" class="brand bridge-logo">Puente<em>digital</em></a>
-  <div class="site-header-actions">
-    <button class="icon-btn theme-btn" onclick="toggleTheme()" title="Cambiar a modo claro" aria-label="Cambiar tema">🌙</button>
-    <button class="icon-btn hamburger-btn" id="hamburger-btn" onclick="toggleMobileNav()" aria-label="Menú" aria-expanded="false">☰</button>
-  </div>
-  <nav class="site-nav" id="site-nav">
-    <div class="site-nav-drawer-head">
-      <span class="brand bridge-logo">Puente<em>digital</em></span>
-      <button class="site-nav-close" onclick="toggleMobileNav()" aria-label="Cerrar menú">✕</button>
+  <header class="legal-header">
+    <div class="legal-header-inner">
+      <a href="/" class="mediador-logo on-light"><img class="mediador-logo-mark" style="width:26px; height:26px;" src="/mediador-icon.svg" alt=""><span class="mediador-logo-text" style="font-size:16px;">Mediador</span></a>
+      <a href="/auth/google?next=/" class="btn btn-primary btn-sm" style="text-decoration:none;">Ingresar</a>
     </div>
-    <a href="/chat.html">Inicio</a>
-    <a href="/chat.html#faq">FAQ</a>
-    <a href="/legal.html">Marco legal</a>
-    <a href="/terminos.html" class="active">Términos</a>
-    <a href="/privacidad.html">Privacidad</a>
-    <div class="site-nav-divider" aria-hidden="true"></div>
-    <button class="site-nav-action" id="site-nav-theme-btn" onclick="toggleThemeWash(event)">
-      <span class="ic" id="site-nav-theme-ic">🌙</span><span id="site-nav-theme-label">Apariencia: oscuro</span>
-    </button>
-  </nav>
-</header>
-<div class="site-nav-backdrop" id="site-nav-backdrop" onclick="toggleMobileNav()"></div>
+  </header>
 
-<div class="legal-wrap">
-  <h1>Términos y condiciones</h1>
-  <div class="updated">Última actualización: agosto de 2026</div>
+  <div class="legal-wrap">
+    <h1>Términos y condiciones</h1>
+    <div class="updated">Última actualización: septiembre de 2026</div>
 
-  <h2>1. Aceptación de estos términos</h2>
-  <p>Al crear un canal, unirte a uno como invitado/a, o usar de cualquier forma Puente Digital ("el Servicio"), aceptás estos Términos y condiciones y la <a href="/privacidad.html">Política de privacidad</a>. Si no estás de acuerdo, no uses el Servicio.</p>
+    <h2>1. Aceptación de estos términos</h2>
+    <p>Al crear una cuenta, usar un portal de acceso sin cuenta como parte o abogado/a, o usar de cualquier forma Mediador ("el Servicio"), aceptás estos Términos y condiciones y la <a href="/privacidad.html">Política de privacidad</a>. Si no estás de acuerdo, no uses el Servicio.</p>
 
-  <h2>2. Qué es el Servicio</h2>
-  <p>Puente Digital es una plataforma de comunicación entre dos personas ("canal"), con mensajería moderada por inteligencia artificial, calendario de acuerdos, historial exportable y un asistente de consultas sobre ese historial. El detalle de qué es y qué no es el Servicio está en el <a href="/legal.html">Marco legal</a>.</p>
+    <h2>2. Qué es el Servicio</h2>
+    <p>Mediador es una plataforma de gestión para mediadores y estudios jurídicos: expedientes, partes y abogados, audiencias, documentos, comunicaciones y un asistente de tareas. El detalle de qué es y qué no es el Servicio está en el <a href="/legal.html">Marco legal</a>.</p>
 
-  <h2>3. Cuentas y elegibilidad</h2>
-  <ul>
-    <li>Tenés que ser mayor de edad para crear un canal con tu cuenta de Google.</li>
-    <li>Un canal conecta a dos personas. Quien lo crea puede invitar a la segunda persona por cuenta de Google o por un link de invitado sin necesidad de cuenta.</li>
-    <li>Sos responsable de la actividad que ocurre bajo tu cuenta y de mantener resguardado el acceso a tu correo de Google.</li>
-    <li>La información que das (nombre, y el contenido de tus mensajes) tiene que ser real — no está permitido suplantar la identidad de otra persona.</li>
-  </ul>
+    <h2>3. Cuentas y elegibilidad</h2>
+    <ul>
+      <li>Tenés que ser mayor de edad para crear una cuenta con Google.</li>
+      <li>Una cuenta puede pertenecer a un mediador/a independiente o a un estudio, con mediadores y asistentes invitados por email y roles distintos.</li>
+      <li>Las partes y los abogados no necesitan crear una cuenta: acceden a su mediación puntual mediante un link con token que el mediador/a genera y puede revocar en cualquier momento (renovando la invitación).</li>
+      <li>Sos responsable de la actividad que ocurre bajo tu cuenta y de mantener resguardado el acceso a tu correo de Google.</li>
+      <li>La información que cargás sobre una mediación (partes, abogados, documentos) tiene que corresponder a un caso real que estás gestionando profesionalmente.</li>
+    </ul>
 
-  <h2>4. Uso aceptable</h2>
-  <p>No está permitido usar Puente Digital para:</p>
-  <ul>
-    <li>Acosar, amenazar o intimidar a otra persona.</li>
-    <li>Compartir contenido ilegal, o que infrinja derechos de terceros.</li>
-    <li>Intentar vulnerar la seguridad del Servicio, acceder a canales de los que no formás parte, o interferir con su funcionamiento normal.</li>
-    <li>Usar el Servicio como sustituto de asistencia de emergencia en una situación de riesgo (ver Marco legal).</li>
-  </ul>
-  <p>Nos reservamos el derecho de suspender el acceso a un canal si detectamos un uso que viole estos términos.</p>
+    <h2>4. Planes y facturación</h2>
+    <ul>
+      <li>Mediador tiene un plan gratuito con límites de uso, y planes pagos (Profesional, Estudio) con funcionalidad adicional.</li>
+      <li>Los pagos de los planes pagos se procesan a través de Mercado Pago. Mediador nunca ve ni almacena el número de tu tarjeta ni otros datos sensibles del medio de pago — eso lo administra Mercado Pago directamente.</li>
+      <li>El estado de tu suscripción (activa, pendiente, vencida) se actualiza según lo que confirme Mercado Pago, nunca solo porque volviste del checkout.</li>
+      <li>Podés cancelar un plan pago en cualquier momento desde "Mi Plan". La cancelación toma efecto al final del período ya pagado — no se hacen reintegros parciales por el tiempo restante.</li>
+      <li>Si un pago es rechazado, tenés un período de gracia para regularizarlo antes de que la cuenta pase a un estado limitado; nunca se borran mediaciones, documentos ni historial por un pago pendiente.</li>
+    </ul>
 
-  <h2>5. Moderación por inteligencia artificial</h2>
-  <p>Los mensajes se analizan de forma automatizada antes de enviarse para sugerir alternativas más neutrales cuando el sistema detecta lenguaje que puede escalar el conflicto. Esta moderación:</p>
-  <ul>
-    <li>Es automatizada — puede cometer errores, tanto marcando mensajes que no lo ameritan como dejando pasar mensajes que sí.</li>
-    <li>No constituye asesoramiento legal, terapéutico ni de mediación profesional.</li>
-    <li>No decide quién tiene razón en una disputa; solo sugiere una forma más neutral de comunicar un hecho práctico.</li>
-    <li>Puede no estar disponible en todo momento (por ejemplo, si el proveedor externo de IA no responde) — en ese caso, el mensaje se puede enviar sin pasar por el análisis.</li>
-  </ul>
+    <h2>5. Uso aceptable</h2>
+    <p>No está permitido usar Mediador para:</p>
+    <ul>
+      <li>Cargar datos de una mediación que no estás gestionando profesionalmente, o suplantar la identidad de otra persona.</li>
+      <li>Intentar vulnerar la seguridad del Servicio, acceder a mediaciones o cuentas de las que no formás parte, o interferir con su funcionamiento normal.</li>
+      <li>Compartir el link de acceso de una parte o de un abogado con alguien que no sea esa persona.</li>
+      <li>Usar los informes o el asistente de Mediador como sustituto del criterio profesional que la mediación requiere.</li>
+    </ul>
+    <p>Nos reservamos el derecho de suspender el acceso a una cuenta si detectamos un uso que viole estos términos.</p>
 
-  <h2>6. Contenido del usuario</h2>
-  <p>Vos sos el/la titular de los mensajes que escribís. Nos das el permiso necesario para almacenarlos, procesarlos (incluido el envío a un proveedor externo de inteligencia artificial para su análisis) y mostrárselos a la otra persona del canal, únicamente para poder brindar el Servicio.</p>
+    <h2>6. Contenido cargado por el usuario</h2>
+    <p>Vos (el mediador/a o el estudio) sos el/la titular de los expedientes, documentos y comunicaciones que cargás. Nos das el permiso necesario para almacenarlos, procesarlos y mostrárselos a quien corresponda según su rol (vos, tu equipo, la parte o el abogado que agregaste), únicamente para poder brindar el Servicio.</p>
 
-  <h2>7. Privacidad y datos</h2>
-  <p>Cómo recolectamos, usamos y protegemos tus datos está descripto en la <a href="/privacidad.html">Política de privacidad</a>, que forma parte de estos Términos.</p>
+    <h2>7. Portales de partes y abogados</h2>
+    <p>Las partes y los abogados que invitás acceden con permisos acotados a lo que les corresponde: sus propias audiencias, documentos y compromisos. No pueden ver información de otras partes ni de otras mediaciones. Sos responsable de generar y compartir esos links correctamente.</p>
 
-  <h2>8. Disponibilidad del servicio</h2>
-  <p>Puente Digital se ofrece "tal cual está" ("as is"), sin garantías de disponibilidad ininterrumpida, ausencia de errores, o que vaya a cumplir con un propósito específico. Podemos modificar, suspender o discontinuar funciones del Servicio en cualquier momento.</p>
+    <h2>8. Asistente con inteligencia artificial</h2>
+    <p>Mediador incluye un asistente que puede sugerir tareas a partir de una nota o resumir un documento, usando un proveedor externo de inteligencia artificial (Anthropic). Estas sugerencias:</p>
+    <ul>
+      <li>Son automatizadas — pueden contener errores u omisiones.</li>
+      <li>No constituyen asesoramiento legal ni reemplazan tu criterio profesional como mediador/a.</li>
+      <li>Pueden no estar disponibles en todo momento (por ejemplo, si el proveedor externo no responde).</li>
+    </ul>
 
-  <h2>9. Limitación de responsabilidad</h2>
-  <p>En la máxima medida permitida por la ley aplicable, Puente Digital y quienes lo desarrollan no serán responsables por daños indirectos, pérdida de datos, ni por decisiones que tomes (legales, personales o de otro tipo) basándote en el contenido del Servicio, incluyendo las sugerencias de la IA. El Servicio no reemplaza el criterio profesional de un abogado, mediador o terapeuta.</p>
+    <h2>9. Informes certificados</h2>
+    <p>Los informes que exportás en PDF incluyen un hash de integridad y, si el servidor tiene configurada la firma electrónica, una firma electrónica (Ley 25.506, art. 5°) verificable en una página pública. Esa firma acredita que el documento no fue modificado desde su generación — no reemplaza una firma digital certificada ni constituye por sí sola una certificación notarial.</p>
 
-  <h2>10. Terminación</h2>
-  <p>Podés dejar de usar el Servicio en cualquier momento. Nos reservamos el derecho de suspender o eliminar un canal que incumpla estos Términos, previo aviso cuando sea razonablemente posible.</p>
+    <h2>10. Privacidad y datos</h2>
+    <p>Cómo recolectamos, usamos y protegemos los datos está descripto en la <a href="/privacidad.html">Política de privacidad</a>, que forma parte de estos Términos.</p>
 
-  <h2>11. Cambios a estos términos</h2>
-  <p>Podemos actualizar estos Términos ocasionalmente. Los cambios importantes se van a reflejar en la fecha de "Última actualización" de esta página. El uso continuado del Servicio después de un cambio implica su aceptación.</p>
+    <h2>11. Disponibilidad del servicio</h2>
+    <p>Mediador se ofrece "tal cual está" ("as is"), sin garantías de disponibilidad ininterrumpida, ausencia de errores, o que vaya a cumplir con un propósito específico. Podemos modificar, suspender o discontinuar funciones del Servicio en cualquier momento.</p>
 
-  <h2>12. Ley aplicable</h2>
-  <p>Estos Términos se rigen por las leyes de la República Argentina.</p>
-</div>
+    <h2>12. Limitación de responsabilidad</h2>
+    <p>En la máxima medida permitida por la ley aplicable, Mediador y quienes lo desarrollan no serán responsables por daños indirectos, pérdida de datos, ni por decisiones profesionales, legales o de otro tipo que tomes basándote en el contenido del Servicio, incluyendo las sugerencias del asistente. El Servicio no reemplaza tu habilitación ni tu criterio profesional como mediador/a.</p>
 
-<footer class="site-footer">
-  <div class="site-footer-inner">
-    <a href="/chat.html" class="brand">Puente<em>digital</em></a>
-    <nav class="site-nav">
-      <a href="/chat.html#faq">FAQ</a>
-      <a href="/legal.html">Marco legal</a>
-      <a href="/terminos.html">Términos</a>
-      <a href="/privacidad.html">Privacidad</a>
-    </nav>
+    <h2>13. Terminación</h2>
+    <p>Podés dejar de usar el Servicio en cualquier momento. Nos reservamos el derecho de suspender o cancelar una cuenta que incumpla estos Términos, previo aviso cuando sea razonablemente posible. Cancelar una cuenta no borra automáticamente las mediaciones ya cargadas — para eliminación de datos, ver la <a href="/privacidad.html">Política de privacidad</a>.</p>
+
+    <h2>14. Cambios a estos términos</h2>
+    <p>Podemos actualizar estos Términos ocasionalmente. Los cambios importantes se van a reflejar en la fecha de "Última actualización" de esta página. El uso continuado del Servicio después de un cambio implica su aceptación.</p>
+
+    <h2>15. Ley aplicable</h2>
+    <p>Estos Términos se rigen por las leyes de la República Argentina.</p>
   </div>
-  <p class="disclaimer">Puente Digital es una herramienta de comunicación, no asesoramiento legal, terapéutico ni una mediación homologada. Su objetivo es ayudar a desescalar el conflicto y dar tranquilidad, no reemplazar a un profesional.</p>
-</footer>
 
-<script src="/site-common.js"></script>
+  <footer class="legal-footer">
+    <div class="legal-footer-inner">
+      <div class="mediador-logo on-light"><img class="mediador-logo-mark" style="width:22px; height:22px;" src="/mediador-icon.svg" alt=""><span class="mediador-logo-text" style="font-size:14px;">Mediador</span></div>
+      <div class="legal-footer-links">
+        <a href="/terminos.html">Términos y condiciones</a>
+        <a href="/privacidad.html">Privacidad</a>
+        <a href="/legal.html">Aviso legal</a>
+        <a href="mailto:soporte@puentedigital.app">soporte@puentedigital.app</a>
+      </div>
+    </div>
+    <p class="legal-disclaimer">Mediador es una herramienta de gestión para mediadores y estudios jurídicos. No reemplaza a SIGIM ni a ningún sistema oficial de mediación, y no brinda asesoramiento legal.</p>
+  </footer>
+
+</div>
 </body>
 </html>
