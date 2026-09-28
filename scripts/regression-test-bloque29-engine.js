@@ -72,12 +72,20 @@ function makeMediation(db, mediatorUserId, closedAt = null) {
   // ==== monkey-patch de services/mercadoPago.js — mismo módulo cacheado
   // que usa billingService.js, así que esto SÍ afecta las llamadas reales
   // de la lógica bajo test, sin tocar la red. ====
-  let createPlanCalls = 0, createSubscriptionCalls = 0, cancelSubscriptionCalls = 0;
+  // Bloque 29 (corrección) — createSubscription ya no manda
+  // preapproval_plan_id: arma el auto_recurring inline en cada llamada
+  // ("sin plan asociado, pago pendiente"). El fake de acá refleja la firma
+  // real (reason/price/currency/interval/payerEmail/externalReference/
+  // backUrl), sin card_token_id, con status:"pending" — mismo contrato
+  // que services/mercadoPago.js#createSubscription.
+  let createSubscriptionCalls = 0, cancelSubscriptionCalls = 0;
+  const createSubscriptionArgs = []; // para poder auditar QUÉ se manda, no solo cuántas veces
   const FAKE_SUBSCRIPTIONS = {};
   mercadoPago.configured = () => true;
-  mercadoPago.createPlan = async ({ reason, price }) => { createPlanCalls++; return { id: `fake-plan-${nanoid(6)}` }; };
-  mercadoPago.createSubscription = async ({ preapprovalPlanId, externalReference }) => {
+  mercadoPago.createSubscription = async (args) => {
     createSubscriptionCalls++;
+    createSubscriptionArgs.push(args);
+    const { currency, interval, payerEmail, externalReference } = args;
     const id = `fake-sub-${nanoid(6)}`;
     FAKE_SUBSCRIPTIONS[id] = { status: 'pending', date_created: new Date().toISOString(), next_payment_date: null };
     return { id, status: 'pending', init_point: `https://mercadopago.com/fake/${id}`, external_reference: externalReference };
@@ -93,13 +101,26 @@ function makeMediation(db, mediatorUserId, closedAt = null) {
   check('2(b). create subscription: guarda el providerSubscriptionId', !!sub1.account.providerSubscriptionId);
   check('2(c). create subscription: devuelve el init_point de Mercado Pago', sub1.initPoint && sub1.initPoint.includes('mercadopago.com'));
   check('8. el acceso NO se activa solo por crear la suscripción — "pending" sigue dando FREE hasta que se confirme', entitlements.getEffectivePlanCode(db, proUser) === 'FREE');
-  check('el plan de Mercado Pago se crea UNA sola vez (providerPlanId cacheado)', createPlanCalls === 1, `createPlanCalls=${createPlanCalls}`);
 
-  // segunda suscripción (otro usuario) al mismo plan → NO debe volver a crear el plan en Mercado Pago
+  // Bloque 29 (corrección) — "sin plan asociado, con pago pendiente":
+  // nunca se llama a un /preapproval_plan (esa función ni existe más en
+  // services/mercadoPago.js), y cada suscripción manda su propio
+  // auto_recurring completo, nunca un card_token_id ni un
+  // preapproval_plan_id (eso es lo que exige el modelo "CON plan
+  // asociado", que fue justo el que se descartó).
+  const call1 = createSubscriptionArgs[0];
+  check('createSubscription manda auto_recurring inline con los datos del plan', call1.price === 15000 && call1.currency === 'ARS' && call1.interval === 'month', JSON.stringify(call1));
+  check('createSubscription NUNCA manda card_token_id', !('card_token_id' in call1) && !('cardTokenId' in call1));
+  check('createSubscription NUNCA manda preapproval_plan_id / preapprovalPlanId', !('preapproval_plan_id' in call1) && !('preapprovalPlanId' in call1));
+  check('mercadoPago.createPlan ya no existe (se sacó del módulo, no solo se dejó de llamar)', mercadoPago.createPlan === undefined);
+  check('mercadoPago.getPlan ya no existe', mercadoPago.getPlan === undefined);
+
+  // segunda suscripción (otro usuario) — cada una arma su propio
+  // auto_recurring, no hay ningún plan que "reusar" del lado de MP.
   const proUser2 = makeUser(db);
   await billingService.startSubscription(db, proUser2, 'PROFESIONAL');
-  check('el plan de Mercado Pago se reusa para la segunda suscripción (sigue en 1 llamada)', createPlanCalls === 1, `createPlanCalls=${createPlanCalls}`);
-  check('createSubscription sí se llama una vez por cada suscripción nueva', createSubscriptionCalls === 2);
+  check('createSubscription se llama una vez por cada suscripción nueva', createSubscriptionCalls === 2);
+  check('la segunda llamada también arma su auto_recurring propio (no depende de un plan cacheado)', createSubscriptionArgs[1].price === 15000);
 
   // ==== 3. subscription authorized (sync) ====
   const subId1 = sub1.account.providerSubscriptionId;

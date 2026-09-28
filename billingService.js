@@ -70,23 +70,21 @@ async function startSubscription(db, user, planCode) {
     throw err;
   }
 
-  // el plan de Mercado Pago se crea UNA sola vez y se reusa (providerPlanId
-  // cacheado en billing_plans) — nunca un plan nuevo por cada suscripción.
-  let providerPlanId = plan.providerPlanId;
-  if (!providerPlanId) {
-    const mpPlan = await mercadoPago.createPlan({
-      reason: plan.name, price: plan.price, currency: plan.currency, interval: plan.interval,
-      backUrl: process.env.MERCADOPAGO_RETURN_URL,
-    });
-    providerPlanId = mpPlan.id;
-    plan.providerPlanId = providerPlanId;
-    plan.updatedAt = Date.now();
-  }
-
+  // CORRECCIÓN (ver la nota en services/mercadoPago.js): acá antes se creaba
+  // un /preapproval_plan y se cacheaba su id en plan.providerPlanId para
+  // reusarlo. Ese era el modelo "CON plan asociado", que la doc oficial de
+  // Mercado Pago exige crear con card_token_id + status:"authorized" —
+  // incompatible con el checkout 100% hosteado que busca este bloque. Ahora
+  // es "SIN plan asociado, con pago pendiente": el auto_recurring completo
+  // va inline en cada llamada a createSubscription, nunca un plan aparte.
+  // billing_plans sigue siendo el catálogo interno de precios/entitlements
+  // tal cual — providerPlanId queda en el schema sin usarse (nunca se
+  // escribe), no se migró la columna por no justificar el riesgo de una
+  // migración para un campo que simplemente queda en null.
   const externalReference = externalReferenceFor(user);
   const mpSub = await mercadoPago.createSubscription({
-    preapprovalPlanId: providerPlanId, payerEmail: user.email,
-    externalReference, backUrl: process.env.MERCADOPAGO_RETURN_URL,
+    reason: plan.name, price: plan.price, currency: plan.currency, interval: plan.interval,
+    payerEmail: user.email, externalReference, backUrl: process.env.MERCADOPAGO_RETURN_URL,
   });
 
   const account = getOrCreateAccount(db, user);
@@ -107,6 +105,13 @@ async function startSubscription(db, user, planCode) {
 // past_due DERIVADO DE UN PAGO rechazado (§13: suscripción != pago) con un
 // "active" que Mercado Pago sigue informando para la suscripción en sí —
 // el pago es lo que manda mientras la suscripción siga autorizada.
+//
+// Revisado tras la corrección del modelo (createSubscription ya no manda
+// preapproval_plan_id): esto NO necesitó ningún cambio. GET /preapproval/:id
+// devuelve el mismo `status` (pending/authorized/paused/cancelled) esté o
+// no asociada a un plan — el paso pending→authorized cuando el pagador
+// completa el medio de pago en la página hosteada llega igual por acá,
+// disparado por el webhook (subscription_preapproval) o la reconciliación.
 async function syncSubscription(db, subscriptionId) {
   const mpSub = await mercadoPago.getSubscription(subscriptionId);
   const account = findAccountBySubscriptionId(db, subscriptionId);

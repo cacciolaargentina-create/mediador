@@ -7,16 +7,42 @@ reconciliación) confirma el estado real vía `syncSubscription()`.
 
 ## Qué modelo de Mercado Pago se usa
 
-**Suscripciones con plan asociado** (`/preapproval_plan` + `/preapproval`),
-documentación oficial: https://www.mercadopago.com.ar/developers/es/docs/subscriptions/integration-configuration/subscription-associated-plan
+**Suscripción SIN plan asociado, con pago pendiente** (`/preapproval`,
+sin `preapproval_plan_id`), documentación oficial:
+https://www.mercadopago.com.ar/developers/es/docs/subscriptions/integration-configuration/subscription-no-associated-plan/pending-payments
 
-- Se crea UN plan de Mercado Pago por cada plan de Mediador (PROFESIONAL,
-  ESTUDIO) — una sola vez, se reusa después (`billing_plans.providerPlanId`).
-- Cada suscripción se crea **sin `card_token_id`** y **sin
-  `status:"authorized"`** — Mercado Pago devuelve `status:"pending"` +
-  `init_point`, y el pagador completa el medio de pago en la página
-  **hosteada por Mercado Pago**. Mediador nunca ve ni toca datos de
-  tarjeta.
+- Cada suscripción manda su propio `auto_recurring` completo inline
+  (`frequency`, `frequency_type`, `transaction_amount`, `currency_id`,
+  `free_trial` si corresponde) — no existe ningún plan del lado de
+  Mercado Pago, ni se crea ni se reusa. `billing_plans` sigue siendo
+  **solo el catálogo interno** de Mediador (precios/entitlements),
+  totalmente independiente de la API de Mercado Pago.
+- La suscripción se crea **sin `card_token_id`** y **con
+  `status:"pending"`** — Mercado Pago devuelve `init_point`, y el pagador
+  completa el medio de pago en la página **hosteada por Mercado Pago**.
+  Mediador nunca ve ni toca datos de tarjeta.
+
+### Por qué no "con plan asociado" (corrección del diseño original)
+
+La primera versión de este bloque creaba un plan por API
+(`/preapproval_plan`) y una suscripción que lo referenciaba
+(`preapproval_plan_id`) sin `card_token_id` y con `status:"pending"` —
+ese es el modelo **"CON plan asociado"**, y la documentación oficial de
+esa modalidad específica es explícita:
+
+> "Una Suscripción con plan asociado siempre deberá ser creada con su
+> `card_token_id` y en status `Authorized`."
+
+Eso implica tokenizar la tarjeta del lado del cliente (con Checkout
+Bricks/MP.js) — exactamente lo opuesto al checkout 100% hosteado que
+busca este bloque (nunca tocar datos de tarjeta, §24). La combinación que
+se estaba usando (`preapproval_plan_id` + `status:"pending"` sin
+`card_token_id`) no es ninguno de los dos flujos que Mercado Pago
+documenta — es la explicación más probable del bug externo que estaba
+anotado más abajo en esta misma página (ver el historial del archivo si
+hace falta el detalle completo), y que con el modelo actual deja de
+aplicar por completo: al no mandar nunca `preapproval_plan_id`, esa
+combinación de parámetros simplemente no se da.
 
 ## Variables de entorno
 
@@ -51,22 +77,18 @@ Ver `.env.example` — resumen:
    probar con una cuenta real.
 4. Setear `MERCADOPAGO_ENVIRONMENT=test`.
 
-## ⚠️ Riesgo externo conocido — verificar antes de depender de esto en producción
+## Verificar antes de depender de esto en producción
 
-Al momento de escribir esto (2026-09-18) hay un **issue abierto en el SDK
-oficial de Mercado Pago** (`mercadopago/sdk-nodejs#480`, reportado
-2026-09-02): el `init_point` que devuelve `/preapproval` para una
-suscripción sin plan/pago pendiente agrega `&activation=true` y rompe con
-"Esta página no existe" en el sitio de Mercado Pago. Esto es un problema
-**del lado de Mercado Pago**, no de este código — pero significa que el
-flujo de checkout puede estar roto ahora mismo dependiendo de cuándo se
-lea esto.
-
-**Antes de depender de este flujo en producción: probar `POST
-/api/billing/subscribe` con credenciales de test reales y confirmar que el
-`init_point` devuelto abre correctamente la página de autorización.** Si
-sigue roto, revisar el issue de GitHub por una solución o workaround
-oficial antes de anunciar billing a usuarios reales.
+El bug externo que estaba documentado acá (`mercadopago/sdk-nodejs#480`,
+`init_point` con `&activation=true` roto) era específico del modelo "con
+plan asociado" que ya no se usa — con `/preapproval` sin
+`preapproval_plan_id` esa combinación de parámetros no se da. Aun así,
+**nunca asumir que un flujo de pago externo funciona sin probarlo**:
+antes de anunciar billing a usuarios reales, probar `POST
+/api/billing/subscribe` con credenciales de **test** reales y confirmar
+que el `init_point` devuelto abre correctamente la página de autorización
+de Mercado Pago, que el pago de prueba completa, y que el webhook (o la
+reconciliación horaria) efectivamente pasa la cuenta a `active`.
 
 ## Salir a producción
 

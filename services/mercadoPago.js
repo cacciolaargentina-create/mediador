@@ -2,26 +2,37 @@
 // Bloque 29 — único punto de contacto con la API de Mercado Pago en todo el
 // proyecto (§6: "no distribuir llamadas directas... por todo el
 // proyecto"). Fetch nativo, sin SDK nuevo — la superficie que necesitamos
-// (preapproval_plan, preapproval, payments) es chica y estable, y así se
-// puede simular en tests sin depender de un mock de SDK de terceros.
+// (preapproval, payments) es chica y estable, y así se puede simular en
+// tests sin depender de un mock de SDK de terceros.
 //
-// Referencia verificada contra la documentación oficial vigente (Suscripciones
-// con plan asociado, developers.mercadopago.com, revisado 2026-09-18):
-// POST /preapproval_plan crea el plan (id de respuesta = preapproval_plan_id).
-// POST /preapproval con preapproval_plan_id, SIN card_token_id y SIN
-// status:"authorized" devuelve status "pending" + init_point — el pagador
-// completa el medio de pago en la página HOSTEADA de Mercado Pago (nunca
-// tocamos datos de tarjeta, §24). El acceso real NUNCA se activa por este
-// redirect (§8) — solo lo confirma syncSubscription() en billingService.js,
-// llamado desde el webhook o la reconciliación.
+// Modelo: "Suscripción SIN plan asociado, con pago pendiente"
+// (developers.mercadopago.com/es/docs/subscriptions/integration-configuration/
+// subscription-no-associated-plan/pending-payments, verificado 2026-09-28).
 //
-// NOTA DE RIESGO EXTERNO (dejar documentado, no ocultarlo): al momento de
-// esta implementación hay un issue abierto en el SDK oficial (mercadopago/
-// sdk-nodejs#480, reportado 2026-09-02) donde el init_point de una
-// suscripción sin plan/pago pendiente agrega "&activation=true" y rompe en
-// la web de Mercado Pago. Afecta el LADO DE MERCADO PAGO, no este código —
-// hay que verificarlo contra el sandbox real antes de depender de este flujo
-// en producción (ver docs/MERCADOPAGO_SETUP.md).
+// CORRECCIÓN respecto al diseño original del Bloque 29 (dejar el rastro,
+// no solo el resultado): la primera versión creaba un plan por API
+// (/preapproval_plan) y después una suscripción referenciándolo — eso es
+// el modelo "CON plan asociado", y la documentación oficial es explícita:
+// "Una Suscripción con plan asociado siempre deberá ser creada con su
+// card_token_id y en status Authorized". Eso implica tokenizar la tarjeta
+// del lado del cliente (Checkout Bricks/MP.js) — lo opuesto al checkout
+// 100% hosteado por Mercado Pago que se buscaba (nunca tocar datos de
+// tarjeta, §24). Mezclar "con plan asociado" con status:"pending" sin
+// card_token_id no es ninguno de los dos flujos que Mercado Pago
+// documenta, y es la explicación más probable del bug externo conocido
+// (mercadopago/sdk-nodejs#480: init_point con "&activation=true" roto)
+// que estaba anotado acá — con el modelo correcto ("sin plan asociado,
+// pago pendiente") esa combinación de parámetros nunca se da, así que la
+// nota de riesgo se sacó (ver docs/MERCADOPAGO_SETUP.md para el detalle
+// completo de la corrección).
+//
+// POST /preapproval SIN preapproval_plan_id, SIN card_token_id, con
+// status:"pending" y el auto_recurring completo inline devuelve
+// status:"pending" + init_point — el pagador completa el medio de pago en
+// la página HOSTEADA de Mercado Pago (nunca tocamos datos de tarjeta,
+// §24). El acceso real NUNCA se activa por este redirect (§8) — solo lo
+// confirma syncSubscription() en billingService.js, llamado desde el
+// webhook o la reconciliación.
 
 const crypto = require('crypto');
 
@@ -60,11 +71,21 @@ async function mpFetch(path, opts = {}) {
   return body;
 }
 
-// ---------- planes (§2/§6) ----------
-async function createPlan({ reason, price, currency, interval, backUrl, freeTrialDays }) {
+// ---------- suscripciones (§6/§8) ----------
+// "Sin plan asociado, con pago pendiente" — el auto_recurring completo va
+// inline en cada suscripción (nunca un /preapproval_plan separado, ver la
+// nota de corrección arriba). Nunca manda card_token_id ni status
+// "authorized": el pagador define su medio de pago él mismo en la página
+// hosteada de Mercado Pago, y la suscripción queda "pending" hasta que
+// syncSubscription() (webhook o reconciliación) confirme el estado real.
+async function createSubscription({ reason, price, currency, interval, freeTrialDays, payerEmail, externalReference, backUrl }) {
   const frequency_type = interval === 'year' ? 'years' : 'months';
   const body = {
     reason,
+    external_reference: externalReference,
+    payer_email: payerEmail,
+    back_url: backUrl,
+    status: 'pending',
     auto_recurring: {
       frequency: 1,
       frequency_type,
@@ -72,23 +93,6 @@ async function createPlan({ reason, price, currency, interval, backUrl, freeTria
       currency_id: currency || 'ARS',
       ...(freeTrialDays ? { free_trial: { frequency: freeTrialDays, frequency_type: 'days' } } : {}),
     },
-    back_url: backUrl,
-  };
-  return mpFetch('/preapproval_plan', { method: 'POST', body: JSON.stringify(body) });
-}
-async function getPlan(id) {
-  return mpFetch(`/preapproval_plan/${id}`);
-}
-
-// ---------- suscripciones (§6/§8) ----------
-async function createSubscription({ preapprovalPlanId, payerEmail, externalReference, backUrl }) {
-  const body = {
-    preapproval_plan_id: preapprovalPlanId,
-    reason: 'Suscripción Mediador',
-    external_reference: externalReference,
-    payer_email: payerEmail,
-    back_url: backUrl,
-    status: 'pending',
   };
   return mpFetch('/preapproval', { method: 'POST', body: JSON.stringify(body) });
 }
@@ -140,6 +144,6 @@ function verifyWebhookSignature({ xSignature, xRequestId, dataId, secret }) {
 }
 
 module.exports = {
-  configured, createPlan, getPlan, createSubscription, getSubscription,
+  configured, createSubscription, getSubscription,
   cancelSubscription, updateSubscription, getPayment, verifyWebhookSignature,
 };
