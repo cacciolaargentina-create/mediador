@@ -2770,10 +2770,17 @@ module.exports = function (io, presence) {
         generatedBy: { name: req.user.name },
       });
 
-      db.certifiedExports.push({
-        id: nanoid(), hash, signature, channelCode: null, mediationCode: mediation.code,
-        generatedByName: req.user.name, generatedByRole: 'mediador', createdAt: Date.now(),
-      });
+      // el hash es determinístico a partir del contenido: exportar la MISMA
+      // mediación dos veces sin actividad nueva en el medio da el mismo
+      // hash. La columna es UNIQUE, así que insertar de nuevo rompía el
+      // commit entero (y con él, cualquier otra escritura hasta reiniciar
+      // el proceso — incluido el login) — mismo criterio que routes/channels.js.
+      if (!db.certifiedExports.some((e) => e.hash === hash)) {
+        db.certifiedExports.push({
+          id: nanoid(), hash, signature, channelCode: null, mediationCode: mediation.code,
+          generatedByName: req.user.name, generatedByRole: 'mediador', createdAt: Date.now(),
+        });
+      }
       await commit();
 
       res.setHeader('Content-Type', 'application/pdf');
@@ -2842,10 +2849,16 @@ module.exports = function (io, presence) {
       const verifyUrl = `${process.env.FRONTEND_URL || ''}/verificar/${hash}`;
       const buffer = await buildMediationConstanciaPDF({ mediation, hash, signature, verifyUrl });
 
-      db.certifiedExports.push({
-        id: nanoid(), hash, signature, channelCode: null, mediationCode: mediation.code,
-        generatedByName: req.user.name, generatedByRole: 'mediador', createdAt: Date.now(),
-      });
+      // ver el comentario de más arriba (export del informe completo): el
+      // hash es determinístico, así que no duplicamos el registro si ya
+      // existe uno con el mismo hash — insertar de nuevo rompía el commit
+      // entero hasta reiniciar el proceso.
+      if (!db.certifiedExports.some((e) => e.hash === hash)) {
+        db.certifiedExports.push({
+          id: nanoid(), hash, signature, channelCode: null, mediationCode: mediation.code,
+          generatedByName: req.user.name, generatedByRole: 'mediador', createdAt: Date.now(),
+        });
+      }
       await commit();
 
       res.setHeader('Content-Type', 'application/pdf');
@@ -2874,10 +2887,16 @@ module.exports = function (io, presence) {
       const verifyUrl = `${process.env.FRONTEND_URL || ''}/verificar/${hash}`;
       const pdfBuffer = await buildMediationCertifiedPDF({ ...exportData, hash, signature, verifyUrl, generatedBy: { name: req.user.name } });
 
-      db.certifiedExports.push({
-        id: nanoid(), hash, signature, channelCode: null, mediationCode: mediation.code,
-        generatedByName: req.user.name, generatedByRole: 'mediador', createdAt: Date.now(),
-      });
+      // ver el comentario de más arriba (export del informe completo): el
+      // hash es determinístico, así que no duplicamos el registro si ya
+      // existe uno con el mismo hash — insertar de nuevo rompía el commit
+      // entero hasta reiniciar el proceso.
+      if (!db.certifiedExports.some((e) => e.hash === hash)) {
+        db.certifiedExports.push({
+          id: nanoid(), hash, signature, channelCode: null, mediationCode: mediation.code,
+          generatedByName: req.user.name, generatedByRole: 'mediador', createdAt: Date.now(),
+        });
+      }
       await commit();
 
       res.setHeader('Content-Type', 'application/zip');
