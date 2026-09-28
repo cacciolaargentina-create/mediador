@@ -233,6 +233,30 @@ module.exports = function (io, presence) {
     next();
   }
 
+  // Bloque 29 (Admin Console 2.0) §6/§8/§32 — requireMediationAccess deja
+  // pasar a un admin de PLATAFORMA a CUALQUIER mediación (spec original de
+  // ese bloque, necesario para las pantallas de metadata del Admin
+  // Console). Pero leer los MENSAJES de una mediación ajena es contenido
+  // privado — eso necesita, además, un acceso de soporte explícito y
+  // vigente (nunca "porque es admin, ya está"). Un admin de ESTUDIO viendo
+  // una mediación de su propio equipo (también llega acá con
+  // req.mediationRole==='admin') NO necesita esto — el discriminador real
+  // es isAdminUser, no mediationRole.
+  const { hasActiveSupportAccess, recordSupportAccessUsage } = require('../supportAccess');
+  function requireSupportAccessForPrivateContent(req, res, next) {
+    if (!isAdminUser(req.user)) return next();
+    if (req.mediation.mediatorUserId === req.user.id) return next();
+    const db = getDB();
+    if (!hasActiveSupportAccess(db, req.user.id, req.mediation.id)) {
+      return res.status(403).json({
+        error: 'Para ver mensajes de una mediación ajena necesitás una autorización de acceso de soporte activa (Admin Console → Soporte → Solicitar acceso).',
+        code: 'SUPPORT_ACCESS_REQUIRED',
+      });
+    }
+    recordSupportAccessUsage(db, req.user.id, req.mediation.id, req.originalUrl);
+    next();
+  }
+
   // ---------- crear mediación ----------
   router.post('/', requireAuth, async (req, res) => {
     const { type, object, description, internalNumber } = req.body || {};
@@ -1256,7 +1280,7 @@ module.exports = function (io, presence) {
   // ---------- comunicaciones con una parte (lado del mediador) ----------
   // el hilo de esta parte, si ya se le generó uno al invitarla — nunca
   // antes, no tiene sentido un chat sin nadie del otro lado todavía.
-  router.get('/:id/parties/:partyId/messages', requireAuth, requireMediationAccess, (req, res) => {
+  router.get('/:id/parties/:partyId/messages', requireAuth, requireMediationAccess, requireSupportAccessForPrivateContent, (req, res) => {
     const db = getDB();
     const thread = db.channels.find((c) => c.mediationId === req.mediation.id && c.partyId === req.params.partyId);
     if (!thread) return res.json([]);
@@ -1365,7 +1389,7 @@ module.exports = function (io, presence) {
   // Distinto del hilo de la parte que representa a propósito (Bloque 19:
   // "una comunicación dirigida específicamente a un abogado NO debe
   // aparecer automáticamente a la parte").
-  router.get('/:id/lawyers/:lawyerId/messages', requireAuth, requireMediationAccess, (req, res) => {
+  router.get('/:id/lawyers/:lawyerId/messages', requireAuth, requireMediationAccess, requireSupportAccessForPrivateContent, (req, res) => {
     const db = getDB();
     const thread = db.channels.find((c) => c.mediationId === req.mediation.id && c.lawyerId === req.params.lawyerId);
     if (!thread) return res.json([]);
@@ -1411,7 +1435,7 @@ module.exports = function (io, presence) {
     return thread;
   }
 
-  router.get('/:id/internal/messages', requireAuth, requireMediationAccess, (req, res) => {
+  router.get('/:id/internal/messages', requireAuth, requireMediationAccess, requireSupportAccessForPrivateContent, (req, res) => {
     const db = getDB();
     const thread = db.channels.find((c) => c.mediationId === req.mediation.id && !c.partyId && !c.lawyerId);
     if (!thread) return res.json([]);
@@ -2346,7 +2370,7 @@ module.exports = function (io, presence) {
     }
   );
 
-  router.get('/:id/documents/:docId/download', requireAuth, requireMediationAccess, async (req, res) => {
+  router.get('/:id/documents/:docId/download', requireAuth, requireMediationAccess, requireSupportAccessForPrivateContent, async (req, res) => {
     const db = getDB();
     // checklist: "verificar que el documento pertenece a la mediación
     // solicitada en la URL" — no alcanza con que el documento exista, tiene

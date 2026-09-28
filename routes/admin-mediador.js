@@ -13,12 +13,30 @@
 // operativos" sí, "acceder a contenido privado" no.
 
 const express = require('express');
+const { nanoid } = require('nanoid');
 const { getDB, commit } = require('../db');
-const { isAdminUser } = require('../roles');
+const { isAdminUser, requirePlatformAdmin } = require('../roles');
 const { logAudit } = require('../audit');
 const { getJobStatuses, getRecentErrors } = require('../systemStatus');
 const { getMyMediations } = require('../mediationAccess');
 const radarEngine = require('../radarEngine');
+
+// Bloque 29 — acciones que SÍ importan para el Log de Seguridad (spec §16),
+// distinto del audit log genérico (§17, que muestra TODO). Clasificado por
+// severidad para poder filtrar/priorizar. Si una acción no está acá, no
+// aparece en Seguridad (pero sigue en Auditoría).
+const SECURITY_ACTIONS = {
+  admin_platform_access_denied: 'critical',
+  admin_mediador_disable_user: 'warning',
+  admin_mediador_enable_user: 'info',
+  admin_support_access_started: 'warning',
+  admin_support_access_ended: 'info',
+  admin_impersonation_started: 'warning',
+  admin_impersonation_ended: 'info',
+  studio_role_changed: 'warning',
+  studio_member_removed: 'warning',
+  studio_owner_transferred: 'warning',
+};
 
 const WHATSAPP_FAILURE_KINDS = ['notification_failed', 'notification_error', 'notification_unavailable', 'webhook_invalid_signature'];
 
@@ -49,16 +67,13 @@ module.exports = function () {
     if (!req.user) return res.status(401).json({ error: 'No autenticado' });
     next();
   }
-  // admin de ESTUDIO (studioRole==='admin') NUNCA entra acá — es un concepto
+  // Bloque 29 — requirePlatformAdmin ahora vive centralizado en roles.js
+  // (antes cada router tenía su propia copia de este mismo chequeo). Admin
+  // de ESTUDIO (studioRole==='admin') NUNCA entra acá — es un concepto
   // totalmente distinto de isAdminUser (admin de PLATAFORMA, por
   // ADMIN_EMAILS). Esto es justo lo que pide §2/§19.5: "no permitir que
   // admin de estudio sea tratado como admin de plataforma".
-  function requireAdmin(req, res, next) {
-    if (!req.user) return res.status(401).json({ error: 'No autenticado' });
-    if (!isAdminUser(req.user)) return res.status(403).json({ error: 'No tenés acceso al centro de control de Mediador' });
-    next();
-  }
-  router.use(requireAuth, requireAdmin);
+  router.use(requireAuth, requirePlatformAdmin);
 
   // ================= DASHBOARD (§4/§17/§18) =================
   router.get('/dashboard', (req, res) => {
@@ -457,6 +472,294 @@ module.exports = function () {
       pendingChanges: db.competitorChanges.filter((c) => c.status === 'nueva').length,
       pendingOpportunities: db.competitorOpportunities.filter((o) => o.status === 'pendiente').length,
       featureCatalogSize: radarEngine.FEATURE_CATALOG.length,
+    });
+  });
+
+  // ================= SOPORTE — tickets (§7) =================
+  // Separado a propósito de las conversaciones privadas de una mediación
+  // (spec §7: "no mezclar soporte con las conversaciones privadas") — esto
+  // es un registro de INCIDENTES, nunca un canal de chat.
+  router.get('/support', (req, res) => {
+    const db = getDB();
+    let list = db.supportTickets.slice().sort((a, b) => b.createdAt - a.createdAt);
+    if (req.query.status) list = list.filter((t) => t.status === req.query.status);
+    if (req.query.category) list = list.filter((t) => t.category === req.query.category);
+    if (req.query.priority) list = list.filter((t) => t.priority === req.query.priority);
+    const enriched = list.map((t) => {
+      const user = t.userId ? db.users.find((u) => u.id === t.userId) : null;
+      const studio = t.studioId ? db.studios.find((s) => s.id === t.studioId) : null;
+      const mediation = t.mediationId ? db.mediations.find((m) => m.id === t.mediationId) : null;
+      const assignee = t.assignedTo ? db.users.find((u) => u.id === t.assignedTo) : null;
+      return {
+        ...t,
+        userName: user ? user.name : null, userEmail: user ? user.email : null,
+        studioName: studio ? studio.name : null,
+        mediationCode: mediation ? mediation.code : null,
+        assigneeName: assignee ? assignee.name : null,
+      };
+    });
+    res.json(paginate(enriched, clampPaging(req)));
+  });
+  const SUPPORT_CATEGORIES = ['billing', 'login', 'mediation', 'agenda', 'documents', 'communications', 'notifications', 'video', 'performance', 'other'];
+  const SUPPORT_STATUSES = ['open', 'in_progress', 'waiting', 'resolved', 'closed'];
+  router.post('/support', async (req, res) => {
+    const { userId, studioId, mediationId, category, priority, description } = req.body || {};
+    if (!description || !description.trim()) return res.status(400).json({ error: 'Falta la descripción del incidente' });
+    if (!SUPPORT_CATEGORIES.includes(category)) return res.status(400).json({ error: 'Categoría inválida' });
+    const db = getDB();
+    const ticket = {
+      id: nanoid(), userId: userId || null, studioId: studioId || null, mediationId: mediationId || null,
+      category, priority: ['baja', 'media', 'alta', 'urgente'].includes(priority) ? priority : 'media',
+      description: description.trim(), status: 'open', assignedTo: null, resolution: null,
+      createdBy: req.user.id, createdAt: Date.now(), updatedAt: Date.now(), resolvedAt: null,
+    };
+    db.supportTickets.push(ticket);
+    logAudit(db, { actorId: req.user.id, action: 'admin_support_ticket_created', meta: { ticketId: ticket.id, category } });
+    await commit();
+    res.json(ticket);
+  });
+  router.patch('/support/:id', async (req, res) => {
+    const db = getDB();
+    const ticket = db.supportTickets.find((t) => t.id === req.params.id);
+    if (!ticket) return res.status(404).json({ error: 'Incidente no encontrado' });
+    const { status, assignedTo, resolution, priority } = req.body || {};
+    if (status !== undefined) {
+      if (!SUPPORT_STATUSES.includes(status)) return res.status(400).json({ error: 'Estado inválido' });
+      ticket.status = status;
+      if (status === 'resolved' || status === 'closed') ticket.resolvedAt = ticket.resolvedAt || Date.now();
+    }
+    if (assignedTo !== undefined) ticket.assignedTo = assignedTo || null;
+    if (resolution !== undefined) ticket.resolution = resolution;
+    if (priority !== undefined && ['baja', 'media', 'alta', 'urgente'].includes(priority)) ticket.priority = priority;
+    ticket.updatedAt = Date.now();
+    logAudit(db, { actorId: req.user.id, action: 'admin_support_ticket_updated', meta: { ticketId: ticket.id, status: ticket.status } });
+    await commit();
+    res.json(ticket);
+  });
+
+  // ================= SOPORTE — acceso excepcional (§8) =================
+  // Ver supportAccess.js para el chequeo que usa routes/mediations.js.
+  // Acá solo se administra el ciclo de vida del grant: siempre temporal,
+  // siempre con motivo, siempre auditado, nunca "para siempre".
+  router.get('/support-access', (req, res) => {
+    const db = getDB();
+    const now = Date.now();
+    let list = db.supportAccessGrants.slice().sort((a, b) => b.startedAt - a.startedAt);
+    if (req.query.mediationId) list = list.filter((g) => g.mediationId === req.query.mediationId);
+    if (req.query.active === '1') list = list.filter((g) => !g.endedAt && g.expiresAt > now);
+    const enriched = list.map((g) => {
+      const admin = db.users.find((u) => u.id === g.adminUserId);
+      const mediation = db.mediations.find((m) => m.id === g.mediationId);
+      return {
+        ...g, isActive: !g.endedAt && g.expiresAt > now,
+        adminName: admin ? admin.name : null,
+        mediationCode: mediation ? mediation.code : null,
+      };
+    });
+    res.json(paginate(enriched, clampPaging(req)));
+  });
+  router.post('/support-access', async (req, res) => {
+    const { mediationId, reason, durationMinutes } = req.body || {};
+    if (!mediationId) return res.status(400).json({ error: 'Falta la mediación' });
+    if (!reason || !reason.trim()) return res.status(400).json({ error: 'El motivo es obligatorio' });
+    const db = getDB();
+    const mediation = db.mediations.find((m) => m.id === mediationId);
+    if (!mediation) return res.status(404).json({ error: 'Mediación no encontrada' });
+    const minutes = Math.min(Math.max(Number(durationMinutes) || 15, 5), 120); // entre 5' y 2h, nunca "sin límite"
+    const now = Date.now();
+    const grant = {
+      id: nanoid(), adminUserId: req.user.id, mediationId, reason: reason.trim(),
+      durationMinutes: minutes, startedAt: now, expiresAt: now + minutes * 60000, endedAt: null,
+      resourcesAccessed: [],
+    };
+    db.supportAccessGrants.push(grant);
+    logAudit(db, { actorId: req.user.id, action: 'admin_support_access_started', meta: { grantId: grant.id, mediationId, mediationCode: mediation.code, reason: grant.reason, durationMinutes: minutes } });
+    await commit();
+    res.json(grant);
+  });
+  router.post('/support-access/:id/end', async (req, res) => {
+    const db = getDB();
+    const grant = db.supportAccessGrants.find((g) => g.id === req.params.id);
+    if (!grant) return res.status(404).json({ error: 'Autorización no encontrada' });
+    if (grant.adminUserId !== req.user.id) return res.status(403).json({ error: 'Solo quien solicitó el acceso puede terminarlo' });
+    if (!grant.endedAt) grant.endedAt = Date.now();
+    logAudit(db, { actorId: req.user.id, action: 'admin_support_access_ended', meta: { grantId: grant.id, mediationId: grant.mediationId, resourcesAccessed: grant.resourcesAccessed } });
+    await commit();
+    res.json(grant);
+  });
+
+  // ================= "VER COMO USUARIO" — impersonación (§9) =================
+  // Deliberadamente NO renderiza la app del mediador con la sesión
+  // cambiada (eso significaría tocar el pipeline de autenticación
+  // principal — passport/sesión — que usan TODOS los logins de la
+  // plataforma; el riesgo de romper el login de cualquier usuario real
+  // para una función de soporte no vale la pena). En cambio: la sesión
+  // queda registrada/auditada/con vencimiento igual que pide la spec, y el
+  // "ver como" se resuelve mostrando en el propio Admin Console el mismo
+  // detalle de solo-lectura que ya arma GET /users/:id (perfil + sus
+  // mediaciones + actividad), con la barra "MODO SOPORTE — SOLO LECTURA"
+  // en el frontend mientras la sesión sigue activa. Ver LIMITACIONES en el
+  // informe final de este bloque.
+  router.get('/impersonation', (req, res) => {
+    const db = getDB();
+    const now = Date.now();
+    let list = db.impersonationSessions.slice().sort((a, b) => b.startedAt - a.startedAt);
+    if (req.query.active === '1') list = list.filter((s) => !s.endedAt && s.expiresAt > now);
+    const enriched = list.map((s) => {
+      const admin = db.users.find((u) => u.id === s.adminUserId);
+      const target = db.users.find((u) => u.id === s.targetUserId);
+      return { ...s, isActive: !s.endedAt && s.expiresAt > now, adminName: admin ? admin.name : null, targetName: target ? target.name : null, targetEmail: target ? target.email : null };
+    });
+    res.json(paginate(enriched, clampPaging(req)));
+  });
+  router.post('/impersonation', async (req, res) => {
+    const { targetUserId, reason, durationMinutes } = req.body || {};
+    if (!targetUserId) return res.status(400).json({ error: 'Falta el usuario a ver' });
+    if (!reason || !reason.trim()) return res.status(400).json({ error: 'El motivo es obligatorio' });
+    const db = getDB();
+    const target = db.users.find((u) => u.id === targetUserId);
+    if (!target) return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (isAdminUser(target)) return res.status(400).json({ error: 'No tiene sentido "ver como" a otro admin de plataforma' });
+    const minutes = Math.min(Math.max(Number(durationMinutes) || 15, 5), 120);
+    const now = Date.now();
+    const session = {
+      id: nanoid(), adminUserId: req.user.id, targetUserId, reason: reason.trim(),
+      durationMinutes: minutes, startedAt: now, expiresAt: now + minutes * 60000, endedAt: null,
+    };
+    db.impersonationSessions.push(session);
+    logAudit(db, { actorId: req.user.id, action: 'admin_impersonation_started', meta: { sessionId: session.id, targetUserId, targetEmail: target.email, reason: session.reason, durationMinutes: minutes } });
+    await commit();
+    res.json(session);
+  });
+  router.post('/impersonation/:id/end', async (req, res) => {
+    const db = getDB();
+    const session = db.impersonationSessions.find((s) => s.id === req.params.id);
+    if (!session) return res.status(404).json({ error: 'Sesión no encontrada' });
+    if (session.adminUserId !== req.user.id) return res.status(403).json({ error: 'Solo quien inició la sesión puede terminarla' });
+    if (!session.endedAt) session.endedAt = Date.now();
+    logAudit(db, { actorId: req.user.id, action: 'admin_impersonation_ended', meta: { sessionId: session.id, targetUserId: session.targetUserId } });
+    await commit();
+    res.json(session);
+  });
+
+  // ================= FEATURE FLAGS (§22) =================
+  // Nunca sustituyen autorización (spec): son un interruptor de VISIBILIDAD/
+  // disponibilidad informativo para este pase — la autorización real sigue
+  // dependiendo 100% de roles.js/entitlements.js/mediationAccess.js, nunca
+  // de esto. Se siembran solo, la primera vez que se pide la lista.
+  const DEFAULT_FEATURE_FLAGS = [
+    { key: 'videoMeetings', label: 'Videoconferencias integradas' },
+    { key: 'billing', label: 'Billing / Mercado Pago' },
+    { key: 'lawyerPortal', label: 'Portal de abogados' },
+    { key: 'partyPortal', label: 'Portal de partes' },
+    { key: 'automation', label: 'Automatizaciones' },
+    { key: 'radar', label: 'Radar competitivo' },
+  ];
+  function ensureFeatureFlagsSeeded(db) {
+    let created = 0;
+    for (const def of DEFAULT_FEATURE_FLAGS) {
+      if (!db.featureFlags.some((f) => f.key === def.key)) {
+        db.featureFlags.push({ id: nanoid(), key: def.key, label: def.label, enabled: true, updatedAt: Date.now(), updatedBy: null });
+        created++;
+      }
+    }
+    return created;
+  }
+  router.get('/feature-flags', async (req, res) => {
+    const db = getDB();
+    if (ensureFeatureFlagsSeeded(db) > 0) await commit();
+    res.json(db.featureFlags.slice().sort((a, b) => a.label.localeCompare(b.label)));
+  });
+  router.post('/feature-flags/:key/toggle', async (req, res) => {
+    const db = getDB();
+    ensureFeatureFlagsSeeded(db);
+    const flag = db.featureFlags.find((f) => f.key === req.params.key);
+    if (!flag) return res.status(404).json({ error: 'Flag no encontrado' });
+    flag.enabled = !flag.enabled;
+    flag.updatedAt = Date.now();
+    flag.updatedBy = req.user.id;
+    logAudit(db, { actorId: req.user.id, action: 'admin_feature_flag_toggled', meta: { key: flag.key, enabled: flag.enabled } });
+    await commit();
+    res.json(flag);
+  });
+
+  // ================= AUDITORÍA (§17) =================
+  // Mismo auditLog de siempre (audit.js) — antes solo se podía consultar
+  // desde el OTRO panel (/api/admin/audit, coparentalidad). Esto es el
+  // equivalente bajo /api/admin-mediador, para no obligar a cambiar de
+  // panel. Nunca se puede borrar desde acá (spec: "un admin no puede
+  // borrar su propia auditoría") — no existe ningún DELETE en este router.
+  router.get('/audit', (req, res) => {
+    const db = getDB();
+    let list = db.auditLog.slice().sort((a, b) => b.createdAt - a.createdAt);
+    if (req.query.action) list = list.filter((e) => e.action === req.query.action);
+    if (req.query.actorId) list = list.filter((e) => e.actorId === req.query.actorId);
+    const enriched = list.map((e) => {
+      const actor = db.users.find((u) => u.id === e.actorId);
+      return { ...e, actorName: actor ? actor.name : null, actorEmail: actor ? actor.email : null };
+    });
+    res.json(paginate(enriched, clampPaging(req)));
+  });
+
+  // ================= SEGURIDAD (§16) =================
+  router.get('/security', (req, res) => {
+    const db = getDB();
+    let list = db.auditLog.filter((e) => SECURITY_ACTIONS[e.action]).sort((a, b) => b.createdAt - a.createdAt);
+    if (req.query.severity) list = list.filter((e) => SECURITY_ACTIONS[e.action] === req.query.severity);
+    if (req.query.action) list = list.filter((e) => e.action === req.query.action);
+    const enriched = list.map((e) => {
+      const actor = db.users.find((u) => u.id === e.actorId);
+      return { ...e, severity: SECURITY_ACTIONS[e.action], actorName: actor ? actor.name : null, actorEmail: actor ? actor.email : null };
+    });
+    res.json(paginate(enriched, clampPaging(req)));
+  });
+
+  // ================= MÉTRICAS DE PRODUCTO (§18/§19) =================
+  router.get('/metrics', (req, res) => {
+    const db = getDB();
+    const rangeDays = { hoy: 1, '7d': 7, '30d': 30, '90d': 90 }[req.query.range] || 30;
+    const since = Date.now() - rangeDays * 24 * 60 * 60 * 1000;
+
+    const mediadores = db.users.filter((u) => db.mediations.some((m) => m.mediatorUserId === u.id));
+    const withMediation = mediadores.length;
+    const withHearing = mediadores.filter((u) => db.hearings.some((h) => db.mediations.find((m) => m.id === h.mediationId)?.mediatorUserId === u.id)).length;
+    const mediatorMediationIds = (u) => db.mediations.filter((m) => m.mediatorUserId === u.id).map((m) => m.id);
+    const withChat = mediadores.filter((u) => {
+      const ids = new Set(mediatorMediationIds(u));
+      return db.channels.some((c) => ids.has(c.mediationId) && db.messages.some((msg) => msg.channelId === c.id));
+    }).length;
+    const withPartyPortal = mediadores.filter((u) => db.parties.some((p) => p.portalToken && mediatorMediationIds(u).includes(p.mediationId))).length;
+    const withLawyerPortal = mediadores.filter((u) => db.lawyers.some((l) => l.portalToken && mediatorMediationIds(u).includes(l.mediationId))).length;
+    const withClosed = mediadores.filter((u) => db.mediations.some((m) => m.mediatorUserId === u.id && m.closedAt)).length;
+    const pct = (n) => (mediadores.length ? Math.round((n / mediadores.length) * 1000) / 10 : null);
+
+    res.json({
+      rangeDays,
+      usuarios: {
+        registrados: db.users.length,
+        activos: db.users.filter((u) => u.lastLoginAt && u.lastLoginAt >= since).length,
+      },
+      mediaciones: {
+        creadas: db.mediations.filter((m) => m.createdAt >= since).length,
+        activas: db.mediations.filter((m) => !m.closedAt).length,
+        cerradas: db.mediations.filter((m) => !!m.closedAt).length,
+      },
+      audienciasRealizadas: db.hearings.filter((h) => h.status === 'realizada' && h.createdAt >= since).length,
+      mensajesEnviados: (() => {
+        const mediationChannelIds = new Set(db.channels.filter((c) => c.mediationId).map((c) => c.id));
+        return db.messages.filter((m) => m.createdAt >= since && mediationChannelIds.has(m.channelId)).length;
+      })(),
+      documentosSubidos: db.documents.filter((d) => d.createdAt >= since).length,
+      planesActivos: db.billingAccounts ? db.billingAccounts.filter((a) => a.status === 'active').length : 0,
+      adopcion: {
+        totalMediadores: mediadores.length,
+        pctPrimeraMediacion: withMediation ? 100 : null, // por definición, "mediadores" ya excluye a quien nunca creó una
+        pctPrimeraAudiencia: pct(withHearing),
+        pctUsoChat: pct(withChat),
+        pctUsoPortalPartes: pct(withPartyPortal),
+        pctUsoPortalAbogados: pct(withLawyerPortal),
+        pctCerroMediacion: pct(withClosed),
+      },
     });
   });
 

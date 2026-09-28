@@ -82,6 +82,17 @@ const EMPTY_DB = {
   competitorFeatureDetections: [], // { id, sourceId, feature, status:'confirmada'|'posible'|'no_confirmada', evidence, detectedAt } — una fila por sourceId+feature, se actualiza (no se duplica) en cada chequeo
   competitorPrices: [], // { id, sourceId, plan|null, price|null, currency|null, periodicity|null, mediationLimit|null, featuresText|null, detectedAt } — histórico, append-only, nunca se borra ni se modifican precios de Mediador automáticamente
   competitorOpportunities: [], // { id, title, observation, evidence, sourceId|null, changeId|null, status:'pendiente'|'confirmada'|'descartada', createdAt, confirmedBy|null, confirmedAt|null } — siempre creada a mano desde un cambio (§9/§13: el sistema nunca decide solo)
+
+  // ===== Bloque 29 (Admin Console 2.0) — soporte, acceso excepcional e
+  // impersonación. NINGUNA de estas tres tablas reemplaza mediation_access
+  // ni el chequeo normal de autorización — son mecanismos EXPLÍCITOS,
+  // TEMPORALES y AUDITADOS para casos puntuales de soporte (spec §8/§9),
+  // nunca "el admin ve todo siempre". Ver roles.js (requirePlatformAdmin)
+  // y routes/admin-mediador.js para dónde se usan. =====
+  supportTickets: [], // { id, userId|null, studioId|null, mediationId|null, category:'billing'|'login'|'mediation'|'agenda'|'documents'|'communications'|'notifications'|'video'|'performance'|'other', priority:'baja'|'media'|'alta'|'urgente', description, status:'open'|'in_progress'|'waiting'|'resolved'|'closed', assignedTo|null(adminUserId), resolution|null, createdBy(adminUserId que lo cargó), createdAt, updatedAt, resolvedAt|null }
+  supportAccessGrants: [], // { id, adminUserId, mediationId, reason, durationMinutes, startedAt, expiresAt, endedAt|null, resourcesAccessed } — read-only por definición (nunca habilita POST/PATCH). Vence solo por tiempo (expiresAt) o manualmente (endedAt) — nunca queda "para siempre". resourcesAccessed: array de strings (qué se consultó mientras estuvo activo), para poder responder "¿qué recurso fue consultado?"
+  impersonationSessions: [], // { id, adminUserId, targetUserId, reason, durationMinutes, startedAt, expiresAt, endedAt|null } — "ver como usuario": solo lectura, nunca permite mandar mensajes/modificar nada (eso se valida en cada ruta, no acá)
+  featureFlags: [], // { id, key, label, enabled, updatedAt, updatedBy|null } — activar/desactivar funcionalidad sin tocar código (spec §22). Nunca sustituye autorización: un flag prendido no le da acceso a quien no tiene permiso.
 };
 
 const SCHEMA = `
@@ -373,6 +384,30 @@ CREATE TABLE IF NOT EXISTS video_provider_accounts (
   connectedAt INTEGER, updatedAt INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_video_provider_accounts_user ON video_provider_accounts(userId);
+
+CREATE TABLE IF NOT EXISTS support_tickets (
+  id TEXT PRIMARY KEY, userId TEXT, studioId TEXT, mediationId TEXT,
+  category TEXT, priority TEXT DEFAULT 'media', description TEXT,
+  status TEXT DEFAULT 'open', assignedTo TEXT, resolution TEXT,
+  createdBy TEXT, createdAt INTEGER, updatedAt INTEGER, resolvedAt INTEGER
+);
+CREATE TABLE IF NOT EXISTS support_access_grants (
+  id TEXT PRIMARY KEY, adminUserId TEXT, mediationId TEXT, reason TEXT,
+  durationMinutes INTEGER, startedAt INTEGER, expiresAt INTEGER, endedAt INTEGER,
+  resourcesAccessed TEXT
+);
+CREATE TABLE IF NOT EXISTS impersonation_sessions (
+  id TEXT PRIMARY KEY, adminUserId TEXT, targetUserId TEXT, reason TEXT,
+  durationMinutes INTEGER, startedAt INTEGER, expiresAt INTEGER, endedAt INTEGER
+);
+CREATE TABLE IF NOT EXISTS feature_flags (
+  id TEXT PRIMARY KEY, key TEXT UNIQUE, label TEXT, enabled INTEGER DEFAULT 0,
+  updatedAt INTEGER, updatedBy TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status);
+CREATE INDEX IF NOT EXISTS idx_support_access_grants_mediation ON support_access_grants(mediationId);
+CREATE INDEX IF NOT EXISTS idx_support_access_grants_admin ON support_access_grants(adminUserId);
+CREATE INDEX IF NOT EXISTS idx_impersonation_sessions_admin ON impersonation_sessions(adminUserId);
 `;
 
 // columnas que se guardan como 0/1 en SQLite pero son boolean en JS —
@@ -384,11 +419,13 @@ const BOOL_COLUMNS = {
   messages: ['flagged', 'pattern'],
   parties: ['allowDocumentUpload'],
   competitorSources: ['active'],
+  featureFlags: ['enabled'],
 };
 // columnas que viajan como objeto/array en JS pero se guardan como texto JSON
 const JSON_COLUMNS = {
   channels: ['professionalInvites', 'lastSummary'],
   auditLog: ['meta'],
+  supportAccessGrants: ['resourcesAccessed'],
   users: ['aiUsage'],
   pushSubscriptions: ['keys'],
   messages: ['attachment'],
@@ -417,6 +454,8 @@ const TABLE_NAMES = {
   competitorSources: 'competitor_sources', competitorSnapshots: 'competitor_snapshots',
   competitorChanges: 'competitor_changes', competitorFeatureDetections: 'competitor_feature_detections',
   competitorPrices: 'competitor_prices', competitorOpportunities: 'competitor_opportunities',
+  supportTickets: 'support_tickets', supportAccessGrants: 'support_access_grants',
+  impersonationSessions: 'impersonation_sessions', featureFlags: 'feature_flags',
 };
 
 function rowToRecord(collectionKey, row) {

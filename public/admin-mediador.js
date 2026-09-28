@@ -31,8 +31,7 @@ function qs(params){
 }
 
 // Solo las secciones con datos reales detrás — nada de pantallas vacías
-// para completar el menú (§3/§24 de la spec). "Configuración" queda afuera
-// a propósito: hoy no hay ningún parámetro de plataforma editable.
+// para completar el menú (§3/§24 de la spec).
 const SECTIONS = [
   { id:'dashboard', label:'Inicio' },
   { id:'users', label:'Usuarios' },
@@ -40,11 +39,20 @@ const SECTIONS = [
   { id:'mediations', label:'Mediaciones' },
   { id:'hearings', label:'Audiencias' },
   { id:'activity', label:'Actividad' },
+  { id:'support', label:'Soporte' },
   { id:'notifications', label:'Notificaciones' },
   { id:'system', label:'Sistema' },
+  { id:'security', label:'Seguridad' },
+  { id:'audit', label:'Auditoría' },
+  { id:'metrics', label:'Métricas' },
   { id:'billing', label:'Billing' },
   { id:'radar', label:'Radar' },
+  { id:'flags', label:'Configuración' },
 ];
+
+const SUPPORT_STATUS_LABELS = { open:'Abierto', in_progress:'En proceso', waiting:'En espera', resolved:'Resuelto', closed:'Cerrado' };
+const SUPPORT_CATEGORY_LABELS = { billing:'Billing', login:'Login', mediation:'Mediación', agenda:'Agenda', documents:'Documentos', communications:'Comunicaciones', notifications:'Notificaciones', video:'Video', performance:'Rendimiento', other:'Otro' };
+const SECURITY_SEVERITY_LABELS = { critical:'Crítico', warning:'Advertencia', info:'Info' };
 
 const ROLE_LABELS = { admin:'Admin de estudio', mediador:'Mediador/a', asistente:'Asistente', independiente:'Independiente', admin_plataforma:'Admin de plataforma' };
 const ACTIVITY_TYPE_LABELS = {
@@ -128,6 +136,11 @@ async function renderSection(){
     if(STATE.section==='system') return await renderSystem(body);
     if(STATE.section==='billing') return await renderBilling(body);
     if(STATE.section==='radar') return await renderRadarSummary(body);
+    if(STATE.section==='support') return await renderSupport(body);
+    if(STATE.section==='security') return await renderSecurity(body);
+    if(STATE.section==='audit') return await renderAudit(body);
+    if(STATE.section==='metrics') return await renderMetrics(body);
+    if(STATE.section==='flags') return await renderFeatureFlags(body);
   }catch(e){
     body.innerHTML = `<p class="empty-hint">${escapeHtml(e.error || 'No se pudo cargar esta sección.')}</p>`;
   }
@@ -198,16 +211,67 @@ async function renderUsers(body){
               <td>${fmtDate(u.createdAt)}</td>
               <td>${timeAgo(u.lastLoginAt)}</td>
               <td>${u.mediationsCount}</td>
-              <td>
-                ${u.role==='admin_plataforma' ? '—' : (u.estado==='activo'
+              <td style="display:flex; gap:6px; flex-wrap:wrap;">
+                ${u.role==='admin_plataforma' ? '' : (u.estado==='activo'
                   ? `<button class="ghost danger" onclick="toggleUser('${u.id}', false)">Desactivar</button>`
                   : `<button class="ghost" onclick="toggleUser('${u.id}', true)">Activar</button>`)}
+                ${u.role==='admin_plataforma' ? '—' : `<button class="ghost" onclick="toggleImpersonateForm('${u.id}')">Ver como usuario</button>`}
               </td>
             </tr>
+            <tr id="imp-form-${u.id}" style="display:none;"><td colspan="9">
+              <div class="block" style="margin:0; background:var(--bg2, #f5f5f5);">
+                <p class="block-note" style="margin-top:0;">Usuario: ${escapeHtml(u.name)} · Modo: Solo lectura. Queda auditado y expira solo.</p>
+                <textarea id="imp-reason-${u.id}" placeholder="Motivo (obligatorio) — ej: problema visual reportado por el usuario" rows="2" style="width:100%; margin-bottom:8px;"></textarea>
+                <select id="imp-duration-${u.id}" style="margin-bottom:8px;">
+                  <option value="15">15 minutos</option>
+                  <option value="30">30 minutos</option>
+                  <option value="60">1 hora</option>
+                </select>
+                <button class="primary" onclick="startImpersonation('${u.id}')">Ver como ${escapeHtml(u.name)}</button>
+              </div>
+            </td></tr>
           `).join('') || '<tr><td colspan="9" class="empty-hint">Sin datos todavía.</td></tr>'}
         </table>
       </div>
       ${renderPager('users', data)}
+      ${STATE.impersonation ? renderImpersonationPanel() : ''}
+    </section>
+  `;
+}
+function toggleImpersonateForm(id){
+  const row = document.getElementById('imp-form-'+id);
+  if(row) row.style.display = row.style.display==='none' ? '' : 'none';
+}
+async function startImpersonation(targetUserId){
+  const reason = document.getElementById('imp-reason-'+targetUserId).value.trim();
+  const durationMinutes = document.getElementById('imp-duration-'+targetUserId).value;
+  if(!reason){ alert('El motivo es obligatorio.'); return; }
+  try{
+    const session = await api('/api/admin-mediador/impersonation', { method:'POST', body: JSON.stringify({ targetUserId, reason, durationMinutes }) });
+    const detail = await api(`/api/admin-mediador/users/${targetUserId}`);
+    STATE.impersonation = { session, detail };
+    renderSection();
+  }catch(e){ alert(e.error || 'No se pudo iniciar "ver como usuario".'); }
+}
+async function endImpersonation(){
+  if(!STATE.impersonation) return;
+  try{ await api(`/api/admin-mediador/impersonation/${STATE.impersonation.session.id}/end`, { method:'POST' }); }
+  catch(e){ /* si ya venció, igual la cerramos del lado del frontend */ }
+  STATE.impersonation = null;
+  renderSection();
+}
+function renderImpersonationPanel(){
+  const { session, detail } = STATE.impersonation;
+  return `
+    <section class="block" style="border:2px solid var(--warn, #d79b2b); margin-top:16px;">
+      <h2 class="block-title">⚠ MODO SOPORTE — SOLO LECTURA — viendo como ${escapeHtml(detail.name)}</h2>
+      <p class="block-note">Motivo: ${escapeHtml(session.reason)} · Vence ${fmtDateTime(session.expiresAt)} · <button class="ghost danger" onclick="endImpersonation()">Terminar</button></p>
+      <div class="table-wrap"><table class="min-w">
+        <tr><th>Código</th><th>Estado</th><th>Alta</th></tr>
+        ${(detail.mediations||[]).map(m => `<tr><td class="strong">${escapeHtml(m.code)}</td><td>${escapeHtml(m.status)}</td><td>${fmtDate(m.createdAt)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty-hint">Sin mediaciones.</td></tr>'}
+      </table></div>
+      <p class="block-note">Actividad reciente (metadata, nunca contenido privado):</p>
+      ${(detail.recentActivity||[]).map(e => `<div class="empty-hint" style="text-align:left;">${ACTIVITY_TYPE_LABELS[e.type]||e.type}${e.title?': '+escapeHtml(e.title):''} · ${fmtDateTime(e.createdAt)}</div>`).join('') || '<div class="empty-hint">Sin actividad.</div>'}
     </section>
   `;
 }
@@ -306,7 +370,7 @@ async function renderMediations(body){
       </div>
       <div class="table-wrap">
         <table class="min-w">
-          <tr><th>Código</th><th>Mediador</th><th>Estudio</th><th>Estado</th><th>Próxima acción</th><th>Vencimiento</th><th>Próxima audiencia</th><th>Alerta</th><th>Alta</th></tr>
+          <tr><th>Código</th><th>Mediador</th><th>Estudio</th><th>Estado</th><th>Próxima acción</th><th>Vencimiento</th><th>Próxima audiencia</th><th>Alerta</th><th>Alta</th><th>Soporte</th></tr>
           ${data.items.map(m => `
             <tr>
               <td class="strong">${escapeHtml(m.code)}</td>
@@ -318,13 +382,41 @@ async function renderMediations(body){
               <td>${fmtDate(m.proximaAudiencia)}</td>
               <td>${m.vencida ? '<span class="pill danger">VENCIDA</span>' : ''}</td>
               <td>${fmtDate(m.createdAt)}</td>
+              <td><button class="ghost" onclick="toggleAccessForm('${m.id}')">Solicitar acceso</button></td>
             </tr>
-          `).join('') || '<tr><td colspan="9" class="empty-hint">Sin datos todavía.</td></tr>'}
+            <tr id="access-form-${m.id}" style="display:none;"><td colspan="10">
+              <div class="block" style="margin:0; background:var(--bg2, #f5f5f5);">
+                <p class="block-note" style="margin-top:0;">SUPPORT ACCESS — Mediación: ${escapeHtml(m.code)}. Acceso temporal, de solo lectura, auditado — habilita ver los mensajes de esta mediación desde la app normal mientras esté vigente.</p>
+                <textarea id="access-reason-${m.id}" placeholder="Motivo (obligatorio) — ej: el usuario informa que no puede ver un mensaje" rows="2" style="width:100%; margin-bottom:8px;"></textarea>
+                <select id="access-duration-${m.id}" style="margin-bottom:8px;">
+                  <option value="15">15 minutos</option>
+                  <option value="30">30 minutos</option>
+                  <option value="60">1 hora</option>
+                  <option value="120">2 horas</option>
+                </select>
+                <button class="primary" onclick="requestSupportAccess('${m.id}')">Solicitar acceso</button>
+              </div>
+            </td></tr>
+          `).join('') || '<tr><td colspan="10" class="empty-hint">Sin datos todavía.</td></tr>'}
         </table>
       </div>
       ${renderPager('mediations', data)}
     </section>
   `;
+}
+function toggleAccessForm(id){
+  const row = document.getElementById('access-form-'+id);
+  if(row) row.style.display = row.style.display==='none' ? '' : 'none';
+}
+async function requestSupportAccess(mediationId){
+  const reason = document.getElementById('access-reason-'+mediationId).value.trim();
+  const durationMinutes = document.getElementById('access-duration-'+mediationId).value;
+  if(!reason){ alert('El motivo es obligatorio.'); return; }
+  try{
+    const grant = await api('/api/admin-mediador/support-access', { method:'POST', body: JSON.stringify({ mediationId, reason, durationMinutes }) });
+    alert(`Acceso concedido hasta ${fmtDateTime(grant.expiresAt)}. Ya podés ver los mensajes de esta mediación desde la app normal (Chat) mientras esté vigente.`);
+    toggleAccessForm(mediationId);
+  }catch(e){ alert(e.error || 'No se pudo solicitar el acceso.'); }
 }
 function setMedFilter(key, value){ STATE.filters.mediations = { ...(STATE.filters.mediations||{}), [key]: value }; STATE.page.mediations = 0; renderSection(); }
 
@@ -507,3 +599,207 @@ async function renderRadarSummary(body){
     </section>
   `;
 }
+// ================= SOPORTE — tickets (§7) =================
+async function renderSupport(body){
+  const f = STATE.filters.support || {};
+  const data = await api('/api/admin-mediador/support' + qs({ ...f, offset: STATE.page.support||0, limit:25 }));
+  body.innerHTML = `
+    <section class="block">
+      <h2 class="block-title">Soporte</h2>
+      <div class="filter-row">
+        <select onchange="setSupportFilter('status', this.value)">
+          <option value="">Todos los estados</option>
+          ${Object.keys(SUPPORT_STATUS_LABELS).map(s => `<option value="${s}" ${f.status===s?'selected':''}>${SUPPORT_STATUS_LABELS[s]}</option>`).join('')}
+        </select>
+        <select onchange="setSupportFilter('category', this.value)">
+          <option value="">Todas las categorías</option>
+          ${Object.keys(SUPPORT_CATEGORY_LABELS).map(c => `<option value="${c}" ${f.category===c?'selected':''}>${SUPPORT_CATEGORY_LABELS[c]}</option>`).join('')}
+        </select>
+        <button class="ghost" onclick="toggleNewTicketForm()">+ Nuevo incidente</button>
+      </div>
+      <div id="new-ticket-form" style="display:none; margin-bottom:12px;" class="block">
+        <label>Categoría</label>
+        <select id="nt-category">${Object.keys(SUPPORT_CATEGORY_LABELS).map(c => `<option value="${c}">${SUPPORT_CATEGORY_LABELS[c]}</option>`).join('')}</select>
+        <label>Prioridad</label>
+        <select id="nt-priority"><option value="baja">Baja</option><option value="media" selected>Media</option><option value="alta">Alta</option><option value="urgente">Urgente</option></select>
+        <label>Email del usuario (opcional)</label>
+        <input id="nt-user-email" placeholder="usuario@ejemplo.com">
+        <label>Descripción</label>
+        <textarea id="nt-description" rows="3" placeholder="Qué reportó, qué se probó..."></textarea>
+        <button class="primary" onclick="createSupportTicket()">Registrar incidente</button>
+      </div>
+      <div class="table-wrap">
+        <table class="min-w">
+          <tr><th>Fecha</th><th>Categoría</th><th>Prioridad</th><th>Usuario</th><th>Mediación</th><th>Estado</th><th>Descripción</th><th></th></tr>
+          ${data.items.map(t => `
+            <tr>
+              <td>${fmtDate(t.createdAt)}</td>
+              <td>${SUPPORT_CATEGORY_LABELS[t.category]||t.category}</td>
+              <td><span class="pill ${t.priority==='urgente'||t.priority==='alta'?'danger':'neutral'}">${t.priority}</span></td>
+              <td>${escapeHtml(t.userName||t.userEmail||'—')}</td>
+              <td>${escapeHtml(t.mediationCode||'—')}</td>
+              <td><span class="pill ${t.status==='resolved'||t.status==='closed'?'ok':t.status==='open'?'warn':'neutral'}">${SUPPORT_STATUS_LABELS[t.status]}</span></td>
+              <td style="max-width:280px;">${escapeHtml(t.description)}</td>
+              <td>
+                <select onchange="updateTicketStatus('${t.id}', this.value)">
+                  ${Object.keys(SUPPORT_STATUS_LABELS).map(s => `<option value="${s}" ${t.status===s?'selected':''}>${SUPPORT_STATUS_LABELS[s]}</option>`).join('')}
+                </select>
+              </td>
+            </tr>
+          `).join('') || '<tr><td colspan="8" class="empty-hint">Sin incidentes registrados.</td></tr>'}
+        </table>
+      </div>
+      ${renderPager('support', data)}
+    </section>
+  `;
+}
+function setSupportFilter(key, value){ STATE.filters.support = { ...(STATE.filters.support||{}), [key]: value }; STATE.page.support = 0; renderSection(); }
+function toggleNewTicketForm(){ const el = document.getElementById('new-ticket-form'); el.style.display = el.style.display==='none' ? '' : 'none'; }
+async function createSupportTicket(){
+  const description = document.getElementById('nt-description').value.trim();
+  if(!description){ alert('Falta la descripción.'); return; }
+  const email = document.getElementById('nt-user-email').value.trim();
+  let userId;
+  if(email){
+    try{ const found = await api('/api/admin-mediador/users' + qs({ q: email, limit: 1 })); userId = found.items[0]?.id; }catch(e){}
+  }
+  try{
+    await api('/api/admin-mediador/support', { method:'POST', body: JSON.stringify({
+      category: document.getElementById('nt-category').value,
+      priority: document.getElementById('nt-priority').value,
+      description, userId,
+    })});
+    renderSection();
+  }catch(e){ alert(e.error || 'No se pudo registrar el incidente.'); }
+}
+async function updateTicketStatus(id, status){
+  try{ await api(`/api/admin-mediador/support/${id}`, { method:'PATCH', body: JSON.stringify({ status }) }); renderSection(); }
+  catch(e){ alert(e.error || 'No se pudo actualizar.'); }
+}
+
+// ================= SEGURIDAD (§16) =================
+async function renderSecurity(body){
+  const f = STATE.filters.security || {};
+  const data = await api('/api/admin-mediador/security' + qs({ ...f, offset: STATE.page.security||0, limit:50 }));
+  body.innerHTML = `
+    <section class="block">
+      <h2 class="block-title">Seguridad</h2>
+      <p class="block-note">Login fallidos al centro de control, accesos de soporte, impersonación, cambios de rol/propiedad — nunca contenido de mensajes.</p>
+      <div class="filter-row">
+        <select onchange="setSecurityFilter('severity', this.value)">
+          <option value="">Toda severidad</option>
+          ${Object.keys(SECURITY_SEVERITY_LABELS).map(s => `<option value="${s}" ${f.severity===s?'selected':''}>${SECURITY_SEVERITY_LABELS[s]}</option>`).join('')}
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table class="min-w">
+          <tr><th>Fecha</th><th>Severidad</th><th>Acción</th><th>Actor</th><th>Detalle</th></tr>
+          ${data.items.map(e => `
+            <tr>
+              <td>${fmtDateTime(e.createdAt)}</td>
+              <td><span class="pill ${e.severity==='critical'?'danger':e.severity==='warning'?'warn':'neutral'}">${SECURITY_SEVERITY_LABELS[e.severity]}</span></td>
+              <td>${escapeHtml(e.action)}</td>
+              <td>${escapeHtml(e.actorName||e.actorEmail||'—')}</td>
+              <td style="max-width:360px;">${escapeHtml(JSON.stringify(e.meta||{}))}</td>
+            </tr>
+          `).join('') || '<tr><td colspan="5" class="empty-hint">Sin eventos de seguridad todavía.</td></tr>'}
+        </table>
+      </div>
+      ${renderPager('security', data)}
+    </section>
+  `;
+}
+function setSecurityFilter(key, value){ STATE.filters.security = { ...(STATE.filters.security||{}), [key]: value }; STATE.page.security = 0; renderSection(); }
+
+// ================= AUDITORÍA (§17) =================
+async function renderAudit(body){
+  const data = await api('/api/admin-mediador/audit' + qs({ offset: STATE.page.audit||0, limit:50 }));
+  body.innerHTML = `
+    <section class="block">
+      <h2 class="block-title">Auditoría</h2>
+      <p class="block-note">Todas las acciones administrativas relevantes. Nunca se puede borrar desde acá.</p>
+      <div class="table-wrap">
+        <table class="min-w">
+          <tr><th>Fecha</th><th>Acción</th><th>Actor</th><th>Detalle</th></tr>
+          ${data.items.map(e => `
+            <tr>
+              <td>${fmtDateTime(e.createdAt)}</td>
+              <td>${escapeHtml(e.action)}</td>
+              <td>${escapeHtml(e.actorName||e.actorEmail||'—')}</td>
+              <td style="max-width:400px;">${escapeHtml(JSON.stringify(e.meta||{}))}</td>
+            </tr>
+          `).join('') || '<tr><td colspan="4" class="empty-hint">Sin actividad registrada.</td></tr>'}
+        </table>
+      </div>
+      ${renderPager('audit', data)}
+    </section>
+  `;
+}
+
+// ================= MÉTRICAS DE PRODUCTO (§18/§19) =================
+async function renderMetrics(body){
+  const range = STATE.metricsRange || '30d';
+  const m = await api('/api/admin-mediador/metrics' + qs({ range }));
+  body.innerHTML = `
+    <section class="block">
+      <h2 class="block-title">Métricas de producto</h2>
+      <div class="filter-row">
+        ${['hoy','7d','30d','90d'].map(r => `<button class="ghost ${range===r?'active':''}" onclick="setMetricsRange('${r}')">${r==='hoy'?'Hoy':r}</button>`).join('')}
+      </div>
+      <div class="stat-grid">
+        <div class="stat-card"><div class="num">${m.usuarios.registrados}</div><div class="lab">usuarios registrados</div></div>
+        <div class="stat-card"><div class="num">${m.usuarios.activos}</div><div class="lab">usuarios activos (rango)</div></div>
+        <div class="stat-card"><div class="num">${m.mediaciones.creadas}</div><div class="lab">mediaciones creadas (rango)</div></div>
+        <div class="stat-card"><div class="num">${m.mediaciones.activas}</div><div class="lab">mediaciones activas</div></div>
+        <div class="stat-card"><div class="num">${m.mediaciones.cerradas}</div><div class="lab">mediaciones cerradas</div></div>
+        <div class="stat-card"><div class="num">${m.audienciasRealizadas}</div><div class="lab">audiencias realizadas</div></div>
+        <div class="stat-card"><div class="num">${m.mensajesEnviados}</div><div class="lab">mensajes enviados</div></div>
+        <div class="stat-card"><div class="num">${m.documentosSubidos}</div><div class="lab">documentos subidos</div></div>
+        <div class="stat-card"><div class="num">${m.planesActivos}</div><div class="lab">planes pagos activos</div></div>
+      </div>
+      <h2 class="block-title" style="margin-top:20px;">Adopción (sobre ${m.adopcion.totalMediadores} mediador(es) con al menos 1 mediación)</h2>
+      ${m.adopcion.totalMediadores === 0 ? '<div class="empty-hint">Todavía no hay mediadores con mediaciones — no se puede calcular adopción.</div>' : `
+      <div class="table-wrap"><table class="min-w">
+        <tr><th>Métrica</th><th>%</th></tr>
+        <tr><td>Programaron su primera audiencia</td><td>${m.adopcion.pctPrimeraAudiencia ?? '—'}%</td></tr>
+        <tr><td>Usaron Chat</td><td>${m.adopcion.pctUsoChat ?? '—'}%</td></tr>
+        <tr><td>Usaron Portal de Partes</td><td>${m.adopcion.pctUsoPortalPartes ?? '—'}%</td></tr>
+        <tr><td>Usaron Portal de Abogados</td><td>${m.adopcion.pctUsoPortalAbogados ?? '—'}%</td></tr>
+        <tr><td>Cerraron una mediación</td><td>${m.adopcion.pctCerroMediacion ?? '—'}%</td></tr>
+      </table></div>
+      `}
+      <p class="block-note" style="margin-top:10px;">No se hacen predicciones — solo conteos y porcentajes sobre datos existentes.</p>
+    </section>
+  `;
+}
+function setMetricsRange(r){ STATE.metricsRange = r; renderSection(); }
+
+// ================= CONFIGURACIÓN — feature flags (§21/§22) =================
+async function renderFeatureFlags(body){
+  const flags = await api('/api/admin-mediador/feature-flags');
+  body.innerHTML = `
+    <section class="block">
+      <h2 class="block-title">Configuración — Feature flags</h2>
+      <p class="block-note">Activar/desactivar funcionalidad sin tocar código. IMPORTANTE: un flag nunca sustituye autorización — alguien sin permiso no gana acceso solo porque el flag esté prendido.</p>
+      <div class="table-wrap">
+        <table class="min-w">
+          <tr><th>Funcionalidad</th><th>Estado</th><th>Última actualización</th><th></th></tr>
+          ${flags.map(f => `
+            <tr>
+              <td class="strong">${escapeHtml(f.label)}</td>
+              <td><span class="pill ${f.enabled?'ok':'danger'}">${f.enabled?'ACTIVADO':'DESACTIVADO'}</span></td>
+              <td>${fmtDateTime(f.updatedAt)}</td>
+              <td><button class="ghost" onclick="toggleFlag('${f.key}')">${f.enabled?'Desactivar':'Activar'}</button></td>
+            </tr>
+          `).join('')}
+        </table>
+      </div>
+      <p class="block-note" style="margin-top:14px;">No hay otros parámetros de plataforma editables todavía (grace period, intervalos de jobs, etc. se configuran por variables de entorno del servidor) — no se agregan acá campos que no tengan un efecto real detrás.</p>
+    </section>
+  `;
+}
+async function toggleFlag(key){
+  try{ await api(`/api/admin-mediador/feature-flags/${key}/toggle`, { method:'POST' }); renderSection(); }
+  catch(e){ alert(e.error || 'No se pudo actualizar el flag.'); }
+}
+
