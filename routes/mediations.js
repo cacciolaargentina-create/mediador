@@ -15,7 +15,7 @@ const { isAdminUser } = require('../roles');
 const { logAudit } = require('../audit');
 const { logMediationEvent } = require('../mediationEvents');
 const { signHash } = require('../signing');
-const { integrityHash, buildMediationPlainContent, buildMediationCertifiedPDF, buildMediationConstanciaPDF } = require('../certificate');
+const { integrityHash, buildMediationPlainContent, buildMediationCertifiedPDF, buildMediationConstanciaPDF, buildMediationActaCierrePDF, buildMediationActaCierrePlainContent } = require('../certificate');
 const { checkHearingConflicts, toMinutes } = require('../agenda');
 const { notifyPartyAboutHearing, notifyLawyerAboutHearing, notifyParty, notifyLawyer, postSystemMessage, baseUrl } = require('../messaging');
 const { askMediationAssistant, askDashboardAssistant, askMediationAssistantAboutDocument, suggestTasksFromNote } = require('../assistant');
@@ -3068,6 +3068,47 @@ module.exports = function (io, presence) {
     } catch (err) {
       console.error('Error generando constancia de mediación:', err);
       res.status(500).json({ error: 'No se pudo generar la constancia' });
+    }
+  });
+
+  // Bloque 34 — Acta de Cierre automática. Solo tiene sentido una vez
+  // cerrada la mediación (closedResult/closedNotes recién existen a partir
+  // de ahí) — nunca antes, a diferencia de la constancia que también sirve
+  // para mediaciones en curso.
+  router.get('/:id/export/acta-cierre', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    const db = getDB();
+    const mediation = req.mediation;
+    if (!mediation.closedAt) {
+      return res.status(400).json({ error: 'La mediación todavía no está cerrada — el acta de cierre se genera recién al cerrarla.' });
+    }
+    try {
+      const parties = db.parties.filter((p) => p.mediationId === mediation.id);
+      const lawyers = db.lawyers.filter((l) => l.mediationId === mediation.id);
+      const plainContent = buildMediationActaCierrePlainContent({ mediation, parties, lawyers });
+      const hash = integrityHash(plainContent);
+      const signature = signHash(hash);
+      const verifyUrl = `${process.env.FRONTEND_URL || ''}/verificar/${hash}`;
+      const buffer = await buildMediationActaCierrePDF({ mediation, parties, lawyers, hash, signature, verifyUrl, generatedBy: { name: req.user.name } });
+
+      // el hash es determinístico a partir del contenido: volver a
+      // descargar la MISMA acta sin cambios da el mismo hash. La columna
+      // es UNIQUE, así que insertar de nuevo rompía el commit entero hasta
+      // reiniciar el proceso — mismo criterio que el resto de las
+      // exportaciones certificadas (ver el comentario en /export arriba).
+      if (!db.certifiedExports.some((e) => e.hash === hash)) {
+        db.certifiedExports.push({
+          id: nanoid(), hash, signature, channelCode: null, mediationCode: mediation.code,
+          generatedByName: req.user.name, generatedByRole: 'mediador', createdAt: Date.now(),
+        });
+      }
+      await commit();
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="acta-cierre-${mediation.code}.pdf"`);
+      res.send(buffer);
+    } catch (err) {
+      console.error('Error generando acta de cierre:', err);
+      res.status(500).json({ error: 'No se pudo generar el acta de cierre' });
     }
   });
 

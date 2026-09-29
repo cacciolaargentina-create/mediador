@@ -2524,6 +2524,7 @@ async function renderDetail(id){
       <h2>Exportar</h2>
       <a class="ghost" style="display:block; text-align:center; text-decoration:none; padding:10px; color:var(--text); margin-bottom:8px;" href="/api/mediations/${m.id}/export">Descargar informe certificado (PDF)</a>
       <a class="ghost" style="display:block; text-align:center; text-decoration:none; padding:10px; color:var(--text); margin-bottom:8px;" href="/api/mediations/${m.id}/export/constancia">Descargar constancia corta</a>
+      ${m.closedAt ? `<a class="ghost" style="display:block; text-align:center; text-decoration:none; padding:10px; color:var(--text); margin-bottom:8px;" href="/api/mediations/${m.id}/export/acta-cierre">Descargar acta de cierre</a>` : ''}
       <a class="ghost" style="display:block; text-align:center; text-decoration:none; padding:10px; color:var(--text);" href="/api/mediations/${m.id}/export/package">Descargar paquete completo (.zip)</a>
       ${!m.closedAt ? `<p class="empty-hint" style="margin-top:8px;">Revisar antes: <a href="#" onclick="showCloseChecklist('${m.id}'); return false;" style="color:var(--calm);">ver checklist de cierre</a></p>` : ''}
     </div>
@@ -2586,20 +2587,30 @@ async function closeMediation(id){
   if(!confirm(`¿Cerrar esta mediación con resultado "${CLOSE_RESULT_LABELS[result] || result}"? No hay forma de reabrirla después desde acá.`)) return;
   try{
     await api(`/api/mediations/${id}/close`, { method:'POST', body: JSON.stringify({ result, notes }) });
-    renderDetail(id);
+    afterMediationClosed(id);
   }catch(e){
     if(e.needsConfirmation){
       const pending = e.checklist.pendingCommitments.map(c => `- ${c.partyName}: ${c.description}`).join('\n');
       if(confirm(`Hay compromisos pendientes sin resolver:\n${pending}\n\n¿Cerrar igual?`)){
         try{
           await api(`/api/mediations/${id}/close`, { method:'POST', body: JSON.stringify({ result, notes, confirmDespiteWarnings:true }) });
-          renderDetail(id);
+          afterMediationClosed(id);
         }catch(e2){ showToast(e2.error || 'No se pudo cerrar la mediación.', 'danger'); }
       }
     } else {
       showToast(e.error || 'No se pudo cerrar la mediación.', 'danger');
     }
   }
+}
+// Bloque 34 — el acta de cierre se ofrece sola apenas se cierra, sin que
+// el mediador tenga que ir a buscarla a la tarjeta de Exportar (aunque
+// también queda ahí para descargarla de nuevo más tarde). window.open en
+// vez de location.href para no perder la pantalla de detalle recién
+// renderizada.
+function afterMediationClosed(id){
+  renderDetail(id);
+  window.open(`/api/mediations/${id}/export/acta-cierre`, '_blank');
+  showToast('Mediación cerrada. Se descargó el acta de cierre.', 'success');
 }
 async function changeStatus(id){
   const status = document.getElementById('status-select').value;

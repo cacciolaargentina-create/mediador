@@ -218,8 +218,6 @@ async function buildCertifiedReport({ channel, messages, events, nameOf, generat
   });
 }
 
-module.exports = { buildCertifiedReport, integrityHash, buildPlainContent, buildMediationPlainContent, buildMediationCertifiedPDF, buildMediationConstanciaPDF };
-
 // ===== Bloque 8 de Mediador (B2B) — exportación certificada de una
 // mediación completa. Reusa integrityHash/signHash/verificación pública
 // tal cual (son genéricos) — lo que cambia es el CONTENIDO, porque una
@@ -407,3 +405,115 @@ async function buildMediationConstanciaPDF({ mediation, hash, signature, verifyU
     doc.end();
   });
 }
+
+// Bloque 34 — Acta de Cierre automática. Distinta de la constancia (una
+// línea de prueba de que se cerró) y del informe completo (todo el
+// expediente): esto es el documento formal que deja constancia de CÓMO
+// terminó la mediación — partes, abogados, resultado y los términos que el
+// mediador haya cargado en las notas de cierre (ahí es donde entrarían los
+// términos de un acuerdo, si lo hay) — para llevar a un ámbito externo sin
+// tener que armar el expediente completo. Se genera automáticamente al
+// cerrar (ver routes/mediations.js) y también queda disponible para
+// volver a descargar después, siempre con el mismo hash (mismo criterio
+// determinístico que el resto de las exportaciones certificadas).
+const CLOSE_RESULT_LABELS_ES = {
+  acuerdo_total: 'Acuerdo total', acuerdo_parcial: 'Acuerdo parcial', sin_acuerdo: 'Sin acuerdo',
+  incomparecencia: 'Incomparecencia', desistimiento: 'Desistimiento', otro: 'Otro',
+};
+
+function buildMediationActaCierrePlainContent({ mediation, parties, lawyers }) {
+  const lines = [];
+  lines.push('ACTA DE CIERRE DE MEDIACIÓN — MEDIADOR (Puente Digital)');
+  lines.push(`Código: ${mediation.code}`);
+  lines.push(`Objeto: ${mediation.object}`);
+  lines.push(`Resultado: ${CLOSE_RESULT_LABELS_ES[mediation.closedResult] || mediation.closedResult}`);
+  lines.push(`Fecha de cierre: ${fmt(mediation.closedAt)}`);
+  lines.push('');
+  lines.push('--- PARTES ---');
+  parties.forEach((p) => {
+    lines.push(`${partyLabel(p)} (${p.role})${p.documentNumber ? ' — ' + (p.documentType || 'Doc.') + ' ' + p.documentNumber : ''}`);
+  });
+  lines.push('');
+  lines.push('--- ABOGADOS ---');
+  lawyers.forEach((l) => {
+    const party = parties.find((p) => p.id === l.partyId);
+    lines.push(`${l.name}${l.enrollmentNumber ? ' — Mat. ' + l.enrollmentNumber : ''}${party ? ' (representa a ' + partyLabel(party) + ')' : ''}`);
+  });
+  if (mediation.closedNotes) {
+    lines.push('');
+    lines.push('--- TÉRMINOS / OBSERVACIONES DE CIERRE ---');
+    lines.push(mediation.closedNotes);
+  }
+  return lines.join('\n');
+}
+
+async function buildMediationActaCierrePDF({ mediation, parties, lawyers, hash, signature, verifyUrl, generatedBy }) {
+  const qrBuffer = verifyUrl
+    ? await QRCode.toBuffer(verifyUrl, { type: 'png', width: 160, margin: 1, color: { dark: '#1a1a2e', light: '#ffffff' } })
+    : null;
+
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
+    const chunks = [];
+    doc.on('data', (c) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const qrSize = 68;
+    if (qrBuffer) {
+      doc.image(qrBuffer, 545 - qrSize, 50, { width: qrSize, height: qrSize });
+      doc.fontSize(6.5).fillColor('#777').font('Helvetica').text('Verificar autenticidad', 545 - qrSize - 8, 50 + qrSize + 2, { width: qrSize + 16, align: 'center' });
+      doc.x = 50; doc.y = 50;
+    }
+    doc.fontSize(20).fillColor('#1a1a2e').font('Helvetica-Bold').text('ACTA DE CIERRE DE MEDIACIÓN', { align: 'left', width: qrBuffer ? 420 : undefined });
+    doc.fontSize(11).fillColor('#555').font('Helvetica').text('Mediador — Puente Digital', { align: 'left' });
+    doc.moveDown(0.3);
+    if (qrBuffer) { const qrBottomY = 50 + qrSize + 16; if (doc.y < qrBottomY) doc.y = qrBottomY; }
+    doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#1a1a2e').lineWidth(1.5).stroke();
+    doc.moveDown(1);
+
+    doc.fontSize(10).fillColor('#000');
+    doc.font('Helvetica-Bold').text('Mediación: ', { continued: true }).font('Helvetica').text(`${mediation.code} — ${mediation.object}`);
+    doc.font('Helvetica-Bold').text('Resultado: ', { continued: true }).font('Helvetica').text(CLOSE_RESULT_LABELS_ES[mediation.closedResult] || mediation.closedResult);
+    doc.font('Helvetica-Bold').text('Fecha de cierre: ', { continued: true }).font('Helvetica').text(fmt(mediation.closedAt));
+    if (generatedBy) doc.font('Helvetica-Bold').text('Generado por: ', { continued: true }).font('Helvetica').text(generatedBy.name);
+    doc.moveDown(1);
+
+    function section(title, rows) {
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('#1a1a2e').text(title);
+      doc.moveDown(0.2);
+      doc.fontSize(9).font('Helvetica').fillColor('#222');
+      if (!rows.length) { doc.fillColor('#888').text('— sin datos —'); }
+      rows.forEach((r) => doc.text(r));
+      doc.moveDown(0.8);
+    }
+
+    section('Partes', parties.map((p) => `${partyLabel(p)} (${p.role})${p.documentNumber ? ' — ' + (p.documentType || 'Doc.') + ' ' + p.documentNumber : ''}`));
+    section('Abogados', lawyers.map((l) => {
+      const party = parties.find((p) => p.id === l.partyId);
+      return `${l.name}${l.enrollmentNumber ? ' — Mat. ' + l.enrollmentNumber : ''}${party ? ' (representa a ' + partyLabel(party) + ')' : ''}`;
+    }));
+
+    if (mediation.closedNotes) {
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('#1a1a2e').text('Términos / observaciones de cierre');
+      doc.moveDown(0.2);
+      doc.fontSize(9).font('Helvetica').fillColor('#222').text(mediation.closedNotes);
+      doc.moveDown(0.8);
+    }
+
+    // ---- firma electrónica — mismo texto/criterio que el resto ----
+    doc.fontSize(9).font('Helvetica-Bold').fillColor('#1a1a2e').text('Firma electrónica');
+    doc.font('Helvetica').fillColor('#555').fontSize(8).text(
+      signature
+        ? 'Este documento está firmado electrónicamente con la clave privada de Puente Digital sobre el hash de integridad de abajo. No es firma digital en el sentido de la Ley 25.506 (sin certificador licenciado ni presunción legal automática), pero permite verificar de forma independiente que el documento salió de acá y no fue alterado. No reemplaza la firma de las partes en el acta oficial del sistema de mediación que corresponda a la jurisdicción.'
+        : 'Este documento no incluye firma electrónica (clave de firma no configurada en el servidor) — el hash de integridad de abajo sigue siendo válido para detectar alteraciones.'
+    );
+    doc.moveDown(0.3);
+    doc.fontSize(7.5).font('Courier').fillColor('#333').text(`SHA-256: ${hash}`);
+    if (signature) doc.fontSize(7).font('Courier').fillColor('#555').text(`Firma: ${signature.slice(0, 60)}…`);
+
+    doc.end();
+  });
+}
+
+module.exports = { buildCertifiedReport, integrityHash, buildPlainContent, buildMediationPlainContent, buildMediationCertifiedPDF, buildMediationConstanciaPDF, buildMediationActaCierrePDF, buildMediationActaCierrePlainContent, CLOSE_RESULT_LABELS_ES };
