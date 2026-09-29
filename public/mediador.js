@@ -122,6 +122,95 @@ async function refreshCommsBadgeLive(){
     updateCommsBadge(items.reduce((sum, c) => sum + (c.unreadCount || 0), 0));
   }catch(e){ /* silencioso — el badge simplemente no se actualiza esta vez, no es crítico */ }
 }
+
+// ================= Bloque 36 — notificaciones push (fuera de la app) =================
+// El backend (push.js, routes/push.js, service worker en /sw.js) ya
+// existía completo desde antes — lo usaba app.js (coparentalidad) pero
+// Mediador nunca lo activaba del lado del cliente: nadie pedía permiso ni
+// se suscribía, así que ningún mediador podía recibir un push aunque el
+// servidor estuviera listo para mandarlo. Mismo patrón que app.js
+// (copiado, no importado — mediador.js es deliberadamente una página
+// separada, ver el comentario del principio del archivo), sin la parte de
+// sonido en pestaña abierta (eso es específico de app.js).
+let notifyEnabled = false;
+const NOTIFY_STORAGE_KEY = 'mediador_notify_enabled'; // key propia — distinta de 'pd_notify_enabled' de app.js, mismo origen pero identidades de sesión distintas
+
+function isIOS(){ return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream; }
+function isStandalone(){ return window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches; }
+function urlBase64ToUint8Array(base64String){
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const arr = new Uint8Array(rawData.length);
+  for(let i=0; i<rawData.length; i++) arr[i] = rawData.charCodeAt(i);
+  return arr;
+}
+async function registerServiceWorker(){
+  if(!('serviceWorker' in navigator)) return null;
+  try{ return await navigator.serviceWorker.register('/sw.js'); }
+  catch(e){ console.error('No se pudo registrar el service worker', e); return null; }
+}
+async function subscribeToPush(){
+  if(!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
+  if(isIOS() && !isStandalone()){
+    alert('Para recibir notificaciones en iPhone, primero agregá esta app a tu pantalla de inicio (compartir → "Agregar a inicio") y abrila desde ahí.');
+    return false;
+  }
+  try{
+    const reg = await registerServiceWorker();
+    if(!reg) return false;
+    const { publicKey } = await api('/api/push/vapid-public-key');
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    });
+    await api('/api/push/subscribe', { method:'POST', body: JSON.stringify(sub.toJSON()) });
+    return true;
+  }catch(e){
+    console.error('No se pudo suscribir a push', e);
+    return false;
+  }
+}
+async function unsubscribeFromPush(){
+  if(!('serviceWorker' in navigator)) return;
+  try{
+    const reg = await navigator.serviceWorker.getRegistration('/sw.js');
+    const sub = reg && await reg.pushManager.getSubscription();
+    if(sub){
+      await api('/api/push/unsubscribe', { method:'POST', body: JSON.stringify({ endpoint: sub.endpoint }) });
+      await sub.unsubscribe();
+    }
+  }catch(e){ console.error('No se pudo dar de baja la suscripción push', e); }
+}
+function initNotifications(){
+  if(typeof Notification === 'undefined') return; // navegador sin soporte
+  notifyEnabled = localStorage.getItem(NOTIFY_STORAGE_KEY) === '1' && Notification.permission === 'granted';
+}
+async function toggleNotifications(){
+  closeAccountMenu();
+  if(notifyEnabled){
+    notifyEnabled = false;
+    localStorage.removeItem(NOTIFY_STORAGE_KEY);
+    unsubscribeFromPush();
+    showToast('Notificaciones desactivadas.', 'success');
+    return;
+  }
+  if(typeof Notification === 'undefined'){
+    showToast('Tu navegador no soporta notificaciones.', 'danger');
+    return;
+  }
+  if(Notification.permission === 'denied'){
+    showToast('Bloqueaste las notificaciones para este sitio — activalas desde la configuración del navegador si querés usarlas.', 'danger');
+    return;
+  }
+  const perm = await Notification.requestPermission();
+  notifyEnabled = perm === 'granted';
+  if(notifyEnabled){
+    localStorage.setItem(NOTIFY_STORAGE_KEY, '1');
+    const ok = await subscribeToPush();
+    showToast(ok ? 'Notificaciones activadas.' : 'Se activó el permiso, pero no se pudo completar la suscripción — probá de nuevo.', ok ? 'success' : 'danger');
+  }
+}
 function openMediationSection(mediationId, sectionSuffix){
   Promise.resolve(goTo('detail', mediationId)).then(() => {
     document.getElementById('section-' + sectionSuffix)?.scrollIntoView({ behavior:'smooth', block:'start' });
@@ -146,6 +235,7 @@ const NEXT_ACTION_RESPONSIBLE_LABELS = { mediador: 'Mediador/a', party: 'Una par
   document.getElementById('app').style.display = 'block';
   renderAccountButton();
   connectCommsSocket();
+  initNotifications();
   // Bloque 28 — vuelta del flujo de conexión OAuth de un proveedor de
   // videoconferencia (routes/video-providers.js redirige acá con estos
   // query params, nunca con datos sensibles en la URL).
@@ -259,6 +349,10 @@ function renderAccountMenu(){
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2 19 6v5.4c0 4.2-2.9 7.9-7 9-4.1-1.1-7-4.8-7-9V6l7-2.8Z"/><path d="m9.4 12.1 1.9 1.9 3.4-3.6"/></svg>
       <span>Radar competitivo</span>
     </a>` : ''}
+    <button class="row" role="menuitem" onclick="toggleNotifications();">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      <span>${notifyEnabled ? 'Notificaciones activadas' : 'Activar notificaciones'}</span>
+    </button>
     <button class="row" role="menuitem" onclick="closeAccountMenu(); goTo('videoSettings');">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 10 5-3v10l-5-3"/><rect x="2" y="6" width="13" height="12" rx="2"/></svg>
       <span>Videoconferencias</span>
