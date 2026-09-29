@@ -695,6 +695,11 @@ async function renderDashboard(){
   const moreHearings = d.proximasAudiencias.length > 3;
 
   main.innerHTML = `
+    <button class="hero-create-btn" onclick="goTo('new')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      Nueva mediación
+    </button>
+
     <h1>Hola, ${escapeHtml((me.name || '').split(' ')[0] || me.name)}</h1>
     <p style="color:var(--text-dim); font-size:15px; margin-bottom:18px;">¿Qué requiere tu atención?</p>
 
@@ -770,8 +775,6 @@ async function renderDashboard(){
         <button class="primary" style="flex-shrink:0;" onclick="askDashboardAI()">Preguntar</button>
       </div>
     </div>
-
-    <button class="primary" style="width:100%;" onclick="goTo('new')">+ Nueva mediación</button>
   `;
 }
 

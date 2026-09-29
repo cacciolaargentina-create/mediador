@@ -47,6 +47,29 @@
 .mediador-app .btn-ghost:hover:not(:disabled){ background: var(--color-surface-2); color: var(--color-text); }
 
 .mediador-app .btn-sm, .mediador-app button.btn-sm{ height: 32px; padding: 0 var(--space-3); font-size: var(--font-size-sm); border-radius: var(--radius-sm); }
+
+/* Bloque 37 — CTA "Nueva mediación" del dashboard: única acción que
+   necesita romper el sistema flat de acá arriba a propósito. Es lo primero
+   que ve un mediador al entrar, así que se trata como un botón físico de
+   verdad (efecto 3D con "canto" de color que se hunde al presionar), no
+   una tarjeta más entre las demás. */
+.mediador-app .hero-create-btn{
+  display: flex; align-items: center; justify-content: center; gap: var(--space-2);
+  width: 100%; height: 58px; margin-bottom: var(--space-6);
+  background: linear-gradient(180deg, var(--color-brand) 0%, var(--color-brand-dark) 100%);
+  color: #fff; border: none; border-radius: var(--radius-lg);
+  font-family: var(--font-family); font-size: 17px; font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  box-shadow: 0 5px 0 #0C685F, 0 10px 22px rgba(21,155,145,.38);
+  transform: translateY(0);
+  transition: transform .1s ease, box-shadow .1s ease, filter .1s ease;
+}
+.mediador-app .hero-create-btn:hover{ filter: brightness(1.05); }
+.mediador-app .hero-create-btn:active{
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 #0C685F, 0 3px 10px rgba(21,155,145,.32);
+}
+.mediador-app .hero-create-btn svg{ width: 20px; height: 20px; flex-shrink: 0; }
 .mediador-app .btn-lg, .mediador-app a.btn-lg{ height: 44px; padding: 0 var(--space-5); font-size: var(--font-size-body); }
 
 /* botón "cargando…" — spinner inline, sin bloquear toda la pantalla */
