@@ -87,6 +87,9 @@ const MEDIATION_STATUS_LABELS = {
 };
 const COMMITMENT_STATUS_LABELS = { pendiente:'Pendiente', cumplido:'Cumplido', vencido:'Vencido', cancelado:'Cancelado' };
 const TASK_PRIORITY_LABELS = { baja:'Baja', media:'Media', alta:'Alta', urgente:'Urgente' };
+// Bloque 32 §2 — antes el portal no mostraba el estado del documento en
+// absoluto; sin esto, "observado" con un comentario no servía de nada.
+const DOCUMENT_STATUS_LABELS = { pendiente_escaneo:'En revisión', recibido:'Recibido', pendiente_revision:'En revisión', revisado:'Revisado', observado:'Observado — requiere corrección', final:'Aprobado' };
 // Bloque 28 §12 — solo para mostrar "Virtual · Google Meet"; el backend
 // nunca manda acá nada más que el nombre del proveedor (ver routes/party-portal.js).
 const MODALITY_LABELS = { presencial:'Presencial', virtual:'Virtual', hibrida:'Híbrida' };
@@ -186,7 +189,11 @@ async function render(){
       <h2>Documentos</h2>
       ${data.documents.length ? data.documents.map(d => `
         <div class="item" style="display:flex; justify-content:space-between; align-items:center;">
-          <div>${escapeHtml(d.originalFilename)}<br><span style="color:var(--text-faint);">${fmtFileSize(d.size)}</span></div>
+          <div>
+            ${escapeHtml(d.originalFilename)}<br><span style="color:var(--text-faint);">${fmtFileSize(d.size)}</span>
+            ${d.status ? `<br><span class="pill ${d.status==='observado'?'danger':d.status==='final'||d.status==='revisado'?'calm':'warn'}">${DOCUMENT_STATUS_LABELS[d.status] || d.status}</span>` : ''}
+            ${d.reviewNotes ? `<div style="font-size:12px; color:var(--text-dim); margin-top:4px;">${escapeHtml(d.reviewNotes)}</div>` : ''}
+          </div>
           <a href="/api/party-portal/${token}/documents/${d.id}/download" class="ghost" style="text-decoration:none; padding:8px 14px; color:var(--text);">Descargar</a>
         </div>
       `).join('') : `<p class="empty-hint">No hay documentos todavía.</p>`}

@@ -86,6 +86,7 @@ function showToast(message, kind){
 const CONFIRM_LABELS = { confirma:'Confirmó', no_puede:'Avisó que no puede', pide_cambio:'Pidió un cambio' };
 const REQUEST_STATUS_LABELS = { pendiente:'Esperando respuesta del mediador/a', aceptada:'Aceptado — se reprogramó', rechazada:'No se pudo hacer el cambio', resuelta:'Resuelto sin cambio' };
 const COMMITMENT_STATUS_LABELS = { pendiente:'Pendiente', cumplido:'Cumplido', vencido:'Vencido', cancelado:'Cancelado' };
+const DOCUMENT_STATUS_LABELS = { pendiente_escaneo:'En revisión', recibido:'Recibido', pendiente_revision:'En revisión', revisado:'Revisado', observado:'Observado — requiere corrección', final:'Aprobado' };
 // Bloque 28 §13 — solo el nombre del proveedor, nunca hostUrl/credenciales.
 const VIDEO_PROVIDER_LABELS = { google_meet:'Google Meet', zoom:'Zoom', teams:'Microsoft Teams', manual:'enlace de reunión' };
 const MEDIATION_STATUS_LABELS = {
@@ -208,7 +209,11 @@ async function renderDetail(mediationId){
       <h2>Documentos</h2>
       ${data.documents.length ? data.documents.map(d => `
         <div class="item" style="display:flex; justify-content:space-between; align-items:center;">
-          <div>${escapeHtml(d.originalFilename)}<br><span style="color:var(--text-faint);">${fmtFileSize(d.size)}</span></div>
+          <div>
+            ${escapeHtml(d.originalFilename)}<br><span style="color:var(--text-faint);">${fmtFileSize(d.size)}</span>
+            ${d.status ? `<br><span class="pill ${d.status==='observado'?'danger':d.status==='final'||d.status==='revisado'?'calm':'warn'}">${DOCUMENT_STATUS_LABELS[d.status] || d.status}</span>` : ''}
+            ${d.reviewNotes ? `<div style="font-size:12px; color:var(--text-dim); margin-top:4px;">${escapeHtml(d.reviewNotes)}</div>` : ''}
+          </div>
           <a href="/api/lawyer-portal/${token}/mediations/${mediationId}/documents/${d.id}/download" class="ghost" style="text-decoration:none; padding:8px 14px; color:var(--text);">Descargar</a>
         </div>
       `).join('') : `<p class="empty-hint">No hay documentos todavía.</p>`}

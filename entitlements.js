@@ -71,6 +71,21 @@ function canUse(db, user, capability) {
   return !!getEntitlements(db, user)[capability];
 }
 
+// Bloque 32 — movida acá desde routes/mediations.js (donde vivía sola,
+// solo para que canCreateMediation/canUseVideoMeetings la usaran) para
+// que CUALQUIER ruta que necesite paywall contextual (agenda, estudios)
+// la reuse desde un único lugar — nunca una copia por archivo.
+// ENABLE_FAKE_LOGIN nunca está seteado en producción (mismo flag que
+// habilita /auth/fake-login) — los paywalls se desactivan bajo ese modo
+// para que las baterías de regresión existentes (bloque22/22-automation/
+// 24, que crean varias mediaciones bajo un mismo usuario de prueba para
+// testear cosas sin relación con billing) sigan corriendo sin reescribirlas.
+// BILLING_ENFORCE_IN_TEST=1 reactiva el paywall real aun con fake-login,
+// para poder testear el wiring HTTP en sí.
+function billingPaywallActive() {
+  return process.env.ENABLE_FAKE_LOGIN !== '1' || process.env.BILLING_ENFORCE_IN_TEST === '1';
+}
+
 // §17 — paywall contextual: estas funciones son las que las rutas llaman
 // ANTES de la acción real, para poder devolver un mensaje claro en vez de
 // dejar que la acción falle de otra forma.
@@ -82,6 +97,21 @@ function canCreateMediation(db, user) {
 }
 function canUseVideoMeetings(db, user) { return canUse(db, user, 'videoMeetings'); }
 function canUseAdvancedAgenda(db, user) { return canUse(db, user, 'advancedAgenda'); }
+// Bloque 32 §4 — mismo hallazgo que canAddStudyMember: maxAssistants
+// (FREE=0, PROFESIONAL=1, ESTUDIO=ilimitado) estaba definido pero ningún
+// endpoint lo llamaba. "Asistente" acá es mediationAccess.role==='asistente'
+// — se cuenta por PERSONA distinta entre TODAS las mediaciones de este
+// mediador (no por asignación), porque el límite es "cuánta gente te
+// ayuda", no "en cuántos expedientes la sumaste".
+function canAddAssistant(db, mediatorUser) {
+  const ent = getEntitlements(db, mediatorUser);
+  if (ent.maxAssistants === Infinity) return true;
+  const myMediationIds = new Set(db.mediations.filter((m) => m.mediatorUserId === mediatorUser.id).map((m) => m.id));
+  const assistantIds = new Set(
+    db.mediationAccess.filter((a) => myMediationIds.has(a.mediationId) && a.role === 'asistente').map((a) => a.userId)
+  );
+  return assistantIds.size < ent.maxAssistants;
+}
 function canAddStudyMember(db, user, studioId) {
   const studioAccount = db.billingAccounts.find((a) => a.studioId === studioId);
   const planCode = studioAccount && ACCESS_GRANTING_STATUSES.includes(studioAccount.status) ? studioAccount.planCode : 'FREE';
@@ -94,5 +124,6 @@ function canAddStudyMember(db, user, studioId) {
 module.exports = {
   PLAN_ENTITLEMENTS, ACCESS_GRANTING_STATUSES,
   getBillingAccount, getEffectivePlanCode, getEntitlements,
-  canUse, canCreateMediation, canUseVideoMeetings, canUseAdvancedAgenda, canAddStudyMember,
+  canUse, canCreateMediation, canUseVideoMeetings, canUseAdvancedAgenda, canAddStudyMember, canAddAssistant,
+  billingPaywallActive,
 };

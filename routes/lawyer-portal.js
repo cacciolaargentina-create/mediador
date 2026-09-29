@@ -152,7 +152,7 @@ module.exports = function (io) {
     const documents = db.documents
       .filter((d) => d.mediationId === mediation.id && (d.partyId === null || d.partyId === party.id))
       .sort((a, b) => b.createdAt - a.createdAt)
-      .map((d) => ({ id: d.id, originalFilename: d.originalFilename, type: d.type, size: d.size, createdAt: d.createdAt }));
+      .map((d) => ({ id: d.id, originalFilename: d.originalFilename, type: d.type, size: d.size, createdAt: d.createdAt, status: d.status, reviewNotes: d.reviewNotes || null }));
 
     // timeline filtrado — acá es donde más cuidado hace falta. visibility
     // 'public' NO alcanza solo: un evento puede ser público para el

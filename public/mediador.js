@@ -404,6 +404,7 @@ function goTo(screen, id){
   else if(screen === 'requests') renderPromise = renderRequests();
   else if(screen === 'comms') renderPromise = renderComunicaciones();
   else if(screen === 'commitments') renderPromise = renderCommitmentsScreen();
+  else if(screen === 'hearingPrep') renderPromise = renderHearingPreparationScreen();
   else if(screen === 'videoSettings') renderPromise = renderVideoSettings();
   else if(screen === 'billing') renderPromise = renderBilling();
   window.scrollTo(0, 0);
@@ -831,7 +832,7 @@ async function assignFromStudioView(mediationId){
   try{
     await api(`/api/mediations/${mediationId}/access`, { method:'POST', body: JSON.stringify({ userId, role }) });
     renderStudioMediations();
-  }catch(e){ showToast(e.error || 'No se pudo asignar.', 'danger'); }
+  }catch(e){ showPaywallOrError(e, 'No se pudo asignar.'); }
 }
 
 async function revokeFromStudioView(mediationId, accessId){
@@ -1204,7 +1205,7 @@ async function addAvailability(){
       endTime: document.getElementById('avail-end').value,
     })});
     loadAvailabilityPanel();
-  }catch(e){ showToast(e.error || 'No se pudo agregar.', 'danger'); }
+  }catch(e){ showPaywallOrError(e, 'No se pudo agregar.'); }
 }
 async function deleteAvailability(id){
   try{ await api(`/api/agenda/availability/${id}`, { method:'DELETE' }); loadAvailabilityPanel(); }
@@ -1219,7 +1220,7 @@ async function addBlock(){
       reason: document.getElementById('block-reason').value.trim() || null,
     })});
     loadAvailabilityPanel();
-  }catch(e){ showToast(e.error || 'No se pudo bloquear.', 'danger'); }
+  }catch(e){ showPaywallOrError(e, 'No se pudo bloquear.'); }
 }
 async function deleteBlock(id){
   try{ await api(`/api/agenda/blocks/${id}`, { method:'DELETE' }); loadAvailabilityPanel(); }
@@ -1437,7 +1438,7 @@ async function inviteToStudio(){
     const fullUrl = location.origin + result.invitationUrl;
     copyLinkToClipboard(fullUrl, 'Link de invitación copiado.');
     renderTeam();
-  }catch(e){ showToast(e.error || 'No se pudo enviar la invitación.', 'danger'); }
+  }catch(e){ showPaywallOrError(e, 'No se pudo enviar la invitación.'); }
 }
 
 async function changeStudioRole(userId, role){
@@ -1805,6 +1806,7 @@ const COMMITMENT_STATUS_LABELS = { pendiente:'Pendiente', cumplido:'Cumplido', v
 const EVENT_TYPE_LABELS = {
   MEDIATION_CREATED:'Mediación creada', MEDIATION_STATUS_CHANGED:'Cambio de estado', MEDIATION_CLOSED:'Mediación cerrada',
   PARTY_ADDED:'Parte agregada', PARTY_INVITED:'Invitación al portal', LAWYER_ADDED:'Abogado agregado', LAWYER_INVITED:'Invitación al portal (abogado)',
+  PARTY_INVITE_NOTIFIED:'Aviso de invitación', LAWYER_INVITE_NOTIFIED:'Aviso de invitación (abogado)',
   MEDIATION_ACCESS_GRANTED:'Persona asignada', MEDIATION_ACCESS_REVOKED:'Acceso quitado',
   HEARING_SCHEDULED:'Audiencia agendada', HEARING_CONFIRMED:'Audiencia confirmada',
   HEARING_HELD:'Audiencia realizada', HEARING_CANCELLED:'Audiencia cancelada',
@@ -1823,7 +1825,7 @@ const EVENT_TYPE_LABELS = {
 // legibles y filtramos client-side sobre el array que ya se cargó (evita
 // un round-trip extra por cada cambio de filtro).
 const TIMELINE_CATEGORIES = {
-  partes: { label: 'Partes y abogados', types: ['PARTY_ADDED', 'PARTY_INVITED', 'LAWYER_ADDED', 'LAWYER_INVITED', 'MEDIATION_ACCESS_GRANTED', 'MEDIATION_ACCESS_REVOKED'] },
+  partes: { label: 'Partes y abogados', types: ['PARTY_ADDED', 'PARTY_INVITED', 'PARTY_INVITE_NOTIFIED', 'LAWYER_ADDED', 'LAWYER_INVITED', 'LAWYER_INVITE_NOTIFIED', 'MEDIATION_ACCESS_GRANTED', 'MEDIATION_ACCESS_REVOKED'] },
   documentos: { label: 'Documentos', types: ['DOCUMENT_UPLOADED', 'DOCUMENT_REVIEWED'] },
   audiencias: { label: 'Audiencias', types: ['HEARING_SCHEDULED', 'HEARING_CONFIRMED', 'HEARING_HELD', 'HEARING_CANCELLED', 'HEARING_NOT_HELD', 'HEARING_CONFIRMATION_MISSING', 'HEARING_RESCHEDULE_REQUESTED', 'HEARING_RESCHEDULE_REJECTED', 'HEARING_RESCHEDULED', 'HEARING_PROPOSED', 'HEARING_RESCHEDULE_REMINDER', 'HEARING_REMINDER'] },
   tareasCompromisos: { label: 'Tareas y compromisos', types: ['TASK_CREATED', 'TASK_COMPLETED', 'TASK_UPDATED', 'TASK_OVERDUE', 'COMMITMENT_CREATED', 'COMMITMENT_COMPLETED', 'COMMITMENT_OVERDUE', 'COMMITMENT_UPDATED'] },
@@ -2292,10 +2294,12 @@ async function renderDetail(id){
             </div>
             <a href="/api/mediations/${m.id}/documents/${d.id}/download" class="ghost" style="padding:6px 12px; font-size:11.5px; text-decoration:none; color:var(--text); flex-shrink:0;">Descargar</a>
           </div>
+          ${d.reviewNotes ? `<p style="font-size:12px; color:var(--text-dim); margin:6px 0 0;">${escapeHtml(d.reviewNotes)}</p>` : ''}
           <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
             <select onchange="changeDocumentStatus('${m.id}','${d.id}',this.value)" style="width:auto; margin:0;">
               ${Object.keys(DOCUMENT_STATUS_LABELS).map(s => `<option value="${s}" ${s===d.status?'selected':''}>${DOCUMENT_STATUS_LABELS[s]}</option>`).join('')}
             </select>
+            <input id="doc-notes-${d.id}" placeholder="Comentario (obligatorio si marcás Observado)" style="flex:1; min-width:180px; margin:0;" value="${escapeHtml(d.reviewNotes || '')}">
             <button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="toggleVersionUpload('${d.id}')">Subir nueva versión</button>
             <button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="toggleVersionHistory('${m.id}','${d.id}')">Ver versiones</button>
           </div>
@@ -2630,7 +2634,7 @@ async function assignMediationAccess(mediationId){
   try{
     await api(`/api/mediations/${mediationId}/access`, { method:'POST', body: JSON.stringify({ userId, role }) });
     renderDetail(mediationId);
-  }catch(e){ showToast(e.error || 'No se pudo asignar.', 'danger'); }
+  }catch(e){ showPaywallOrError(e, 'No se pudo asignar.'); }
 }
 
 async function revokeMediationAccess(mediationId, accessId){
@@ -2904,7 +2908,10 @@ async function inviteParty(mediationId, partyId){
   try{
     const result = await api(`/api/mediations/${mediationId}/parties/${partyId}/invite`, { method:'POST' });
     const fullUrl = location.origin + result.portalUrl;
-    copyLinkToClipboard(fullUrl, 'Link del portal copiado — compartíselo a la parte.');
+    // Bloque 32 §1 — el server ya intentó avisar por WhatsApp; el link se
+    // sigue copiando siempre (por si lo querés reenviar vos), pero el
+    // mensaje ahora dice si el aviso automático salió o no.
+    copyLinkToClipboard(fullUrl, result.notified ? 'Invitación enviada por WhatsApp. Link también copiado, por si querés reenviarlo.' : 'No se pudo avisar por WhatsApp (sin teléfono cargado o falló el envío) — link copiado, compartíselo vos.');
     renderDetail(mediationId);
   }catch(e){ showToast(e.error || 'No se pudo generar la invitación.', 'danger'); }
 }
@@ -2933,7 +2940,7 @@ async function inviteLawyer(mediationId, lawyerId){
   try{
     const result = await api(`/api/mediations/${mediationId}/lawyers/${lawyerId}/invite`, { method:'POST' });
     const fullUrl = location.origin + result.portalUrl;
-    copyLinkToClipboard(fullUrl, 'Link del portal copiado — compartíselo al abogado.');
+    copyLinkToClipboard(fullUrl, result.notified ? 'Invitación enviada por WhatsApp. Link también copiado, por si querés reenviarlo.' : 'No se pudo avisar por WhatsApp (sin teléfono cargado o falló el envío) — link copiado, compartíselo vos.');
     renderDetail(mediationId);
   }catch(e){ showToast(e.error || 'No se pudo generar la invitación.', 'danger'); }
 }
@@ -3002,9 +3009,9 @@ function renderHearingRow(m, h, timelineList){
   } else if(h.modality === 'virtual' && h.meetingUrl && within48h){
     primaryHtml = `<a href="${escapeHtml(h.meetingUrl)}" target="_blank" class="primary" style="padding:6px 10px; font-size:11px; text-decoration:none; display:inline-block;">Entrar a audiencia</a>`;
   } else {
-    primaryHtml = `<button class="primary" style="padding:6px 10px; font-size:11px;" onclick="togglePreparation('${m.id}','${h.id}')">Preparar audiencia</button>`;
+    primaryHtml = `<button class="primary" style="padding:6px 10px; font-size:11px;" onclick="openHearingPreparation('${m.id}','${h.id}')">Preparar audiencia</button>`;
   }
-  const primaryIsPreparacion = primaryHtml.includes('togglePreparation');
+  const primaryIsPreparacion = primaryHtml.includes('openHearingPreparation');
   const primaryIsResumen = primaryHtml.includes('toggleSummary');
 
   return `
@@ -3032,11 +3039,10 @@ function renderHearingRow(m, h, timelineList){
           </select>
         `).join('')}
         <button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="toggleRescheduleRequests('${m.id}','${h.id}')">Solicitudes de cambio</button>
-        ${!primaryIsPreparacion && h.status !== 'propuesta' ? `<button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="togglePreparation('${m.id}','${h.id}')">Preparación</button>` : ''}
+        ${!primaryIsPreparacion && h.status !== 'propuesta' ? `<button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="openHearingPreparation('${m.id}','${h.id}')">Preparación</button>` : ''}
         ${!primaryIsResumen && h.status !== 'propuesta' ? `<button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="toggleSummary('${m.id}','${h.id}')">Resumen</button>` : ''}
       </div>
       <div id="reschedule-${h.id}" style="display:none; margin-top:8px;"></div>
-      <div id="preparation-${h.id}" style="display:none; margin-top:8px;"></div>
       <div id="summary-${h.id}" style="display:none; margin-top:8px;"></div>
     </div>
   `;
@@ -3050,27 +3056,99 @@ const PREPARATION_ITEM_LABELS = {
 const PREPARATION_ITEM_STATUS_LABELS = { realizado: 'Listo', pendiente: 'Pendiente', no_corresponde: 'No corresponde' };
 const PREPARATION_ESTADO_LABELS = { preparada: 'Preparada', pendiente: 'Pendiente', critica: 'Crítica' };
 
-async function togglePreparation(mediationId, hearingId){
-  const box = document.getElementById(`preparation-${hearingId}`);
-  if(box.style.display === 'block'){ box.style.display = 'none'; return; }
-  box.style.display = 'block';
-  box.innerHTML = `<p class="empty-hint">Cargando…</p>`;
+// Bloque 32 §3 — pantalla propia (no un box colapsable dentro de la
+// lista de audiencias): "todo lo que necesito saber, en un solo lugar,
+// antes de entrar". currentPrepHearingId viaja aparte de
+// currentMediationId porque goTo(screen,id) solo acepta un id — mismo
+// truco que otras pantallas que necesitan un segundo identificador.
+let currentPrepHearingId = null;
+function openHearingPreparation(mediationId, hearingId){
+  currentPrepHearingId = hearingId;
+  goTo('hearingPrep', mediationId);
+}
+
+async function renderHearingPreparationScreen(){
+  const mediationId = currentMediationId, hearingId = currentPrepHearingId;
+  const main = document.getElementById('main');
+  main.innerHTML = `<p class="empty-hint">Cargando…</p>`;
   let prep;
   try{ prep = await api(`/api/mediations/${mediationId}/hearings/${hearingId}/preparation`); }
-  catch(e){ box.innerHTML = `<p class="empty-hint">No se pudo cargar.</p>`; return; }
+  catch(e){ main.innerHTML = `<p class="empty-hint">${escapeHtml(e.error || 'No se pudo cargar la preparación.')}</p>`; return; }
 
-  box.innerHTML = `
-    <div style="background:var(--surface-2); border-radius:8px; padding:8px 10px;">
-      <span class="pill ${prep.estado==='preparada'?'calm':prep.estado==='critica'?'danger':'warn'}">${PREPARATION_ESTADO_LABELS[prep.estado]}</span>
-      <p style="font-size:12px; margin:6px 0 0; color:var(--text-dim);">${escapeHtml(prep.motivo)}</p>
-      <div style="margin-top:8px;">
-        ${Object.keys(prep.items).map(k => `
-          <div style="display:flex; justify-content:space-between; font-size:11.5px; padding:3px 0; border-top:1px solid var(--line);">
-            <span>${PREPARATION_ITEM_LABELS[k] || k}</span>
-            <span class="pill ${prep.items[k].status==='realizado'?'calm':prep.items[k].status==='pendiente'?'warn':''}">${PREPARATION_ITEM_STATUS_LABELS[prep.items[k].status]}${prep.items[k].detail ? ' · ' + escapeHtml(String(prep.items[k].detail)) : ''}</span>
+  const h = prep.hearing;
+  const d = prep.details;
+  const pendingKeys = Object.keys(prep.items).filter(k => prep.items[k].status === 'pendiente');
+
+  main.innerHTML = `
+    <span class="back-link" onclick="goTo('detail','${mediationId}')">← Expediente</span>
+    <h1>Preparación de audiencia</h1>
+    <p style="color:var(--text-dim); font-size:15px; margin-bottom:18px;">${fmtDate(h.date)}${h.startTime ? ' · ' + h.startTime : ''} — ${HEARING_MODALITY_LABELS[h.modality] || h.modality}</p>
+
+    <div class="card">
+      <span class="pill ${prep.estado==='preparada'?'calm':prep.estado==='critica'?'danger':'warn'}" style="font-size:13px;">${PREPARATION_ESTADO_LABELS[prep.estado]}</span>
+      <p style="font-size:13px; margin:8px 0 0; color:var(--text-dim);">${escapeHtml(prep.motivo)}</p>
+      ${pendingKeys.length ? `<div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:6px;">${pendingKeys.map(k => `<span class="pill warn" style="font-size:11px;">${PREPARATION_ITEM_LABELS[k] || k}</span>`).join('')}</div>` : ''}
+    </div>
+
+    <div class="card">
+      <h2>Quién confirmó</h2>
+      ${d.confirmations.length ? d.confirmations.map(c => `
+        <div class="alert-row" style="cursor:default;">
+          <div>${escapeHtml(c.partyName || 'Parte')}</div>
+          <span class="pill ${c.response==='confirma'?'calm':c.response==='no_puede'?'danger':'warn'}">${CONFIRMATION_LABELS[c.response] || c.response}</span>
+        </div>
+      `).join('') : `<p class="empty-hint">Esta audiencia no tiene confirmaciones pendientes.</p>`}
+    </div>
+
+    ${h.video ? `
+    <div class="card">
+      <h2>Videoconferencia</h2>
+      <p style="font-size:13px;">${escapeHtml(h.video.providerLabel || h.video.provider)} — <span class="pill ${h.video.meetingStatus==='error'?'danger':h.video.meetingStatus==='creada'||h.video.meetingStatus==='actualizada'?'calm':'warn'}">${h.video.meetingStatus || 'sin estado'}</span></p>
+      ${h.video.meetingStatus === 'error' ? `<p class="empty-hint" style="color:var(--danger);">Hubo un error creando la reunión — revisá Configuración → Videoconferencias.</p>` : ''}
+      ${h.video.joinUrl ? `<a href="${escapeHtml(h.video.joinUrl)}" target="_blank" class="primary" style="text-decoration:none; padding:8px 16px; display:inline-block; margin-top:6px;">Entrar a la reunión</a>` : ''}
+    </div>
+    ` : ''}
+
+    <div class="card">
+      <h2>Documentos sin revisar${d.documentsPending.length ? ` <span class="pill warn" style="font-weight:400;">${d.documentsPending.length}</span>` : ''}</h2>
+      ${d.documentsPending.length ? d.documentsPending.map(doc => `
+        <div class="alert-row" onclick="openMediationSection('${mediationId}','documentos')">
+          <div>${escapeHtml(doc.originalFilename)}</div>
+          <span class="pill warn">sin revisar</span>
+        </div>
+      `).join('') : `<p class="empty-hint">No hay documentos pendientes de revisión.</p>`}
+    </div>
+
+    <div class="card">
+      <h2>Compromisos</h2>
+      ${d.overdueCommitments.length ? `<p class="empty-hint" style="margin-bottom:4px;">Vencidos</p>` : ''}
+      ${d.overdueCommitments.map(c => `
+        <div class="alert-row" style="cursor:default;">
+          <div><strong>${escapeHtml(c.partyName || 'Parte')}</strong>: ${escapeHtml(c.description)}<div class="code">${commitmentUrgencyLabel(c)}</div></div>
+          <button class="ghost" style="padding:5px 10px; font-size:11px;" onclick="changeCommitmentStatus('${mediationId}','${c.id}','cumplido').then(()=>renderHearingPreparationScreen())">Marcar cumplido</button>
+        </div>
+      `).join('')}
+      ${d.upcomingCommitments.length ? `<p class="empty-hint" style="margin:8px 0 4px;">Por vencer</p>` : ''}
+      ${d.upcomingCommitments.map(c => `
+        <div class="alert-row" style="cursor:default;">
+          <div><strong>${escapeHtml(c.partyName || 'Parte')}</strong>: ${escapeHtml(c.description)}<div class="code">${commitmentUrgencyLabel(c)}</div></div>
+          <button class="ghost" style="padding:5px 10px; font-size:11px;" onclick="changeCommitmentStatus('${mediationId}','${c.id}','cumplido').then(()=>renderHearingPreparationScreen())">Marcar cumplido</button>
+        </div>
+      `).join('')}
+      ${!d.overdueCommitments.length && !d.upcomingCommitments.length ? `<p class="empty-hint">Sin compromisos pendientes en este expediente.</p>` : ''}
+    </div>
+
+    <div class="card">
+      <h2>Últimas comunicaciones</h2>
+      ${d.recentCommunications.length ? d.recentCommunications.map(c => `
+        <div class="alert-row" onclick="openMediationSection('${mediationId}','comunicaciones')">
+          <div style="min-width:0;">
+            <div style="font-weight:600; font-size:13px;">${escapeHtml(c.participant)}</div>
+            <div style="font-size:12px; color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(c.text)}</div>
           </div>
-        `).join('')}
-      </div>
+          <span class="code" style="flex-shrink:0;">${fmtRelativeTime(c.createdAt)}</span>
+        </div>
+      `).join('') : `<p class="empty-hint">Todavía no hay comunicaciones en este expediente.</p>`}
     </div>
   `;
 }
@@ -3324,8 +3402,16 @@ async function toggleVersionHistory(mediationId, docId){
 }
 
 async function changeDocumentStatus(mediationId, docId, status){
+  const notesInput = document.getElementById(`doc-notes-${docId}`);
+  const notes = notesInput ? notesInput.value.trim() : '';
+  if(status === 'observado' && !notes){
+    showToast('Para marcar un documento como observado, contá qué falta corregir en el campo de comentario.', 'danger');
+    return;
+  }
   try{
-    await api(`/api/mediations/${mediationId}/documents/${docId}`, { method:'PATCH', body: JSON.stringify({ status }) });
+    const result = await api(`/api/mediations/${mediationId}/documents/${docId}`, { method:'PATCH', body: JSON.stringify({ status, notes }) });
+    if(result.notified === true) showToast('Se avisó a la parte por WhatsApp.', 'success');
+    else if(result.notified === false) showToast('No se pudo avisar por WhatsApp — la parte lo va a ver la próxima vez que entre a su portal.', 'success');
     renderDetail(mediationId);
   }catch(e){ showToast(e.error || 'No se pudo actualizar el documento.', 'danger'); }
 }

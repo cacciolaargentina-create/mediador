@@ -12,6 +12,8 @@ const { getDB, commit } = require('../db');
 const { getMyMediations } = require('../mediationAccess');
 const { checkHearingConflicts, toMinutes } = require('../agenda');
 const { buildHearingsIcsFeed } = require('../ics');
+const { canUseAdvancedAgenda, billingPaywallActive } = require('../entitlements');
+const { isAdminUser } = require('../roles');
 
 // mismo throttle liviano que portalLimiter en party-portal.js/lawyer-
 // portal.js — el token de 32 caracteres no es adivinable por fuerza
@@ -64,13 +66,25 @@ module.exports = function () {
     res.json(list);
   });
 
+  // Bloque 32 §4 — "agenda avanzada" (entitlements.js) estaba definida
+  // desde el Bloque 29 pero ningún endpoint la llamaba: FREE y planes
+  // pagos tenían exactamente la misma agenda. La disponibilidad
+  // recurrente/bloqueos puntuales es lo que se usa para RECHAZAR
+  // conflictos al agendar (agenda.js checkHearingConflicts) — es la pieza
+  // real que diferencia "agenda básica" de "agenda avanzada", así que es
+  // lo que se bloquea acá. Paywall CONTEXTUAL (spec §17, mismo criterio
+  // que canCreateMediation): se rechaza esta acción puntual con un
+  // mensaje claro, nunca se bloquea la app entera ni las audiencias en sí.
   router.post('/availability', requireAuth, async (req, res) => {
+    const db = getDB();
+    if (!isAdminUser(req.user) && billingPaywallActive() && !canUseAdvancedAgenda(db, req.user)) {
+      return res.status(402).json({ error: 'Configurar disponibilidad recurrente requiere el plan Profesional o Estudio.', upgradeMessage: 'La agenda avanzada (disponibilidad y bloqueos) está disponible en el plan Profesional.', code: 'PLAN_LIMIT_REACHED' });
+    }
     const { dayOfWeek: dow, startTime, endTime } = req.body || {};
     if (![0, 1, 2, 3, 4, 5, 6].includes(dow)) return res.status(400).json({ error: 'Día de la semana inválido (0 a 6)' });
     if (toMinutes(startTime) == null || toMinutes(endTime) == null || toMinutes(startTime) >= toMinutes(endTime)) {
       return res.status(400).json({ error: 'Horario inválido' });
     }
-    const db = getDB();
     const block = { id: nanoid(), userId: req.user.id, dayOfWeek: dow, startTime, endTime, createdAt: Date.now() };
     db.mediatorAvailability.push(block);
     await commit();
@@ -93,12 +107,17 @@ module.exports = function () {
     res.json(list);
   });
 
+  // Bloque 32 §4 — mismo gate que POST /availability, ver el comentario
+  // largo de arriba.
   router.post('/blocks', requireAuth, async (req, res) => {
+    const db = getDB();
+    if (!isAdminUser(req.user) && billingPaywallActive() && !canUseAdvancedAgenda(db, req.user)) {
+      return res.status(402).json({ error: 'Bloquear horarios puntuales requiere el plan Profesional o Estudio.', upgradeMessage: 'La agenda avanzada (disponibilidad y bloqueos) está disponible en el plan Profesional.', code: 'PLAN_LIMIT_REACHED' });
+    }
     const { date, startTime, endTime, reason } = req.body || {};
     if (!date || toMinutes(startTime) == null || toMinutes(endTime) == null || toMinutes(startTime) >= toMinutes(endTime)) {
       return res.status(400).json({ error: 'Fecha u horario inválido' });
     }
-    const db = getDB();
     const block = { id: nanoid(), userId: req.user.id, date, startTime, endTime, reason: reason || null, createdAt: Date.now() };
     db.mediatorScheduleBlocks.push(block);
     await commit();

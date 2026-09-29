@@ -242,7 +242,61 @@ function getHearingPreparationState(db, mediation, hearing) {
   } else {
     estado = 'pendiente'; motivo = `Hay elementos que todavía requieren revisión: ${pendingKeys.map(itemLabel).join(', ')}.`;
   }
-  return { items, estado, motivo, criticalPendingTasksCount: criticalPendingTasks.length };
+  return {
+    items, estado, motivo, criticalPendingTasksCount: criticalPendingTasks.length,
+    // Bloque 32 §3 — "pantalla de preparación de audiencia": el checklist
+    // de arriba (items) ya existía y solo dice CUÁNTO falta; esto agrega
+    // el detalle NOMBRADO que la pantalla necesita para ser accionable
+    // (quién confirmó, cuáles documentos, qué compromisos) sin duplicar
+    // ningún cálculo — reusa las mismas listas ya filtradas arriba.
+    details: getHearingPreparationDetails(db, mediation, hearing, { confirmations, documentsPendingReview, pendingTasks }),
+  };
+}
+
+// Vencido vs. por vencer: mismo criterio de fecha que ya usa
+// getOverdueCommitments, pero acotado a ESTA mediación (la pantalla de
+// preparación es de un expediente puntual, nunca cross-mediación).
+function getMediationCommitmentsSplit(db, mediationId, now = Date.now()) {
+  const all = db.commitments.filter((c) => c.mediationId === mediationId && ['pendiente', 'vencido'].includes(c.status));
+  const overdue = all.filter((c) => c.status === 'vencido' || (c.dueDate && new Date(c.dueDate).getTime() < now));
+  const upcoming = all.filter((c) => !overdue.includes(c));
+  const withParty = (c) => ({ id: c.id, description: c.description, dueDate: c.dueDate, partyName: partyDisplayName(db, c.partyId) });
+  return { overdue: overdue.map(withParty), upcoming: upcoming.map(withParty) };
+}
+
+// últimas comunicaciones de TODOS los hilos de la mediación (partes,
+// abogados, interno) mezcladas en una sola lista cronológica — mismo
+// espíritu que buildCommunicationsInbox del dashboard, pero acotado a un
+// expediente y sin agrupar por hilo (acá interesa la posta más reciente,
+// no un resumen por conversación).
+function getRecentCommunications(db, mediationId, limit = 5) {
+  const channels = db.channels.filter((c) => c.mediationId === mediationId);
+  const channelById = Object.fromEntries(channels.map((c) => [c.id, c]));
+  const now = Date.now();
+  const msgs = db.messages
+    .filter((m) => channelById[m.channelId] && (m.deliverAt || m.createdAt) <= now)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, limit);
+  return msgs.map((m) => {
+    const channel = channelById[m.channelId];
+    let participant = 'Equipo interno';
+    if (channel.partyId) participant = partyDisplayName(db, channel.partyId) || 'Parte';
+    else if (channel.lawyerId) participant = db.lawyers.find((l) => l.id === channel.lawyerId)?.name || 'Abogado/a';
+    return { participant, text: m.text || (m.attachment ? '(archivo adjunto)' : ''), createdAt: m.createdAt };
+  });
+}
+
+function getHearingPreparationDetails(db, mediation, hearing, { confirmations, documentsPendingReview }) {
+  const { overdue: overdueCommitments, upcoming: upcomingCommitments } = getMediationCommitmentsSplit(db, mediation.id);
+  return {
+    confirmations: confirmations.map((c) => ({ partyId: c.partyId, partyName: partyDisplayName(db, c.partyId), response: c.response })),
+    documentsPending: documentsPendingReview.map((d) => ({ id: d.id, originalFilename: d.originalFilename, createdAt: d.createdAt })),
+    overdueCommitments, upcomingCommitments,
+    recentCommunications: getRecentCommunications(db, mediation.id),
+    // el estado de la videoconferencia en sí (proveedor, hostUrl) lo arma
+    // el propio endpoint con serializeHearingVideo (videoConferencing.js)
+    // — no se duplica ese cálculo acá.
+  };
 }
 
 // ================= feed combinado (§1/§2 — centro de atención) =================

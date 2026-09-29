@@ -64,7 +64,7 @@ const EMPTY_DB = {
   mediatorScheduleBlocks: [], // { id, userId, date, startTime, endTime, reason (interno, nunca visible para partes/abogados), createdAt }
 
   // ===== Bloque 5. Ver IMPLEMENTATION_PLAN.md §3.7 =====
-  documents: [], // { id, mediationId, uploadedBy, partyId|null, type, originalFilename (solo para mostrar), storagePath (nombre físico aleatorio en disco), mimeType, size, status:'pendiente_escaneo'|'recibido'|'pendiente_revision'|'revisado'|'observado'|'final', version, parentDocumentId|null (apunta a la RAÍZ del linaje de versiones, no a la anterior — null = documento independiente o es él mismo la raíz), createdAt }
+  documents: [], // { id, mediationId, uploadedBy, partyId|null, type, originalFilename (solo para mostrar), storagePath (nombre físico aleatorio en disco), mimeType, size, status:'pendiente_escaneo'|'recibido'|'pendiente_revision'|'revisado'|'observado'|'final', version, parentDocumentId|null (apunta a la RAÍZ del linaje de versiones, no a la anterior — null = documento independiente o es él mismo la raíz), createdAt, reviewNotes|null } — reviewNotes (Bloque 32): comentario del mediador al cambiar el estado — obligatorio al marcar 'observado' (rutas/mediations.js lo exige), visible para la parte dueña del documento en su portal
 
   // ===== Bloque 6. Ver IMPLEMENTATION_PLAN.md §3.10/3.11/3.8/3.9 =====
   mediationEvents: [], // { id, mediationId, type, actorId|null, visibility:'public'|'mediator_only', entityType, entityId, title, description, metadata|null, causedByEventId|null, createdAt }
@@ -674,6 +674,11 @@ function openDb() {
   // interna de siempre, cero cambio de comportamiento. Con esto la parte
   // puede verla y marcarla realizada desde su portal (routes/party-portal.js).
   ensureColumns(sqlite, 'tasks', { assignedToPartyId: 'TEXT' });
+  // Bloque 32 §2 — "revisar" un documento era solo cambiar un estado; sin
+  // esto la parte nunca se enteraba de POR QUÉ algo quedó "observado".
+  // NULL en todo documento existente = sin comentario, cero cambio de
+  // comportamiento.
+  ensureColumns(sqlite, 'documents', { reviewNotes: 'TEXT' });
   if (isNew && fs.existsSync(LEGACY_JSON_PATH)) {
     migrateFromJson(sqlite, LEGACY_JSON_PATH);
   }

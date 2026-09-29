@@ -17,7 +17,7 @@ const { logMediationEvent } = require('../mediationEvents');
 const { signHash } = require('../signing');
 const { integrityHash, buildMediationPlainContent, buildMediationCertifiedPDF, buildMediationConstanciaPDF } = require('../certificate');
 const { checkHearingConflicts, toMinutes } = require('../agenda');
-const { notifyPartyAboutHearing, notifyLawyerAboutHearing } = require('../messaging');
+const { notifyPartyAboutHearing, notifyLawyerAboutHearing, notifyParty, notifyLawyer, postSystemMessage, baseUrl } = require('../messaging');
 const { askMediationAssistant, askDashboardAssistant, askMediationAssistantAboutDocument, suggestTasksFromNote } = require('../assistant');
 const { buildDraftMinutesPDF, buildConvocationLetterPDF } = require('../workingDocuments');
 const automationEngine = require('../automationEngine');
@@ -26,20 +26,11 @@ const archiver = require('archiver');
 const { postMessage } = require('../messaging');
 const { serializeMessage } = require('../serializers');
 const { createHearingMeeting, updateHearingMeeting, cancelHearingMeeting, serializeHearingVideo } = require('../videoConferencing');
-const { canCreateMediation, canUseVideoMeetings } = require('../entitlements');
-
-// ENABLE_FAKE_LOGIN nunca está seteado en producción (mismo flag que
-// habilita /auth/fake-login, ver routes/auth.js) — los paywalls de billing
-// se desactivan bajo ese modo para que las baterías de regresión existentes
-// (bloque22/22-automation/24, que crean varias mediaciones bajo un mismo
-// usuario de prueba para testear cosas sin relación con billing) sigan
-// corriendo sin reescribirlas. BILLING_ENFORCE_IN_TEST=1 reactiva el
-// paywall real aun con fake-login, para poder testear el wiring HTTP en sí
-// (scripts/regression-test-bloque29-paywall.js) — el límite en sí ya está
-// cubierto exhaustivamente por scripts/regression-test-bloque29-engine.js.
-function billingPaywallActive() {
-  return process.env.ENABLE_FAKE_LOGIN !== '1' || process.env.BILLING_ENFORCE_IN_TEST === '1';
-}
+// Bloque 32 — billingPaywallActive() se movió a entitlements.js para que
+// routes/agenda.js y routes/studios.js también la puedan reusar (antes
+// vivía solo acá, duplicarla en cada archivo hubiera sido el mismo error
+// que esta auditoría vino a corregir en otro lado).
+const { canCreateMediation, canUseVideoMeetings, canUseAdvancedAgenda, canAddStudyMember, canAddAssistant, billingPaywallActive } = require('../entitlements');
 
 // Bloque 17 §14/15 — "YYYY-MM-DD" a "DD/MM/YYYY", mismo formato que ya
 // usa fmtDate() en todo el frontend. Sin esto, texto pensado para una
@@ -130,6 +121,7 @@ function serializeDocument(d) {
     type: d.type, originalFilename: d.originalFilename, mimeType: d.mimeType, size: d.size,
     status: d.status, version: d.version || 1, rootDocumentId: rootId,
     isCurrentVersion: (d.version || 1) === maxVersion, createdAt: d.createdAt,
+    reviewNotes: d.reviewNotes || null,
   };
 }
 
@@ -1068,6 +1060,13 @@ module.exports = function (io, presence) {
     }
     const already = db.mediationAccess.find((a) => a.mediationId === req.mediation.id && a.userId === userId);
     if (already) return res.status(400).json({ error: 'Esa persona ya tiene acceso a esta mediación' });
+    // Bloque 32 §4 — maxAssistants (entitlements.js) estaba definido desde
+    // el Bloque 29 sin ningún endpoint que lo aplicara. Se cuenta sobre el
+    // plan del DUEÑO de la mediación (owner), no de quien hace el pedido
+    // (puede ser un admin de estudio asignando en nombre de otro mediador).
+    if (role === 'asistente' && !isAdminUser(req.user) && billingPaywallActive() && !canAddAssistant(db, owner)) {
+      return res.status(402).json({ error: 'Llegaste al límite de asistentes de tu plan — necesitás el plan Profesional (1) o Estudio (ilimitado).', upgradeMessage: 'Sumar un asistente requiere el plan Profesional (1) o Estudio (ilimitado).', code: 'PLAN_LIMIT_REACHED' });
+    }
 
     const access = { id: nanoid(), mediationId: req.mediation.id, userId, role, partyId: null, grantedBy: req.user.id, grantedAt: Date.now() };
     db.mediationAccess.push(access);
@@ -1343,12 +1342,36 @@ module.exports = function (io, presence) {
     }
 
     party.portalToken = nanoid(24);
-    logMediationEvent(db, {
+    const portalUrl = `/portal.html?token=${party.portalToken}`;
+    const inviteEvent = logMediationEvent(db, {
       mediationId: req.mediation.id, type: 'PARTY_INVITED', actorId: req.user.id,
       entityType: 'party', entityId: party.id, title: `Invitación al portal generada para ${partyDisplayName(db, party.id)}`,
     });
+
+    // Bloque 32 §1 — antes esto terminaba acá y el mediador copiaba el
+    // link a mano, por fuera de la plataforma (la trazabilidad se rompía
+    // en el primer paso de cada expediente). Reusa notifyParty tal cual
+    // (mismo sendText/logWhatsappEvent que ya usan los recordatorios de
+    // audiencia) — nunca un canal nuevo. Si no hay teléfono cargado,
+    // notifyParty ya registra 'notification_unavailable' en whatsappLog,
+    // que es EXACTAMENTE lo que el dashboard ya lee para "fallosNotificacion"
+    // — no hace falta un tipo de alerta nuevo en automationEngine.js.
+    const notifyResult = await notifyParty(db, party, `${partyDisplayName(db, party.id) || 'Hola'}: te invitaron a seguir la mediación "${req.mediation.object}" (${req.mediation.code}) en Mediador. Entrá acá: ${baseUrl()}${portalUrl}`);
+    logMediationEvent(db, {
+      mediationId: req.mediation.id, type: 'PARTY_INVITE_NOTIFIED', actorId: null,
+      entityType: 'party', entityId: party.id, causedByEventId: inviteEvent.id,
+      title: notifyResult.status === 'enviado' ? `Invitación enviada por WhatsApp a ${partyDisplayName(db, party.id)}` : `No se pudo avisar automáticamente a ${partyDisplayName(db, party.id)}`,
+      description: notifyResult.status === 'enviado' ? null : (notifyResult.status === 'no_disponible' ? 'Sin teléfono cargado o nunca se unió al portal — compartí el link manualmente.' : 'Falló el envío por WhatsApp — compartí el link manualmente.'),
+    });
+    // deja constancia en el propio hilo de la parte (Comunicaciones), no
+    // solo en el timeline — así queda visible ahí mismo sin tener que
+    // buscar en dos pantallas distintas.
+    await postSystemMessage(io, thread, notifyResult.status === 'enviado'
+      ? 'Se envió la invitación al portal por WhatsApp.'
+      : 'No se pudo enviar la invitación automáticamente — compartí el link manualmente.',
+      notifyResult.status === 'enviado' ? 'whatsapp' : 'sistema');
     await commit();
-    res.json({ portalToken: party.portalToken, portalUrl: `/portal.html?token=${party.portalToken}` });
+    res.json({ portalToken: party.portalToken, portalUrl, notified: notifyResult.status === 'enviado' });
   });
 
   // ---------- comunicaciones con una parte (lado del mediador) ----------
@@ -1451,12 +1474,27 @@ module.exports = function (io, presence) {
       db.members.push({ id: nanoid(), channelId: lawyerThread.id, userId: lawyer.linkedUserId, role: 'abogado', joinedAt: Date.now() });
     }
 
-    logMediationEvent(db, {
+    const inviteEvent = logMediationEvent(db, {
       mediationId: req.mediation.id, type: 'LAWYER_INVITED', actorId: req.user.id,
       entityType: 'lawyer', entityId: lawyer.id, title: `Invitación al portal generada para ${lawyer.name}`,
     });
+
+    // Bloque 32 §1 — mismo criterio que la invitación de partes, ver el
+    // comentario largo en POST /:id/parties/:partyId/invite.
+    const portalUrl = `/lawyer-portal.html?token=${lawyer.portalToken}`;
+    const notifyResult = await notifyLawyer(db, lawyer, `${lawyer.name}: te invitaron al portal de la mediación "${req.mediation.object}" (${req.mediation.code}) en Mediador. Entrá acá: ${baseUrl()}${portalUrl}`);
+    logMediationEvent(db, {
+      mediationId: req.mediation.id, type: 'LAWYER_INVITE_NOTIFIED', actorId: null,
+      entityType: 'lawyer', entityId: lawyer.id, causedByEventId: inviteEvent.id,
+      title: notifyResult.status === 'enviado' ? `Invitación enviada por WhatsApp a ${lawyer.name}` : `No se pudo avisar automáticamente a ${lawyer.name}`,
+      description: notifyResult.status === 'enviado' ? null : 'Sin teléfono cargado o falló el envío — compartí el link manualmente.',
+    });
+    await postSystemMessage(io, lawyerThread, notifyResult.status === 'enviado'
+      ? 'Se envió la invitación al portal por WhatsApp.'
+      : 'No se pudo enviar la invitación automáticamente — compartí el link manualmente.',
+      notifyResult.status === 'enviado' ? 'whatsapp' : 'sistema');
     await commit();
-    res.json({ portalToken: lawyer.portalToken, portalUrl: `/lawyer-portal.html?token=${lawyer.portalToken}` });
+    res.json({ portalToken: lawyer.portalToken, portalUrl, notified: notifyResult.status === 'enviado' });
   });
 
   // ---------- comunicaciones con un abogado (lado del mediador) ----------
@@ -1612,7 +1650,14 @@ module.exports = function (io, presence) {
     const db = getDB();
     const hearing = db.hearings.find((h) => h.id === req.params.hearingId && h.mediationId === req.mediation.id);
     if (!hearing) return res.status(404).json({ error: 'Audiencia no encontrada en esta mediación' });
-    res.json(getHearingPreparationState(db, req.mediation, hearing));
+    const confirmations = db.hearingConfirmations.filter((c) => c.hearingId === hearing.id);
+    res.json({
+      ...getHearingPreparationState(db, req.mediation, hearing),
+      // Bloque 32 §3 — la pantalla de preparación necesita los datos
+      // básicos de la audiencia (fecha/modalidad/video) en la misma
+      // llamada; reusa serializeHearing tal cual, nunca un segundo cálculo.
+      hearing: serializeHearing(hearing, confirmations),
+    });
   });
 
   // Bloque 15 (Parte 3) §15 — resumen accionable, no todo el expediente.
@@ -2323,20 +2368,46 @@ module.exports = function (io, presence) {
   // observado/final) — existía el campo status desde el Bloque 5 pero
   // nunca había forma de cambiarlo después de subirlo.
   router.patch('/:id/documents/:docId', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
-    const { status } = req.body || {};
+    const { status, notes } = req.body || {};
     if (!['pendiente_escaneo', 'recibido', 'pendiente_revision', 'revisado', 'observado', 'final'].includes(status)) {
       return res.status(400).json({ error: 'Estado de documento inválido' });
+    }
+    // Bloque 32 §2 — "observado" sin decir por qué es exactamente el
+    // problema que esto viene a resolver (la parte cambiaba de estado y
+    // nadie sabía qué faltaba corregir). Se exige acá, en el único lugar
+    // donde se decide el estado — nunca confiar en que el frontend lo pida.
+    if (status === 'observado' && (!notes || !notes.trim())) {
+      return res.status(400).json({ error: 'Para marcar un documento como observado hace falta explicar qué falta corregir' });
     }
     const db = getDB();
     const doc = db.documents.find((d) => d.id === req.params.docId && d.mediationId === req.mediation.id);
     if (!doc) return res.status(404).json({ error: 'Documento no encontrado en esta mediación' });
     doc.status = status;
+    if (notes !== undefined) doc.reviewNotes = (notes && notes.trim()) || null;
     logMediationEvent(db, {
       mediationId: req.mediation.id, type: 'DOCUMENT_REVIEWED', actorId: req.user.id,
       entityType: 'document', entityId: doc.id, title: `Documento ${status}: ${doc.originalFilename}`,
+      description: doc.reviewNotes || null,
     });
+
+    // Avisar a LA parte dueña del documento — si es un documento general
+    // (partyId null, de toda la mediación) no hay una única destinataria,
+    // así que no se manda nada automático (el mediador sigue pudiendo
+    // avisar a mano, como siempre). Mismo mecanismo ya reusado en las
+    // invitaciones (Bloque 32 §1) — nunca un canal nuevo.
+    let notifyResult = null;
+    if (status === 'observado' && doc.partyId) {
+      const party = db.parties.find((p) => p.id === doc.partyId && p.mediationId === req.mediation.id);
+      if (party) {
+        notifyResult = await notifyParty(db, party, `${partyDisplayName(db, party.id) || 'Hola'}: tu documento "${doc.originalFilename}" en la mediación ${req.mediation.code} quedó observado. Motivo: ${doc.reviewNotes}`);
+        const thread = db.channels.find((c) => c.mediationId === req.mediation.id && c.partyId === party.id);
+        if (thread) {
+          await postSystemMessage(io, thread, `Documento observado — "${doc.originalFilename}": ${doc.reviewNotes}`, notifyResult.status === 'enviado' ? 'whatsapp' : 'sistema');
+        }
+      }
+    }
     await commit();
-    res.json(serializeDocument(doc));
+    res.json({ ...serializeDocument(doc), notified: notifyResult ? notifyResult.status === 'enviado' : null });
   });
 
   router.post('/:id/documents', requireAuth, requireMediationAccess, requireEditAccess,

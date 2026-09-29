@@ -12,9 +12,15 @@ function configured() {
 }
 
 async function callGraphAPI(payload) {
+  // Bloque 32 — antes esto devolvía null en silencio, así que cualquier
+  // caller con try/catch (notifyParty/notifyLawyer en messaging.js, que
+  // existen justamente para "nunca fingir que se envió") terminaba
+  // registrando 'notification_sent' aunque WhatsApp no estuviera
+  // configurado — contradice ese principio, ya escrito como regla en este
+  // mismo código. Mismo patrón que ya usan videoProviders/*.js
+  // (lanzar cuando falta configuración, nunca devolver éxito fantasma).
   if (!configured()) {
-    console.warn('WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID no configurados — se omite el envío por WhatsApp.', payload);
-    return null;
+    throw new Error('WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID no configurados');
   }
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
   const resp = await fetch(url, {

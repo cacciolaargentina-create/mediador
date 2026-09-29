@@ -144,13 +144,16 @@ async function undoMessage(channel, messageId, requesterId) {
 // mensaje de sistema (sender: null) — join de canal, confirmaciones de
 // calendario, etc. No dispara notificación de WhatsApp (no es contenido
 // de una parte, es un aviso administrativo que ya se ve por socket).
-async function postSystemMessage(io, channel, text) {
+// `via` (Bloque 32): default 'sistema' para todos los call sites de
+// siempre; se puede pasar 'whatsapp' cuando el texto documenta un envío
+// real por ese medio (ver notifyInvitation/notifyDocumentReview más abajo).
+async function postSystemMessage(io, channel, text, via = 'sistema') {
   const db = getDB();
   const now = Date.now();
   const msg = {
     id: nanoid(), channelId: channel.id, senderId: null,
     text, flagged: false, reason: null, pattern: false, deliverAt: now, createdAt: now,
-    via: 'sistema',
+    via,
   };
   db.messages.push(msg);
   await commit();
@@ -271,11 +274,15 @@ function getPendingNotificationsCount() {
   return pendingNotifications.size;
 }
 
-// Bloque 15 (Parte 2) — notificar a una parte sobre su audiencia (§9:
-// "si WhatsApp no está disponible para una persona, no fingir que fue
-// enviado. Registrar correctamente: enviado, no disponible, error").
-// Reusa sendText y logWhatsappEvent tal cual — nada de un motor nuevo.
-async function notifyPartyAboutHearing(db, party, text) {
+// Bloque 15 (Parte 2) — notificar a una parte (§9: "si WhatsApp no está
+// disponible para una persona, no fingir que fue enviado. Registrar
+// correctamente: enviado, no disponible, error"). Reusa sendText y
+// logWhatsappEvent tal cual — nada de un motor nuevo.
+// Bloque 32 — nunca fue realmente específico de audiencias (el `text` ya
+// venía armado desde afuera); se renombra a lo que siempre fue para
+// poder reusarlo también en invitaciones y revisión de documentos, sin
+// tocar ninguno de los call sites existentes (quedan como alias abajo).
+async function notifyParty(db, party, text) {
   if (!party.linkedUserId) {
     logWhatsappEvent(db, { kind: 'notification_unavailable', userName: party.firstName, mediationId: party.mediationId, partyId: party.id, detail: 'Nunca se unió al portal' });
     return { status: 'no_disponible' };
@@ -298,7 +305,7 @@ async function notifyPartyAboutHearing(db, party, text) {
 // Bloque 16 — notificar a un abogado. Más simple que la parte: el
 // teléfono vive directo en el registro de lawyers (Bloque 4), nunca hizo
 // falta el mismo mecanismo de usuario invitado que las partes.
-async function notifyLawyerAboutHearing(db, lawyer, text) {
+async function notifyLawyer(db, lawyer, text) {
   if (!lawyer.phone) {
     logWhatsappEvent(db, { kind: 'notification_unavailable', userName: lawyer.name, mediationId: lawyer.mediationId, detail: 'Sin teléfono cargado' });
     return { status: 'no_disponible' };
@@ -313,4 +320,9 @@ async function notifyLawyerAboutHearing(db, lawyer, text) {
   }
 }
 
-module.exports = { postMessage, postSystemMessage, undoMessage, scheduleNotification, accessLinkFor, getPendingNotificationsCount, notifyPartyAboutHearing, notifyLawyerAboutHearing };
+module.exports = {
+  postMessage, postSystemMessage, undoMessage, scheduleNotification, accessLinkFor, getPendingNotificationsCount, baseUrl,
+  notifyParty, notifyLawyer,
+  // alias — mismos nombres que ya usaban jobs.js/routes/mediations.js, sin tocar esos call sites.
+  notifyPartyAboutHearing: notifyParty, notifyLawyerAboutHearing: notifyLawyer,
+};
