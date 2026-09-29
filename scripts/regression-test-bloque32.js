@@ -81,12 +81,17 @@ function testEntitlementsEngine() {
   const dbStudioPro = { billingAccounts: [{ studioId: 's1', planCode: 'ESTUDIO', status: 'active' }], users: [{ id: 'owner', studioId: 's1' }] };
   check('4-motor. Estudio con plan ESTUDIO: canAddStudyMember = true (ilimitado)', canAddStudyMember(dbStudioPro, fakeUserFree, 's1') === true);
 
-  const dbAssistFree = { billingAccounts: [], mediations: [{ id: 'm1', mediatorUserId: 'u1' }], mediationAccess: [] };
-  check('4-motor. FREE: canAddAssistant = false (maxAssistants=0)', canAddAssistant(dbAssistFree, fakeUserFree) === false);
-  const dbAssistPro = { billingAccounts: [{ userId: 'u1', planCode: 'PROFESIONAL', status: 'active' }], mediations: [{ id: 'm1', mediatorUserId: 'u1' }], mediationAccess: [] };
-  check('4-motor. PROFESIONAL sin asistentes todavía: canAddAssistant = true (0 < 1)', canAddAssistant(dbAssistPro, fakeUserFree) === true);
-  const dbAssistProFull = { billingAccounts: [{ userId: 'u1', planCode: 'PROFESIONAL', status: 'active' }], mediations: [{ id: 'm1', mediatorUserId: 'u1' }], mediationAccess: [{ mediationId: 'm1', userId: 'asist1', role: 'asistente' }] };
-  check('4-motor. PROFESIONAL con 1 asistente ya asignado: canAddAssistant = false (1 < 1 es falso)', canAddAssistant(dbAssistProFull, fakeUserFree) === false);
+  // Bloque 33 — canAddAssistant se redefinió para contar miembros del
+  // ESTUDIO con studioRole==='asistente' (nunca asignaciones puntuales de
+  // mediationAccess, que era el modelo viejo e inalcanzable en la
+  // práctica — ver el comentario en entitlements.js). El plan se resuelve
+  // siempre por studioId, nunca por userId.
+  const dbAssistFree = { billingAccounts: [], users: [{ id: 'owner', studioId: 's1' }] };
+  check('4-motor. FREE: canAddAssistant = false (maxAssistants=0)', canAddAssistant(dbAssistFree, fakeUserFree, 's1') === false);
+  const dbAssistPro = { billingAccounts: [{ studioId: 's1', planCode: 'PROFESIONAL', status: 'active' }], users: [{ id: 'owner', studioId: 's1' }] };
+  check('4-motor. PROFESIONAL sin asistentes todavía: canAddAssistant = true (0 < 1)', canAddAssistant(dbAssistPro, fakeUserFree, 's1') === true);
+  const dbAssistProFull = { billingAccounts: [{ studioId: 's1', planCode: 'PROFESIONAL', status: 'active' }], users: [{ id: 'owner', studioId: 's1' }, { id: 'asist1', studioId: 's1', studioRole: 'asistente' }] };
+  check('4-motor. PROFESIONAL con 1 asistente ya asignado: canAddAssistant = false (1 < 1 es falso)', canAddAssistant(dbAssistProFull, fakeUserFree, 's1') === false);
 }
 
 (async function main() {
@@ -198,16 +203,23 @@ function testEntitlementsEngine() {
   const inviteStudio = await A.fetch('/api/studios/invitations', { method: 'POST', body: JSON.stringify({ email: 'nuevo-miembro-b32@test.local', role: 'mediador' }) });
   check('4c. FREE: invitar a un 2do integrante del estudio -> 402 PLAN_LIMIT_REACHED (antes no se aplicaba)', inviteStudio.status === 402 && inviteStudio.body.code === 'PLAN_LIMIT_REACHED', JSON.stringify(inviteStudio.body));
 
-  // asistente (maxAssistants) — POST /:id/access exige que target y dueño
-  // compartan estudio (chequeo preexistente, no tocado acá). Con
-  // maxStudyMembers=1 en FREE Y en PROFESIONAL, un estudio nunca puede
-  // tener un 2do integrante en esos dos planes — o sea que en la práctica
-  // HOY el gate de maxAssistants en /access solo es alcanzable en plan
-  // ESTUDIO, donde maxAssistants ya es ilimitado (nunca bloquea nada).
-  // Documentado como hallazgo en el informe, no se fuerza acá un
-  // escenario artificial con manipulación directa de billing_accounts
-  // (mismo riesgo de condición de carrera con commit() ya documentado en
-  // sesiones anteriores). Lo que SÍ se prueba por HTTP es que, sin estudio
+  // Bloque 33 — el gate de maxAssistants se movió acá (invitación con
+  // role:'asistente'), en vez de la asignación puntual en /access (ver el
+  // comentario más abajo sobre por qué ESE gate quedaba inalcanzable).
+  // FREE tiene maxAssistants=0, así que la invitación de un asistente
+  // rebota apenas se intenta, sin necesitar sumar primero un integrante
+  // normal (canAddAssistant nunca comparte cupo con canAddStudyMember).
+  const inviteAssistant = await A.fetch('/api/studios/invitations', { method: 'POST', body: JSON.stringify({ email: 'asistente-b32@test.local', role: 'asistente' }) });
+  check('4c(bis). FREE: invitar un asistente -> 402 PLAN_LIMIT_REACHED (maxAssistants=0)', inviteAssistant.status === 402 && inviteAssistant.body.code === 'PLAN_LIMIT_REACHED', JSON.stringify(inviteAssistant.body));
+
+  // Hallazgo original de este bloque (ya corregido en Bloque 33, ver
+  // arriba): POST /:id/access exige que target y dueño compartan estudio
+  // (chequeo preexistente, no tocado acá), y con maxStudyMembers=1 en FREE
+  // Y en PROFESIONAL un estudio nunca podía tener un 2do integrante en
+  // esos dos planes — el gate de maxAssistants puesto en /access quedaba
+  // inalcanzable en la práctica. Bloque 33 lo resolvió moviendo el gate a
+  // la invitación (arriba) en vez de a la asignación puntual. Lo que SÍ se
+  // sigue probando acá por HTTP es que, sin estudio
   // compartido, la asignación sigue rechazándose como siempre (regresión).
   const B = await login('b32-asistente-candidato@test.local', 'Candidato Asistente');
   const accessAttempt = await A.fetch(`/api/mediations/${med.id}/access`, { method: 'POST', body: JSON.stringify({ userId: B.userId, role: 'asistente' }) });

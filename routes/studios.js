@@ -11,7 +11,7 @@ const express = require('express');
 const { nanoid } = require('nanoid');
 const { getDB, commit } = require('../db');
 const { logAudit } = require('../audit');
-const { canAddStudyMember, billingPaywallActive } = require('../entitlements');
+const { canAddStudyMember, canAddAssistant, billingPaywallActive } = require('../entitlements');
 const { isAdminUser } = require('../roles');
 
 module.exports = function () {
@@ -87,14 +87,23 @@ module.exports = function () {
     // Bloque 14 (Parte 3): un estudio dado de baja no admite invitaciones nuevas
     const studio = db.studios.find((s) => s.id === req.user.studioId);
     if (studio && studio.status !== 'activo') return res.status(400).json({ error: 'El estudio está dado de baja — no se pueden enviar invitaciones' });
-    // Bloque 32 §4 — maxStudyMembers estaba definido en entitlements.js
-    // desde el Bloque 29 pero ningún endpoint lo llamaba: un estudio FREE
-    // podía sumar miembros sin límite real. Rechazo temprano acá (mejor
-    // UX, el admin se entera antes de mandar el link); el chequeo que de
-    // verdad importa es en el accept de abajo, por si se mandaron varias
+    // Bloque 32 §4 / Bloque 33 — maxStudyMembers y maxAssistants estaban
+    // definidos en entitlements.js sin que ningún endpoint los llamara.
+    // Un asistente NO cuenta para maxStudyMembers (Bloque 33: la
+    // distinción de roles es lo que permite que Profesional siga en 1
+    // mediador pero pueda sumar su asistente) — por eso el chequeo se
+    // separa según el rol invitado. Rechazo temprano acá (mejor UX, el
+    // admin se entera antes de mandar el link); el chequeo que de verdad
+    // importa es en el accept de abajo, por si se mandaron varias
     // invitaciones a la vez.
-    if (!isAdminUser(req.user) && billingPaywallActive() && !canAddStudyMember(db, req.user, req.user.studioId)) {
-      return res.status(402).json({ error: 'Llegaste al límite de integrantes de tu plan — necesitás el plan Estudio para sumar más gente.', upgradeMessage: 'Sumar más integrantes al estudio requiere el plan Estudio.', code: 'PLAN_LIMIT_REACHED' });
+    if (!isAdminUser(req.user) && billingPaywallActive()) {
+      if (role === 'asistente') {
+        if (!canAddAssistant(db, req.user, req.user.studioId)) {
+          return res.status(402).json({ error: 'Llegaste al límite de asistentes de tu plan.', upgradeMessage: 'Sumar un asistente requiere el plan Profesional (1) o Estudio (ilimitado).', code: 'PLAN_LIMIT_REACHED' });
+        }
+      } else if (!canAddStudyMember(db, req.user, req.user.studioId)) {
+        return res.status(402).json({ error: 'Llegaste al límite de integrantes de tu plan — necesitás el plan Estudio para sumar más gente.', upgradeMessage: 'Sumar más integrantes al estudio requiere el plan Estudio.', code: 'PLAN_LIMIT_REACHED' });
+      }
     }
     const normalizedEmail = email.trim().toLowerCase();
     // no duplicar cuenta ni invitación: si esa persona ya es del estudio, cortar acá
@@ -151,10 +160,20 @@ module.exports = function () {
     if (targetStudio && targetStudio.status !== 'activo') {
       return res.status(400).json({ error: 'Este estudio fue dado de baja — la invitación ya no es válida' });
     }
-    // Bloque 32 §4 — el chequeo que de verdad cuenta: acá es donde se crea
-    // un miembro real, sin importar cuántas invitaciones se mandaron antes.
-    if (billingPaywallActive() && !canAddStudyMember(db, req.user, invitation.studioId)) {
-      return res.status(402).json({ error: 'Este estudio ya llegó al límite de integrantes de su plan.', upgradeMessage: 'Este estudio ya llegó al límite de integrantes de su plan actual.', code: 'PLAN_LIMIT_REACHED' });
+    // Bloque 32 §4 / Bloque 33 — el chequeo que de verdad cuenta: acá es
+    // donde se crea un miembro real, sin importar cuántas invitaciones se
+    // mandaron antes. Mismo criterio por rol que en el envío de arriba —
+    // billing_accounts.studioId ya existe en este punto, así que no hace
+    // falta que req.user tenga studioId seteado todavía (canAddStudyMember/
+    // canAddAssistant resuelven el plan siempre por studioId, nunca por
+    // user.id — ver el comentario en entitlements.js).
+    const acceptBlocked = billingPaywallActive() && (
+      invitation.role === 'asistente'
+        ? !canAddAssistant(db, req.user, invitation.studioId)
+        : !canAddStudyMember(db, req.user, invitation.studioId)
+    );
+    if (acceptBlocked) {
+      return res.status(402).json({ error: 'Este estudio ya llegó al límite de su plan para este rol.', upgradeMessage: 'Este estudio ya llegó al límite de su plan para este rol.', code: 'PLAN_LIMIT_REACHED' });
     }
 
     const user = db.users.find((u) => u.id === req.user.id);

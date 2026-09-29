@@ -97,27 +97,43 @@ function canCreateMediation(db, user) {
 }
 function canUseVideoMeetings(db, user) { return canUse(db, user, 'videoMeetings'); }
 function canUseAdvancedAgenda(db, user) { return canUse(db, user, 'advancedAgenda'); }
-// Bloque 32 §4 — mismo hallazgo que canAddStudyMember: maxAssistants
-// (FREE=0, PROFESIONAL=1, ESTUDIO=ilimitado) estaba definido pero ningún
-// endpoint lo llamaba. "Asistente" acá es mediationAccess.role==='asistente'
-// — se cuenta por PERSONA distinta entre TODAS las mediaciones de este
-// mediador (no por asignación), porque el límite es "cuánta gente te
-// ayuda", no "en cuántos expedientes la sumaste".
-function canAddAssistant(db, mediatorUser) {
-  const ent = getEntitlements(db, mediatorUser);
+// Bloque 33 — redefinida. La primera versión (Bloque 32) contaba
+// asignaciones de mediationAccess.role==='asistente', gateada en POST
+// /:id/access — pero ESE endpoint ya exige que el asignado comparta
+// estudio con el dueño de la mediación, y con maxStudyMembers=1 en FREE
+// Y en PROFESIONAL un estudio nunca podía tener un 2do integrante en esos
+// planes: el gate quedaba inalcanzable en la práctica (documentado en el
+// informe de Bloque 32). La causa real era no distinguir roles: un
+// asistente NO debería ocupar el mismo cupo que un mediador. Ahora
+// maxAssistants cuenta miembros del ESTUDIO con studioRole==='asistente'
+// — se aplica en el alta (POST /api/studios/invitations con
+// role:'asistente' y en el accept correspondiente, routes/studios.js) en
+// vez de en la asignación puntual a una mediación: una vez que la persona
+// ES asistente del estudio, asignarla a cuantas mediaciones haga falta no
+// vuelve a consumir cupo (es la MISMA persona, el mismo asiento).
+// `user` se mantiene en la firma por simetría con canAddStudyMember,
+// aunque el plan siempre se resuelve por studioId (nunca por user.id) —
+// esto importa en el accept, donde quien acepta todavía no tiene
+// studioId seteado.
+function canAddAssistant(db, user, studioId) {
+  const studioAccount = db.billingAccounts.find((a) => a.studioId === studioId);
+  const planCode = studioAccount && ACCESS_GRANTING_STATUSES.includes(studioAccount.status) ? studioAccount.planCode : 'FREE';
+  const ent = PLAN_ENTITLEMENTS[planCode] || PLAN_ENTITLEMENTS.FREE;
   if (ent.maxAssistants === Infinity) return true;
-  const myMediationIds = new Set(db.mediations.filter((m) => m.mediatorUserId === mediatorUser.id).map((m) => m.id));
-  const assistantIds = new Set(
-    db.mediationAccess.filter((a) => myMediationIds.has(a.mediationId) && a.role === 'asistente').map((a) => a.userId)
-  );
-  return assistantIds.size < ent.maxAssistants;
+  const assistantCount = db.users.filter((u) => u.studioId === studioId && u.studioRole === 'asistente').length;
+  return assistantCount < ent.maxAssistants;
 }
+// Bloque 33 — un asistente NO ocupa cupo de "integrante" para este límite
+// (eso es justamente lo que permite que Profesional siga en 1 mediador
+// pero pueda sumar su asistente sin necesitar el plan Estudio). Cuenta
+// admin/mediador, nunca asistente — ver canAddAssistant arriba para el
+// límite que SÍ le corresponde a los asistentes.
 function canAddStudyMember(db, user, studioId) {
   const studioAccount = db.billingAccounts.find((a) => a.studioId === studioId);
   const planCode = studioAccount && ACCESS_GRANTING_STATUSES.includes(studioAccount.status) ? studioAccount.planCode : 'FREE';
   const ent = PLAN_ENTITLEMENTS[planCode] || PLAN_ENTITLEMENTS.FREE;
   if (ent.maxStudyMembers === Infinity) return true;
-  const memberCount = db.users.filter((u) => u.studioId === studioId).length;
+  const memberCount = db.users.filter((u) => u.studioId === studioId && u.studioRole !== 'asistente').length;
   return memberCount < ent.maxStudyMembers;
 }
 
