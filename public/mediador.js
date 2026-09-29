@@ -756,7 +756,7 @@ async function renderDashboard(){
       ${d.actividadReciente.length ? d.actividadReciente.map(e => `
         <div class="status-history-item">
           <strong>${escapeHtml(e.mediationCode)}</strong> —
-          ${escapeHtml(EVENT_TYPE_LABELS[e.type] || e.type)}${e.title ? ': ' + escapeHtml(e.title) : ''}
+          ${e.title ? escapeHtml(e.title) : escapeHtml(EVENT_TYPE_LABELS[e.type] || e.type)}
           <span style="color:var(--text-faint);">· ${fmtDateTime(e.createdAt)}</span>
         </div>
       `).join('') : `<p class="empty-hint">Todavía no hay actividad.</p>`}
@@ -1961,7 +1961,7 @@ function filterTimelineByCategory(category){
 function renderTimelineItems(mediationId, timeline){
   return timeline.length ? timeline.map(e => `
         <div class="status-history-item" style="${e.causedByEventId ? 'padding-left:16px; border-left:2px solid var(--calm-dim);' : ''}">
-          <strong>${EVENT_TYPE_LABELS[e.type] || e.type}</strong>${e.title ? ': ' + escapeHtml(e.title) : ''}
+          <strong>${e.title ? escapeHtml(e.title) : escapeHtml(EVENT_TYPE_LABELS[e.type] || e.type)}</strong>
           ${e.description ? `<br><span style="color:var(--text-faint);">${escapeHtml(e.description)}</span>` : ''}
           <br><span style="color:var(--text-faint);">${fmtDateTime(e.createdAt)}</span>
           ${timelineContextLink(mediationId, e)}
