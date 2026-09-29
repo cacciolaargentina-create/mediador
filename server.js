@@ -202,6 +202,15 @@ io.on('connection', (socket) => {
   socket.data.userId = identity.id;
   socket.data.channels = new Set();
 
+  // Bloque 35 — bandeja de comunicaciones en vivo del mediador: sala
+  // personal (no por canal, como el resto) para poder avisarle de
+  // actividad en CUALQUIERA de sus mediaciones sin que tenga que estar
+  // adentro de ese chat puntual. Se une solo, apenas conecta — no hace
+  // falta un evento explícito del cliente como join-channel, porque no
+  // depende de a qué se suscribió, depende de quién es (ya autenticado acá
+  // arriba).
+  socket.join(`mediador:${identity.id}`);
+
   socket.on('join-channel', (code) => {
     const upper = String(code).toUpperCase();
     // antes esto confiaba ciegamente en lo que mandaba el cliente — ahora

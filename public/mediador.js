@@ -2,6 +2,7 @@
 
 let me = null;
 let currentMediationId = null;
+let currentScreen = null; // Bloque 35 — para saber si hay que refrescar en vivo la pantalla de Comunicaciones
 let isPlatformAdmin = false; // Bloque 25 — admin de PLATAFORMA (ADMIN_EMAILS), no admin de estudio. Solo gatilla mostrar/ocultar el link al radar competitivo en el menú de cuenta; el backend (routes/radar.js) es quien realmente lo protege.
 
 function escapeHtml(s){
@@ -99,6 +100,28 @@ function updateCommsBadge(count){
   if(count > 0){ badge.textContent = String(count); badge.style.display = ''; }
   else { badge.style.display = 'none'; }
 }
+
+// Bloque 35 — bandeja de Comunicaciones en vivo. Un solo socket para toda
+// la sesión (no uno por mediación, como el chat de una mediación puntual
+// en la sección Comunicaciones del detalle — ese sigue igual, sin tocar).
+// Se conecta una vez en boot() y listo — no hace falta join-channel de
+// ningún canal puntual, la sala personal (mediador:<userId>) ya la asigna
+// el servidor solo al conectar.
+let commsSocket = null;
+function connectCommsSocket(){
+  if(commsSocket || typeof io === 'undefined') return;
+  commsSocket = io({ withCredentials: true });
+  commsSocket.on('inbox:update', () => {
+    refreshCommsBadgeLive();
+    if(currentScreen === 'comms') renderComunicaciones(commsSearchQuery);
+  });
+}
+async function refreshCommsBadgeLive(){
+  try{
+    const items = await api('/api/mediations/inbox?limit=50');
+    updateCommsBadge(items.reduce((sum, c) => sum + (c.unreadCount || 0), 0));
+  }catch(e){ /* silencioso — el badge simplemente no se actualiza esta vez, no es crítico */ }
+}
 function openMediationSection(mediationId, sectionSuffix){
   Promise.resolve(goTo('detail', mediationId)).then(() => {
     document.getElementById('section-' + sectionSuffix)?.scrollIntoView({ behavior:'smooth', block:'start' });
@@ -122,6 +145,7 @@ const NEXT_ACTION_RESPONSIBLE_LABELS = { mediador: 'Mediador/a', party: 'Una par
   }
   document.getElementById('app').style.display = 'block';
   renderAccountButton();
+  connectCommsSocket();
   // Bloque 28 — vuelta del flujo de conexión OAuth de un proveedor de
   // videoconferencia (routes/video-providers.js redirige acá con estos
   // query params, nunca con datos sensibles en la URL).
@@ -383,6 +407,7 @@ const TAB_FOR_SCREEN = {
 };
 function goTo(screen, id){
   currentMediationId = id || null;
+  currentScreen = screen;
   closeAccountMenu();
   document.querySelectorAll('#tabs .sidebar-item').forEach(b => {
     b.classList.toggle('active', b.dataset.screen === TAB_FOR_SCREEN[screen]);

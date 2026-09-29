@@ -98,6 +98,22 @@ async function finalizeMessage(io, channel, messageId) {
   io.to(channel.code).emit('message:new', serializeMessage(msg));
   if (patternMsg) io.to(channel.code).emit('message:new', serializeMessage(patternMsg));
 
+  // Bloque 35 — bandeja en vivo del mediador (sala personal
+  // mediador:<userId>, ver server.js). Solo canales de Mediador tienen
+  // mediationId; los de coparentalidad (Puente Digital) no, y no les
+  // corresponde esto. Se avisa SIEMPRE que hay actividad nueva en el
+  // canal, mande quien mande el mensaje (incluido el propio mediador
+  // desde otra pestaña/dispositivo) — es más simple y más correcto que
+  // tratar de adivinar "esto ya lo sabés porque lo mandaste vos": el
+  // cliente decide qué hacer con el aviso (recién en la pantalla de
+  // Comunicaciones, y el número de no leídos ya lo filtra solo).
+  if (channel.mediationId) {
+    const mediation = db.mediations.find((m) => m.id === channel.mediationId);
+    if (mediation) {
+      io.to(`mediador:${mediation.mediatorUserId}`).emit('inbox:update', { mediationId: mediation.id, channelCode: channel.code });
+    }
+  }
+
   // avisar a la OTRA parte del canal, sin importar si este mensaje vino de
   // la web o de WhatsApp — la notificación es para quien no lo escribió.
   // Los hilos de Mediador (Bloque 9, identificados por channel.partyId) usan
