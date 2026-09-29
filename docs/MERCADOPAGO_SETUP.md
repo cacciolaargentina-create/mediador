@@ -54,10 +54,38 @@ Ver `.env.example` — resumen:
 | `MERCADOPAGO_WEBHOOK_SECRET` | Validar la firma `x-signature` de cada notificación. |
 | `MERCADOPAGO_ENVIRONMENT` | `test` o `production` — nunca mezclar credenciales de una con la otra. |
 | `MERCADOPAGO_RETURN_URL` | A dónde vuelve el pagador después de autorizar. |
-| `BILLING_PRICE_PROFESIONAL` / `BILLING_PRICE_ESTUDIO` | Precios en ARS/mes — se siembran en `billing_plans` al arrancar, editables después solo tocando la fila (no hay UI de edición de precios en este bloque). |
+| `BILLING_PRICE_PROFESIONAL` / `BILLING_PRICE_ESTUDIO` | Precio de **siembra inicial** en ARS/mes — ver la advertencia debajo, no sirven para cambiar un precio ya existente. |
 | `BILLING_GRACE_PERIOD_DAYS` | Días entre un pago rechazado y la suspensión real (default 7). |
 
 **El plan FREE funciona sin ninguna de estas variables configuradas.**
+
+### ⚠️ Trampa real (nos pasó): `BILLING_PRICE_*` solo aplica al SEMBRAR, nunca después
+
+`ensureBillingPlansSeeded()` (`billingService.js`) inserta una fila en
+`billing_plans` **solo si ese `code` todavía no existe**:
+```js
+if (db.billingPlans.some((p) => p.code === d.code)) continue; // ya existe → ni mira el precio nuevo
+```
+Y el precio que de verdad se manda a Mercado Pago en cada suscripción
+sale de esa fila (`plan.price`), **nunca** de `process.env.BILLING_PRICE_*`
+en el momento de suscribirse. Consecuencia: **cambiar la variable de
+entorno y reiniciar el server NO cambia el precio de un plan que ya fue
+sembrado alguna vez** — que es el caso normal, porque el server siembra
+los 3 planes la primera vez que arranca con la tabla vacía, mucho antes
+de que a nadie se le ocurra tocar el precio.
+
+**Para cambiar un precio de verdad, hay que tocar la fila en
+`billing_plans` directamente** (`UPDATE billing_plans SET price=... WHERE
+code='PROFESIONAL'`), no la variable de entorno. Y ojo con otra trampa
+encima de esta: este proyecto guarda todo en memoria (`getDB()`) y
+`commit()` **reescribe la tabla entera desde esa memoria** en cada
+escritura — un `UPDATE` por SQL hecho con el proceso corriendo puede
+quedar pisado por el próximo `commit()` de cualquier otra cosa (un login,
+un mensaje, un job), que va a reinsertar el precio viejo que el proceso
+todavía tiene en memoria. **El único momento seguro para un `UPDATE`
+directo a `billing_plans` es con el proceso parado** — actualizar,
+recién ahí arrancar de nuevo (así el próximo `getDB()` carga la fila ya
+actualizada desde disco).
 
 ## Configurar el webhook
 
