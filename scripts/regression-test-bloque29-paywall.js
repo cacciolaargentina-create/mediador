@@ -1,4 +1,4 @@
-// scripts/regression-test-bloque31-paywall.js
+// scripts/regression-test-bloque29-paywall.js
 // Bloque 29 (Billing + Mercado Pago) §17 — test HTTP real del wiring del
 // paywall en routes/mediations.js (no la lógica de entitlements.js en sí,
 // ya cubierta exhaustivamente por regression-test-bloque29-engine.js).
@@ -9,7 +9,7 @@
 //
 // Uso:
 //   SQLITE_PATH=/tmp/b31.sqlite ENABLE_FAKE_LOGIN=1 BILLING_ENFORCE_IN_TEST=1 PORT=3098 node server.js &
-//   node scripts/regression-test-bloque31-paywall.js http://localhost:3098
+//   node scripts/regression-test-bloque29-paywall.js http://localhost:3098
 
 const BASE = process.argv[2] || 'http://localhost:3098';
 

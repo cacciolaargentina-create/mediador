@@ -80,6 +80,15 @@ function serializeMessage(m) {
     // filename (GET /:code/attachments/:filename), no se manda acá
     // (evita tener que pasar el código del canal hasta este helper).
     attachment: m.attachment || null,
+    // Bloque 31 §4 — MEDIO de comunicación (spec: "canal": whatsapp/email/
+    // interna/sistema). Con fallback derivado de senderId en vez de
+    // confiar solo en la columna: hay varios call sites viejos (routes/
+    // admin.js, routes/guest.js, routes/channels.js) que insertan mensajes
+    // de sistema (senderId null) directo, sin pasar por messaging.js, y
+    // nunca van a tener la columna `via` poblada — así igual se muestran
+    // correctamente como 'sistema' sin tener que tocar cada uno de esos
+    // call sites.
+    via: m.via || (m.senderId ? 'interno' : 'sistema'),
   };
 }
 

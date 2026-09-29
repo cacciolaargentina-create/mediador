@@ -114,6 +114,19 @@ module.exports = function (io) {
       .sort((a, b) => b.createdAt - a.createdAt)
       .map((c) => ({ id: c.id, description: c.description, dueDate: c.dueDate, status: c.status }));
 
+    // Bloque 31 §5 — tareas DELEGADAS a esta parte puntual (nunca las del
+    // equipo mediador, que viven con assignedTo=userId y nunca se exponen
+    // acá) — la parte las ve y las puede marcar realizada ella misma.
+    const tasks = db.tasks
+      .filter((t) => t.mediationId === mediation.id && t.assignedToPartyId === party.id && t.status !== 'cancelada')
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((t) => ({ id: t.id, title: t.title, description: t.description, dueDate: t.dueDate, priority: t.priority, status: t.status }));
+
+    // información mínima del mediador — nunca email/teléfono acá (ese
+    // contacto ya pasa por el hilo de mensajería, no por este endpoint).
+    const mediatorUser = db.users.find((u) => u.id === mediation.mediatorUserId);
+    const mediatorInfo = mediatorUser ? { name: mediatorUser.name, avatar: mediatorUser.avatar || null } : null;
+
     // documentos: los generales de la mediación (partyId null) + los
     // etiquetados específicamente como de esta parte — nunca los de otra
     // parte puntual.
@@ -141,7 +154,7 @@ module.exports = function (io) {
       partyName: party.legalName || `${party.firstName || ''} ${party.lastName || ''}`.trim(),
       pendiente,
       allowDocumentUpload: party.allowDocumentUpload !== false,
-      hearings, commitments, documents,
+      hearings, commitments, documents, tasks, mediator: mediatorInfo,
     });
   });
 
@@ -251,6 +264,27 @@ module.exports = function (io) {
     }
     await commit();
     res.json({ id: confirmation.id, response: confirmation.response, rescheduleRequestId: rescheduleRequest ? rescheduleRequest.id : null });
+  });
+
+  // ---------- marcar una tarea propia como realizada ----------
+  // Bloque 31 §5 — la parte solo puede tocar el `status` de UNA tarea que
+  // le fue explícitamente delegada (assignedToPartyId===party.id) — nunca
+  // una tarea interna del equipo mediador, ni de otra parte.
+  router.post('/:token/tasks/:taskId/complete', portalLimiter, resolveParty, async (req, res) => {
+    const db = getDB();
+    const task = db.tasks.find((t) => t.id === req.params.taskId && t.mediationId === req.mediation.id && t.assignedToPartyId === req.party.id);
+    if (!task) return res.status(404).json({ error: 'Tarea no encontrada' });
+    if (task.status !== 'completada') {
+      task.status = 'completada';
+      task.completedAt = Date.now();
+      logMediationEvent(db, {
+        mediationId: req.mediation.id, type: 'TASK_COMPLETED', actorId: null,
+        entityType: 'task', entityId: task.id,
+        title: `Tarea completada por ${req.party.firstName || 'la parte'}: ${task.title}`,
+      });
+      await commit();
+    }
+    res.json({ id: task.id, status: task.status });
   });
 
   // ---------- subir un documento propio ----------

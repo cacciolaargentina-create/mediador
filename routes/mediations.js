@@ -35,7 +35,7 @@ const { canCreateMediation, canUseVideoMeetings } = require('../entitlements');
 // usuario de prueba para testear cosas sin relación con billing) sigan
 // corriendo sin reescribirlas. BILLING_ENFORCE_IN_TEST=1 reactiva el
 // paywall real aun con fake-login, para poder testear el wiring HTTP en sí
-// (scripts/regression-test-bloque31-paywall.js) — el límite en sí ya está
+// (scripts/regression-test-bloque29-paywall.js) — el límite en sí ya está
 // cubierto exhaustivamente por scripts/regression-test-bloque29-engine.js.
 function billingPaywallActive() {
   return process.env.ENABLE_FAKE_LOGIN !== '1' || process.env.BILLING_ENFORCE_IN_TEST === '1';
@@ -633,11 +633,60 @@ module.exports = function (io, presence) {
       // recorrer hearings/whatsappLog una segunda vez para lo mismo.
       centroAtencion: [
         ...getDashboardAttentionItems(db, mine),
-        ...propuestasPendientes.map((h) => ({ type: 'propuestaPendiente', mediationId: h.mediationId, mediationCode: h.mediationCode, title: `Propuesta de audiencia del ${h.date} sin respuesta`, detail: null, priority: 'pendiente', dueDate: h.date, refId: h.id, suggestedActions: ['verMediacion'] })),
-        ...audienciasCanceladasRecientemente.map((h) => ({ type: 'audienciaCancelada', mediationId: h.mediationId, mediationCode: h.mediationCode, title: `Audiencia cancelada · ${h.date}`, detail: 'Revisar si corresponde reagendar.', priority: 'pendiente', dueDate: null, refId: h.id, suggestedActions: ['verMediacion'] })),
-        ...fallosNotificacion.map((f) => ({ type: 'falloNotificacion', mediationId: f.mediationId, mediationCode: f.mediationCode, title: `Notificación a ${f.userName || 'alguien'} no llegó`, detail: null, priority: 'pendiente', dueDate: null, refId: f.mediationId, suggestedActions: ['verMediacion'] })),
+        ...propuestasPendientes.map((h) => ({ type: 'propuestaPendiente', mediationId: h.mediationId, mediationCode: h.mediationCode, title: `Propuesta de audiencia del ${h.date} sin respuesta`, detail: null, priority: 'pendiente', dueDate: h.date, refId: h.id, responsible: 'Las partes', suggestedActions: ['verMediacion'] })),
+        ...audienciasCanceladasRecientemente.map((h) => ({ type: 'audienciaCancelada', mediationId: h.mediationId, mediationCode: h.mediationCode, title: `Audiencia cancelada · ${h.date}`, detail: 'Revisar si corresponde reagendar.', priority: 'pendiente', dueDate: null, refId: h.id, responsible: 'Vos', suggestedActions: ['verMediacion'] })),
+        ...fallosNotificacion.map((f) => ({ type: 'falloNotificacion', mediationId: f.mediationId, mediationCode: f.mediationCode, title: `Notificación a ${f.userName || 'alguien'} no llegó`, detail: null, priority: 'pendiente', dueDate: null, refId: f.mediationId, responsible: 'Vos', suggestedActions: ['verMediacion'] })),
       ].sort((a, b) => ({ vencido: 1, critico: 2, proximo: 3, pendiente: 4 }[a.priority] - { vencido: 1, critico: 2, proximo: 3, pendiente: 4 }[b.priority])),
     });
+  });
+
+  // ---------- compromisos, cross-mediación (Bloque 31) ----------
+  // Antes de esto, los compromisos solo se veían adentro de cada
+  // expediente uno por uno (GET /:id/commitments más abajo, que sigue
+  // existiendo tal cual). Esta es la vista agregada que pide la
+  // especificación de "Compromisos + Vencimientos" — mismo patrón que
+  // /dashboard: reusa getMyMediations, nunca un cálculo de permisos nuevo.
+  // Los filtros son sobre ESTADO CALCULADO en vivo (igual que el resto del
+  // dashboard), no sobre un campo guardado — así nunca depende de que un
+  // job haya corrido para que "vencido"/"hoy" estén al día.
+  router.get('/commitments', requireAuth, (req, res) => {
+    const db = getDB();
+    const mine = getMyMediations(db, req.user);
+    const mineIds = new Set(mine.map((m) => m.id));
+    const mediationById = Object.fromEntries(mine.map((m) => [m.id, m]));
+    const now = Date.now();
+    const todayStr = new Date(now).toISOString().slice(0, 10);
+
+    let list = db.commitments.filter((c) => mineIds.has(c.mediationId));
+    if (req.query.partyId) list = list.filter((c) => c.partyId === req.query.partyId);
+
+    const { status } = req.query;
+    if (status && status !== 'todos') {
+      list = list.filter((c) => {
+        const dueMs = c.dueDate ? new Date(c.dueDate).getTime() : null;
+        const isOverdue = c.status === 'vencido' || (c.status === 'pendiente' && dueMs != null && dueMs < now && c.dueDate !== todayStr);
+        if (status === 'vencidos') return isOverdue;
+        if (status === 'hoy') return ['pendiente', 'vencido'].includes(c.status) && c.dueDate === todayStr;
+        if (status === 'proximos') return c.status === 'pendiente' && !isOverdue && c.dueDate && c.dueDate !== todayStr;
+        if (status === 'cumplidos') return c.status === 'cumplido';
+        if (status === 'cancelados') return c.status === 'cancelado';
+        return true;
+      });
+    }
+
+    list = list.sort((a, b) => {
+      // sin fecha al final, después ordenado por vencimiento más próximo primero
+      if (!a.dueDate && !b.dueDate) return b.createdAt - a.createdAt;
+      if (!a.dueDate) return 1;
+      if (!b.dueDate) return -1;
+      return a.dueDate.localeCompare(b.dueDate);
+    });
+
+    res.json(list.map((c) => ({
+      ...serializeCommitment(c),
+      mediationCode: mediationById[c.mediationId]?.code || null,
+      partyName: partyDisplayName(db, c.partyId),
+    })));
   });
 
   // Bloque 12 — asistente cross-mediación: arma un resumen en texto plano
@@ -2450,13 +2499,28 @@ module.exports = function (io, presence) {
       title: t.title, description: t.description, dueDate: t.dueDate, priority: t.priority,
       status: t.status, createdBy: t.createdBy, completedAt: t.completedAt, createdAt: t.createdAt,
       sourceMessageId: t.sourceMessageId || null, sourceDocumentId: t.sourceDocumentId || null,
+      // Bloque 31 — si está seteado, esta tarea es DE una parte (visible y
+      // completable desde su portal), no del equipo mediador.
+      assignedToPartyId: t.assignedToPartyId || null,
     };
   }
+  // helper de serializeCommitment de abajo — nunca devuelve un documento
+  // de OTRA mediación, aunque documentId venga de un dato viejo/corrupto.
+  function findCommitmentEvidenceDocument(documentId, mediationId) {
+    const db = getDB();
+    return db.documents.find((d) => d.id === documentId && d.mediationId === mediationId) || null;
+  }
   function serializeCommitment(c) {
+    const doc = c.documentId ? findCommitmentEvidenceDocument(c.documentId, c.mediationId) : null;
     return {
       id: c.id, mediationId: c.mediationId, partyId: c.partyId, description: c.description, dueDate: c.dueDate,
       status: c.status, createdFromEventId: c.createdFromEventId, completedAt: c.completedAt, createdAt: c.createdAt,
       sourceMessageId: c.sourceMessageId || null,
+      // Bloque 31 — observaciones libres y evidencia (documento YA
+      // existente de la misma mediación, nunca un adjunto nuevo/paralelo).
+      notes: c.notes || null,
+      documentId: c.documentId || null,
+      document: doc ? { id: doc.id, originalFilename: doc.originalFilename, type: doc.type } : null,
     };
   }
 
@@ -2527,9 +2591,17 @@ module.exports = function (io, presence) {
   }
 
   router.post('/:id/tasks', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
-    const { title, description, dueDate, priority, sourceMessageId, sourceDocumentId } = req.body || {};
+    const { title, description, dueDate, priority, sourceMessageId, sourceDocumentId, assignedToPartyId } = req.body || {};
     if (!title || !title.trim()) return res.status(400).json({ error: 'Falta el título de la tarea' });
     const db = getDB();
+    // Bloque 31 — delegar la tarea a una parte (en vez de al equipo
+    // mediador): la parte tiene que existir en ESTA mediación.
+    let resolvedAssignedToPartyId = null;
+    if (assignedToPartyId) {
+      const party = db.parties.find((p) => p.id === assignedToPartyId && p.mediationId === req.mediation.id);
+      if (!party) return res.status(400).json({ error: 'La parte indicada no existe en esta mediación' });
+      resolvedAssignedToPartyId = party.id;
+    }
     const resolvedSourceDocumentId = resolveSourceDocument(db, req.mediation.id, sourceDocumentId);
     // Bloque 22 §6 — "si ya existe una tarea activa de revisión para ese
     // documento, no duplicarla": en vez de crear una segunda, devolvemos
@@ -2546,11 +2618,13 @@ module.exports = function (io, presence) {
       priority: ['baja', 'media', 'alta', 'urgente'].includes(priority) ? priority : 'media',
       status: 'pendiente', createdBy: req.user.id, completedAt: null, createdAt: Date.now(),
       sourceMessageId: resolvedSourceMessageId, sourceDocumentId: resolvedSourceDocumentId,
+      assignedToPartyId: resolvedAssignedToPartyId,
     };
     db.tasks.push(task);
     logMediationEvent(db, {
       mediationId: req.mediation.id, type: 'TASK_CREATED', actorId: req.user.id,
-      entityType: 'task', entityId: task.id, title: `Tarea creada: ${task.title}`,
+      entityType: 'task', entityId: task.id,
+      title: resolvedAssignedToPartyId ? `Tarea asignada a ${partyDisplayName(db, resolvedAssignedToPartyId) || 'una parte'}: ${task.title}` : `Tarea creada: ${task.title}`,
       metadata: (resolvedSourceMessageId || resolvedSourceDocumentId) ? { sourceMessageId: resolvedSourceMessageId, sourceDocumentId: resolvedSourceDocumentId } : null,
     });
     await commit();
@@ -2590,17 +2664,26 @@ module.exports = function (io, presence) {
   });
 
   router.post('/:id/commitments', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
-    const { partyId, description, dueDate, causedByEventId, sourceMessageId } = req.body || {};
+    const { partyId, description, dueDate, causedByEventId, sourceMessageId, notes, documentId } = req.body || {};
     if (!partyId) return res.status(400).json({ error: 'Falta la parte responsable del compromiso' });
     if (!description || !description.trim()) return res.status(400).json({ error: 'Falta la descripción del compromiso' });
     const db = getDB();
     const party = db.parties.find((p) => p.id === partyId && p.mediationId === req.mediation.id);
     if (!party) return res.status(400).json({ error: 'La parte indicada no existe en esta mediación' });
+    // evidencia: solo puede ser un documento YA existente de ESTA
+    // mediación — nunca de otra, ni un id inventado.
+    let resolvedDocumentId = null;
+    if (documentId) {
+      const doc = db.documents.find((d) => d.id === documentId && d.mediationId === req.mediation.id);
+      if (!doc) return res.status(400).json({ error: 'El documento indicado no existe en esta mediación' });
+      resolvedDocumentId = doc.id;
+    }
     const resolvedSourceMessageId = resolveSourceMessage(db, req.mediation.id, sourceMessageId);
     const commitment = {
       id: nanoid(), mediationId: req.mediation.id, partyId, description: description.trim(),
       dueDate: dueDate || null, status: 'pendiente', createdFromEventId: causedByEventId || null,
       completedAt: null, createdAt: Date.now(), sourceMessageId: resolvedSourceMessageId,
+      notes: (notes && notes.trim()) || null, documentId: resolvedDocumentId,
     };
     db.commitments.push(commitment);
     // COMMITMENT_CREATED: no se genera una fila aparte en la tabla de
@@ -2622,9 +2705,19 @@ module.exports = function (io, presence) {
     const db = getDB();
     const commitment = db.commitments.find((c) => c.id === req.params.commitmentId && c.mediationId === req.mediation.id);
     if (!commitment) return res.status(404).json({ error: 'Compromiso no encontrado en esta mediación' });
-    const { description, dueDate, status } = req.body || {};
+    const { description, dueDate, status, notes, documentId } = req.body || {};
     if (description !== undefined) commitment.description = description;
     if (dueDate !== undefined) commitment.dueDate = dueDate;
+    if (notes !== undefined) commitment.notes = (notes && notes.trim()) || null;
+    if (documentId !== undefined) {
+      if (documentId === null) {
+        commitment.documentId = null;
+      } else {
+        const doc = db.documents.find((d) => d.id === documentId && d.mediationId === req.mediation.id);
+        if (!doc) return res.status(400).json({ error: 'El documento indicado no existe en esta mediación' });
+        commitment.documentId = doc.id;
+      }
+    }
     if (status !== undefined && status !== commitment.status) {
       if (!['pendiente', 'cumplido', 'vencido', 'cancelado'].includes(status)) {
         return res.status(400).json({ error: 'Estado de compromiso inválido' });

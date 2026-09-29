@@ -25,6 +25,23 @@ function fmtDate(iso){
 function fmtDateTime(ms){
   return new Date(ms).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
 }
+// Bloque 31 §2 — "faltan 5 días / vence hoy / vencido", la etiqueta de
+// urgencia que pide la especificación de Compromisos + Vencimientos.
+// Puramente de presentación: el estado real sigue siendo el que ya
+// calcula el servidor (pendiente/vencido/cumplido/cancelado), esto solo
+// traduce la fecha a algo legible sin depender de un job.
+function commitmentUrgencyLabel(c){
+  if(!c.dueDate) return '';
+  if(c.status === 'cumplido') return `cumplido ${fmtDate(c.dueDate)}`;
+  if(c.status === 'cancelado') return `cancelado`;
+  const todayStr = new Date().toISOString().slice(0,10);
+  const dueMs = new Date(c.dueDate).getTime();
+  const todayMs = new Date(todayStr).getTime();
+  if(c.status === 'vencido' || dueMs < todayMs) return `vencido — ${fmtDate(c.dueDate)}`;
+  if(c.dueDate === todayStr) return `vence hoy`;
+  const days = Math.round((dueMs - todayMs) / (1000*60*60*24));
+  return `faltan ${days} día${days === 1 ? '' : 's'} (${fmtDate(c.dueDate)})`;
+}
 // Bloque 30 — "Hace 8 min" / "Ayer" para la bandeja de Comunicaciones y el
 // widget del dashboard (spec §7/§10). Nunca se usa para nada que dependa
 // de precisión (eso sigue usando fmtDateTime).
@@ -386,6 +403,7 @@ function goTo(screen, id){
   else if(screen === 'agenda') renderPromise = renderAgenda();
   else if(screen === 'requests') renderPromise = renderRequests();
   else if(screen === 'comms') renderPromise = renderComunicaciones();
+  else if(screen === 'commitments') renderPromise = renderCommitmentsScreen();
   else if(screen === 'videoSettings') renderPromise = renderVideoSettings();
   else if(screen === 'billing') renderPromise = renderBilling();
   window.scrollTo(0, 0);
@@ -497,7 +515,7 @@ function renderAttentionItem(item, idx){
     <div class="alert-row" style="cursor:default; flex-direction:column; align-items:stretch; gap:6px;">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
         <div style="cursor:pointer;" onclick="goTo('detail','${item.mediationId}')">
-          <div class="code">${escapeHtml(item.mediationCode || '')}</div>
+          <div class="code">${escapeHtml(item.mediationCode || '')}${item.responsible ? ` · Responsable: ${escapeHtml(item.responsible)}` : ''}</div>
           <div style="font-weight:600; font-size:13.5px;">${escapeHtml(item.title || '')}</div>
           ${item.detail ? `<div style="font-size:12px; color:var(--text-dim); margin-top:2px;">${escapeHtml(item.detail)}</div>` : ''}
         </div>
@@ -609,6 +627,7 @@ async function renderDashboard(){
           <span class="pill calm">vence ${fmtDate(c.dueDate)}</span>
         </div>
       `).join('')}
+      <p class="empty-hint" style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); goTo('commitments');" style="color:var(--calm);">Ver todos los compromisos →</a></p>
     </div>
     ` : ''}
 
@@ -982,6 +1001,9 @@ async function regenerateIcsFeedLink(){
 
 // ================= BANDEJA DE SOLICITUDES =================
 let requestsFilter = { estado: 'pendientes' };
+// Bloque 31 §2 — pantalla cross-expediente de compromisos. status vacío =
+// "todos" (mismo criterio que requestsFilter de arriba).
+let commitmentsFilter = { status: '', partyId: '' };
 const REQUEST_STATUS_LABELS = { pendiente:'Pendiente', aceptada:'Aceptada', rechazada:'Rechazada', resuelta:'Resuelta sin cambio' };
 
 async function renderRequests(){
@@ -1049,6 +1071,81 @@ async function resolveFromInbox(mediationId, hearingId, requestId, action){
     if(notifText) alert(`Solicitud resuelta.\n\n${notifText}`);
     renderRequests();
   }catch(e){ showToast(e.error || 'No se pudo resolver la solicitud.', 'danger'); }
+}
+
+// Bloque 31 §2 — "Compromisos + Vencimientos": vista única de todos los
+// compromisos de todas las mediaciones del usuario, con los filtros que
+// pide la especificación (todos/próximos/hoy/vencidos/cumplidos/por
+// responsable). Reusa GET /api/mediations/commitments (agregación en el
+// servidor, mismo criterio de acceso que /dashboard) — nunca duplica el
+// cálculo de "mis mediaciones".
+async function renderCommitmentsScreen(){
+  const main = document.getElementById('main');
+  main.innerHTML = `<p class="empty-hint">Cargando…</p>`;
+  const params = new URLSearchParams();
+  if(commitmentsFilter.status) params.set('status', commitmentsFilter.status);
+  if(commitmentsFilter.partyId) params.set('partyId', commitmentsFilter.partyId);
+  let list;
+  try{ list = await api('/api/mediations/commitments?' + params.toString()); }
+  catch(e){ main.innerHTML = `<p class="empty-hint">${escapeHtml(e.error || 'No se pudo cargar los compromisos.')}</p>`; return; }
+
+  // el filtro "por responsable" se arma con las partes que aparecen en la
+  // respuesta SIN filtrar por responsable — si no, al elegir una parte
+  // desaparecería del propio selector.
+  let allForResponsibleFilter = list;
+  if(commitmentsFilter.status){
+    const params2 = new URLSearchParams();
+    if(commitmentsFilter.status) params2.set('status', commitmentsFilter.status);
+    try{ allForResponsibleFilter = await api('/api/mediations/commitments?' + params2.toString()); }catch(e){ /* usa `list` igual si esto falla */ }
+  }
+  const responsibleOptions = [...new Map(allForResponsibleFilter.map(c => [c.partyId, c.partyName])).entries()];
+
+  main.innerHTML = `
+    <h1>Compromisos</h1>
+    <p style="color:var(--text-dim); font-size:15px; margin-bottom:18px;">Vencimientos de todas tus mediaciones, en un solo lugar.</p>
+    <div class="card" style="display:flex; gap:8px; flex-wrap:wrap;">
+      <select id="filter-commitment-status" onchange="applyCommitmentsFilter()" style="width:auto;">
+        <option value="" ${commitmentsFilter.status===''?'selected':''}>Todos</option>
+        <option value="proximos" ${commitmentsFilter.status==='proximos'?'selected':''}>Próximos</option>
+        <option value="hoy" ${commitmentsFilter.status==='hoy'?'selected':''}>Hoy</option>
+        <option value="vencidos" ${commitmentsFilter.status==='vencidos'?'selected':''}>Vencidos</option>
+        <option value="cumplidos" ${commitmentsFilter.status==='cumplidos'?'selected':''}>Cumplidos</option>
+        <option value="cancelados" ${commitmentsFilter.status==='cancelados'?'selected':''}>Cancelados</option>
+      </select>
+      <select id="filter-commitment-party" onchange="applyCommitmentsFilter()" style="width:auto;">
+        <option value="">Todos los responsables</option>
+        ${responsibleOptions.map(([id, name]) => `<option value="${id}" ${commitmentsFilter.partyId===id?'selected':''}>${escapeHtml(name || 'Parte')}</option>`).join('')}
+      </select>
+    </div>
+    ${list.length ? list.map(c => `
+      <div class="card">
+        <div class="eyebrow">${escapeHtml(c.mediationCode)}</div>
+        <strong style="font-size:13.5px;">${escapeHtml(c.partyName || 'Parte')}</strong>: ${escapeHtml(c.description)}
+        ${c.dueDate ? `<div style="font-size:12px; color:var(--text-dim); margin-top:2px;">${commitmentUrgencyLabel(c)}</div>` : ''}
+        ${c.notes ? `<div style="font-size:12px; color:var(--text-dim); margin-top:2px;">${escapeHtml(c.notes)}</div>` : ''}
+        ${c.document ? `<div style="font-size:12px; color:var(--text-faint); margin-top:2px;">📎 ${escapeHtml(c.document.originalFilename)}</div>` : ''}
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+          <select onchange="changeCommitmentStatusGlobal('${c.mediationId}','${c.id}',this.value)" style="width:auto; margin:0;">
+            ${Object.keys(COMMITMENT_STATUS_LABELS).map(s => `<option value="${s}" ${s===c.status?'selected':''}>${COMMITMENT_STATUS_LABELS[s]}</option>`).join('')}
+          </select>
+          <a href="#" onclick="event.preventDefault(); goTo('detail','${c.mediationId}');" style="color:var(--calm); font-size:12.5px;">Ver expediente →</a>
+        </div>
+      </div>
+    `).join('') : `<p class="empty-hint">No hay compromisos para este filtro.</p>`}
+  `;
+}
+
+function applyCommitmentsFilter(){
+  commitmentsFilter.status = document.getElementById('filter-commitment-status').value;
+  commitmentsFilter.partyId = document.getElementById('filter-commitment-party').value;
+  renderCommitmentsScreen();
+}
+
+async function changeCommitmentStatusGlobal(mediationId, commitmentId, status){
+  try{
+    await api(`/api/mediations/${mediationId}/commitments/${commitmentId}`, { method:'PATCH', body: JSON.stringify({ status }) });
+    renderCommitmentsScreen();
+  }catch(e){ showToast(e.error || 'No se pudo actualizar el compromiso.', 'danger'); }
 }
 
 async function toggleAvailabilityPanel(){
@@ -1715,11 +1812,41 @@ const EVENT_TYPE_LABELS = {
   HEARING_RESCHEDULE_REQUESTED:'Pedido de cambio de audiencia', HEARING_RESCHEDULE_REJECTED:'Pedido de cambio resuelto', HEARING_RESCHEDULED:'Audiencia reprogramada',
   HEARING_PROPOSED:'Horarios propuestos', HEARING_RESCHEDULE_REMINDER:'Recordatorio de solicitud pendiente',
   HEARING_REMINDER:'Recordatorio de audiencia',
-  DOCUMENT_UPLOADED:'Documento subido', TASK_CREATED:'Tarea creada', TASK_COMPLETED:'Tarea completada',
+  DOCUMENT_UPLOADED:'Documento subido', DOCUMENT_REVIEWED:'Documento revisado', TASK_CREATED:'Tarea creada', TASK_COMPLETED:'Tarea completada',
   TASK_UPDATED:'Tarea actualizada', TASK_OVERDUE:'Tarea vencida', COMMITMENT_CREATED:'Compromiso creado',
   COMMITMENT_COMPLETED:'Compromiso cumplido', COMMITMENT_OVERDUE:'Compromiso vencido',
   COMMITMENT_UPDATED:'Compromiso actualizado', MESSAGE_SENT:'Mensaje enviado', MESSAGE_RECEIVED:'Mensaje recibido',
 };
+// Bloque 31 §3 — "filtros por tipo" del timeline (spec). El backend ya
+// soporta ?type= exacto (GET /:id/timeline), pero filtrar por UNO de los
+// ~25 tipos exactos no es útil para un mediador — agrupamos en categorías
+// legibles y filtramos client-side sobre el array que ya se cargó (evita
+// un round-trip extra por cada cambio de filtro).
+const TIMELINE_CATEGORIES = {
+  partes: { label: 'Partes y abogados', types: ['PARTY_ADDED', 'PARTY_INVITED', 'LAWYER_ADDED', 'LAWYER_INVITED', 'MEDIATION_ACCESS_GRANTED', 'MEDIATION_ACCESS_REVOKED'] },
+  documentos: { label: 'Documentos', types: ['DOCUMENT_UPLOADED', 'DOCUMENT_REVIEWED'] },
+  audiencias: { label: 'Audiencias', types: ['HEARING_SCHEDULED', 'HEARING_CONFIRMED', 'HEARING_HELD', 'HEARING_CANCELLED', 'HEARING_NOT_HELD', 'HEARING_CONFIRMATION_MISSING', 'HEARING_RESCHEDULE_REQUESTED', 'HEARING_RESCHEDULE_REJECTED', 'HEARING_RESCHEDULED', 'HEARING_PROPOSED', 'HEARING_RESCHEDULE_REMINDER', 'HEARING_REMINDER'] },
+  tareasCompromisos: { label: 'Tareas y compromisos', types: ['TASK_CREATED', 'TASK_COMPLETED', 'TASK_UPDATED', 'TASK_OVERDUE', 'COMMITMENT_CREATED', 'COMMITMENT_COMPLETED', 'COMMITMENT_OVERDUE', 'COMMITMENT_UPDATED'] },
+  estado: { label: 'Estado y cierre', types: ['MEDIATION_CREATED', 'MEDIATION_STATUS_CHANGED', 'MEDIATION_CLOSED'] },
+};
+let currentTimelineFull = [];
+let currentTimelineMediationId = null;
+function filterTimelineByCategory(category){
+  const list = document.getElementById('timeline-list');
+  if(!list) return;
+  const filtered = category ? currentTimelineFull.filter(e => (TIMELINE_CATEGORIES[category]?.types || []).includes(e.type)) : currentTimelineFull;
+  list.innerHTML = renderTimelineItems(currentTimelineMediationId, filtered);
+}
+function renderTimelineItems(mediationId, timeline){
+  return timeline.length ? timeline.map(e => `
+        <div class="status-history-item" style="${e.causedByEventId ? 'padding-left:16px; border-left:2px solid var(--calm-dim);' : ''}">
+          <strong>${EVENT_TYPE_LABELS[e.type] || e.type}</strong>${e.title ? ': ' + escapeHtml(e.title) : ''}
+          ${e.description ? `<br><span style="color:var(--text-faint);">${escapeHtml(e.description)}</span>` : ''}
+          <br><span style="color:var(--text-faint);">${fmtDateTime(e.createdAt)}</span>
+          ${timelineContextLink(mediationId, e)}
+        </div>
+      `).join('') : `<p class="empty-hint">Sin actividad todavía.</p>`;
+}
 function fmtFileSize(bytes){
   if(bytes < 1024) return bytes + ' B';
   if(bytes < 1024*1024) return (bytes/1024).toFixed(0) + ' KB';
@@ -1928,6 +2055,8 @@ async function renderDetail(id){
   currentParties = parties;
   currentDocuments = documents;
   currentHearings = hearings;
+  currentTimelineFull = timeline;
+  currentTimelineMediationId = id;
 
   // Bloque 24 — el wizard se muestra si es un ALTA sin partes todavía (nunca
   // si ya hay al menos una, ni por primera vez ni al recargar — spec §1/§7
@@ -2206,6 +2335,7 @@ async function renderDetail(id){
               <strong>${escapeHtml(t.title)}</strong>
               ${t.dueDate ? ` · vence ${fmtDate(t.dueDate)}` : ''}
               <br><span class="pill ${t.priority === 'urgente' || t.priority === 'alta' ? 'danger' : 'calm'}">${TASK_PRIORITY_LABELS[t.priority]}</span>
+              ${t.assignedToPartyId ? `<span class="pill calm">Responsable: ${escapeHtml(partyName(t.assignedToPartyId))}</span>` : ''}
             </div>
             <select onchange="changeTaskStatus('${m.id}','${t.id}',this.value)" style="width:auto; margin:0;">
               ${Object.keys(TASK_STATUS_LABELS).map(s => `<option value="${s}" ${s===t.status?'selected':''}>${TASK_STATUS_LABELS[s]}</option>`).join('')}
@@ -2223,6 +2353,12 @@ async function renderDetail(id){
         <select id="task-priority">
           ${Object.keys(TASK_PRIORITY_LABELS).map(p => `<option value="${p}" ${p==='media'?'selected':''}>${TASK_PRIORITY_LABELS[p]}</option>`).join('')}
         </select>
+        <label>Responsable</label>
+        <select id="task-assignee">
+          <option value="">Vos (equipo mediador)</option>
+          ${parties.map(p => `<option value="${p.id}">${escapeHtml(partyName(p.id))}</option>`).join('')}
+        </select>
+        ${parties.length ? `<p class="empty-hint" style="margin-top:-4px;">Si elegís una parte, la tarea aparece en su portal y la puede marcar realizada ella misma.</p>` : ''}
         <button class="primary" style="width:100%;" onclick="addTask('${m.id}')">Guardar tarea</button>
       </div>
     </div>
@@ -2234,7 +2370,9 @@ async function renderDetail(id){
           <div style="display:flex; justify-content:space-between; align-items:center;">
             <div>
               <strong>${escapeHtml(partyName(c.partyId))}</strong>: ${escapeHtml(c.description)}
-              ${c.dueDate ? ` · vence ${fmtDate(c.dueDate)}` : ''}
+              ${c.dueDate ? ` · ${commitmentUrgencyLabel(c)}` : ''}
+              ${c.notes ? `<br><span style="color:var(--text-dim); font-size:12px;">${escapeHtml(c.notes)}</span>` : ''}
+              ${c.document ? `<br><span style="color:var(--text-faint); font-size:12px;">📎 ${escapeHtml(c.document.originalFilename)}</span>` : ''}
             </div>
             <select onchange="changeCommitmentStatus('${m.id}','${c.id}',this.value)" style="width:auto; margin:0;">
               ${Object.keys(COMMITMENT_STATUS_LABELS).map(s => `<option value="${s}" ${s===c.status?'selected':''}>${COMMITMENT_STATUS_LABELS[s]}</option>`).join('')}
@@ -2252,20 +2390,26 @@ async function renderDetail(id){
         <input id="commitment-description" placeholder="Ej: Enviar presupuesto">
         <label>Vencimiento</label>
         <input id="commitment-due" type="date">
+        <label>Observaciones (opcional)</label>
+        <textarea id="commitment-notes" rows="2" placeholder="Notas internas sobre este compromiso"></textarea>
+        <label>Evidencia — documento ya cargado (opcional)</label>
+        <select id="commitment-document">
+          <option value="">Ninguno</option>
+          ${documents.map(d => `<option value="${d.id}">${escapeHtml(d.originalFilename)}</option>`).join('')}
+        </select>
         <button class="primary" style="width:100%;" onclick="addCommitment('${m.id}')">Guardar compromiso</button>
       </div>
     </div>
 
     <div class="card" id="section-timeline">
-      <h2>Timeline</h2>
-      ${timeline.length ? timeline.map(e => `
-        <div class="status-history-item" style="${e.causedByEventId ? 'padding-left:16px; border-left:2px solid var(--calm-dim);' : ''}">
-          <strong>${EVENT_TYPE_LABELS[e.type] || e.type}</strong>${e.title ? ': ' + escapeHtml(e.title) : ''}
-          ${e.description ? `<br><span style="color:var(--text-faint);">${escapeHtml(e.description)}</span>` : ''}
-          <br><span style="color:var(--text-faint);">${fmtDateTime(e.createdAt)}</span>
-          ${timelineContextLink(m.id, e)}
-        </div>
-      `).join('') : `<p class="empty-hint">Sin actividad todavía.</p>`}
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+        <h2 style="margin:0;">Timeline</h2>
+        <select onchange="filterTimelineByCategory(this.value)" style="width:auto; margin:0;">
+          <option value="">Todos los tipos</option>
+          ${Object.entries(TIMELINE_CATEGORIES).map(([key, cat]) => `<option value="${key}">${cat.label}</option>`).join('')}
+        </select>
+      </div>
+      <div id="timeline-list" style="margin-top:8px;">${renderTimelineItems(m.id, timeline)}</div>
     </div>
 
     <div class="card">
@@ -3238,6 +3382,7 @@ async function addTask(mediationId){
       title,
       dueDate: document.getElementById('task-due').value || null,
       priority: document.getElementById('task-priority').value,
+      assignedToPartyId: document.getElementById('task-assignee')?.value || null,
       sourceMessageId: pendingSourceMessageId,
       sourceDocumentId: pendingSourceDocumentId,
     })});
@@ -3299,6 +3444,8 @@ async function addCommitment(mediationId){
     await api(`/api/mediations/${mediationId}/commitments`, { method:'POST', body: JSON.stringify({
       partyId: partySelect.value, description,
       dueDate: document.getElementById('commitment-due').value || null,
+      notes: document.getElementById('commitment-notes')?.value.trim() || null,
+      documentId: document.getElementById('commitment-document')?.value || null,
       sourceMessageId: pendingSourceMessageId,
     })});
     pendingSourceMessageId = null;

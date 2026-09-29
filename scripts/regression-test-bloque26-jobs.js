@@ -54,9 +54,20 @@ function makeMediationWithParty(db, { mediatorUserId, withThread = true }) {
   return { mediation, party, thread };
 }
 
+// Bug preexistente encontrado y corregido en Bloque 31 (auditoría de
+// regresión): `date` salía de toISOString() (día calendario en UTC) pero
+// `startTime` de toTimeString() (hora LOCAL) — checkHearingsStartingSoon
+// reconstruye `${date}T${startTime}` con `new Date(...)`, que sin offset
+// se interpreta como hora LOCAL, así que mezclar un día UTC con una hora
+// local rompía este test durante la ventana horaria en la que el día UTC
+// ya cambió pero el local todavía no (en Argentina, ~21:00 a 23:59 hora
+// local) — 3 horas por día en las que la audiencia "de acá a 12 minutos"
+// terminaba cayendo en otro día calendario y el job nunca la alertaba.
+// Ahora `date` sale del calendario LOCAL, consistente con `startTime`.
 function todayAt(minutesFromNow) {
   const t = new Date(Date.now() + minutesFromNow * 60 * 1000);
-  const date = t.toISOString().slice(0, 10);
+  const pad = (n) => String(n).padStart(2, '0');
+  const date = `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`;
   const startTime = t.toTimeString().slice(0, 5);
   return { date, startTime };
 }

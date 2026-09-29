@@ -13,3 +13,5 @@ acceso_bachi.txt
 *_id_rsa
 audit.json
 .claude/settings.local.json
+backups/
+test-*.sqlite*

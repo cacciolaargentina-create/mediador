@@ -27,7 +27,7 @@ const EMPTY_DB = {
   users: [],       // { id, googleId, email, name, avatar, phone, guest, icsToken|null, notificationDigest|null, createdAt, lastLoginAt|null, disabledAt|null } — notificationDigest (Bloque 22 Parte 1): 'none'|'daily'|'weekly', default 'none' (sin digest, sin cambio de comportamiento). lastLoginAt (Bloque 27): se actualiza en cada login real (Google o fake-login), nunca en cada request. disabledAt (Bloque 27): si está seteado, passport.deserializeUser (server.js) deja de autenticar a esa cuenta — mismo 401 de siempre, sin chequeo nuevo repetido en cada ruta
   channels: [],    // { id, code, guestToken, calendarToken, professionalInvites, status:'abierto'|'en_proceso'|'cerrado', createdAt, mediationId|null, partyId|null, lawyerId|null } — mediationId+partyId: hilo mediador↔parte de Mediador; mediationId+lawyerId: hilo mediador↔abogado; mediationId solo (los otros dos null): canal interno del equipo de esa mediación. Los tres null = canal de coparentalidad de siempre.
   members: [],     // { id, channelId, userId, role, label, webAccessToken, assignedByAdmin, lastSeenAt, joinedAt }
-  messages: [],    // { id, channelId, senderId|null, text, flagged, reason, pattern, eventId, readAt, createdAt, replyToId, deliverAt, documentId|null } — replyToId: id de otro mensaje del mismo canal al que este responde (hilo estilo WhatsApp), null si no es una respuesta. deliverAt: cuándo se transmite/notifica de verdad — igual a createdAt salvo durante la ventana de "deshacer envío" (ver messaging.js), mientras está en el futuro el mensaje solo lo ve quien lo escribió. documentId (Bloque 19): referencia opcional a un documento YA existente de la mediación — nunca un adjunto nuevo, el documento sigue viviendo solo en `documents`
+  messages: [],    // { id, channelId, senderId|null, text, flagged, reason, pattern, eventId, readAt, createdAt, replyToId, deliverAt, documentId|null, via:'interno'|'sistema'|'whatsapp'|'email' } — replyToId: id de otro mensaje del mismo canal al que este responde (hilo estilo WhatsApp), null si no es una respuesta. deliverAt: cuándo se transmite/notifica de verdad — igual a createdAt salvo durante la ventana de "deshacer envío" (ver messaging.js), mientras está en el futuro el mensaje solo lo ve quien lo escribió. documentId (Bloque 19): referencia opcional a un documento YA existente de la mediación — nunca un adjunto nuevo, el documento sigue viviendo solo en `documents`. via (Bloque 31, MEDIO de comunicación — nombrado distinto de "channel"/`channels` a propósito, ver comentario en ensureColumns): 'interno' (default, chat de siempre) o 'sistema' (senderId null) son los únicos valores que hoy escribe el código — 'whatsapp'/'email' quedan reservados para cuando exista esa integración real
   messageReactions: [], // { id, messageId, channelId, userId, emoji, createdAt } — una reacción activa por usuario por mensaje; reaccionar de nuevo con otro emoji reemplaza la anterior, reaccionar con el mismo la saca
   events: [],      // { id, channelId, date, detail, requestedBy(userId), status, seriesId, swapId, respondedAt, reminderSentAt, createdAt, kind:'entrega'|'vencimiento' } — kind default 'entrega' (coparentalidad, ver requireParty) en eventos viejos; 'vencimiento' es un plazo procesal (ver POST .../events/vencimiento), se crea directo en 'confirmado', sin flujo de propuesta/rechazo
   caseNotes: [],   // { id, channelId, authorId, text, createdAt } — solo visibles para mediador/a, estudio jurídico o admin del canal, nunca para las partes A/B
@@ -68,9 +68,9 @@ const EMPTY_DB = {
 
   // ===== Bloque 6. Ver IMPLEMENTATION_PLAN.md §3.10/3.11/3.8/3.9 =====
   mediationEvents: [], // { id, mediationId, type, actorId|null, visibility:'public'|'mediator_only', entityType, entityId, title, description, metadata|null, causedByEventId|null, createdAt }
-  tasks: [], // { id, mediationId, assignedTo, title, description, dueDate, priority:'baja'|'media'|'alta'|'urgente', status:'pendiente'|'en_proceso'|'completada'|'cancelada', createdBy, completedAt, createdAt, sourceMessageId|null, sourceDocumentId|null } — sourceDocumentId (Bloque 22 automatización): igual que sourceMessageId pero para "documento recibido → ¿crear tarea de revisión?"; sirve para no duplicar la sugerencia si ya existe una tarea activa para ese documento
+  tasks: [], // { id, mediationId, assignedTo, title, description, dueDate, priority:'baja'|'media'|'alta'|'urgente', status:'pendiente'|'en_proceso'|'completada'|'cancelada', createdBy, completedAt, createdAt, sourceMessageId|null, sourceDocumentId|null, assignedToPartyId|null } — sourceDocumentId (Bloque 22 automatización): igual que sourceMessageId pero para "documento recibido → ¿crear tarea de revisión?"; sirve para no duplicar la sugerencia si ya existe una tarea activa para ese documento. assignedToPartyId (Bloque 31): si está seteada, la tarea es de UNA parte (visible/completable desde su portal, ver routes/party-portal.js) en vez de del equipo mediador — mutuamente excluyente en la práctica con assignedTo, aunque el campo no se borra
   attentionDismissals: [], // { id, mediationId, alertType, refId, dismissedBy, dismissedAt } — "descartar alerta" del centro de atención (Bloque 22 automatización). alertType+refId identifican la situación puntual (ej. alertType:'partyNoResponse', refId:partyId) — nunca borra el dato subyacente, solo oculta la alerta hasta que la situación cambie de verdad (ver automationEngine.js)
-  commitments: [], // { id, mediationId, partyId, description, dueDate, status:'pendiente'|'cumplido'|'vencido'|'cancelado', createdFromEventId|null, completedAt, createdAt, sourceMessageId|null }
+  commitments: [], // { id, mediationId, partyId, description, dueDate, status:'pendiente'|'cumplido'|'vencido'|'cancelado', createdFromEventId|null, completedAt, createdAt, sourceMessageId|null, notes|null, documentId|null } — notes/documentId (Bloque 31): observaciones libres y evidencia — documentId apunta a un documento YA existente de la mediación, nunca un adjunto nuevo (mismo patrón que messages.documentId)
 
   // ===== Bloque 25. Radar competitivo — herramienta interna, solo admin
   // (ver routes/radar.js). Monitorea información PÚBLICA de competidores y
@@ -652,6 +652,28 @@ function openDb() {
     meetingCreatedAt: 'INTEGER', meetingUpdatedAt: 'INTEGER',
     meetingStatus: 'TEXT', meetingMetadata: 'TEXT',
   });
+  // Bloque 31 — compromisos: "observaciones" de texto libre y un enlace
+  // opcional a un documento YA EXISTENTE de la mediación como evidencia
+  // (mismo patrón que messages.documentId — nunca un adjunto nuevo/paralelo).
+  // NULL en todo compromiso existente = sin cambio de comportamiento.
+  ensureColumns(sqlite, 'commitments', { notes: 'TEXT', documentId: 'TEXT' });
+  // Bloque 31 — arquitectura de MEDIO de comunicación, preparada para
+  // integrar WhatsApp/email más adelante SIN inventar esa integración
+  // ahora (spec §4: "no inventar, preparar la arquitectura"). Se llama
+  // "via" y no "channel" a propósito: "channel"/"canal" ya es la tabla
+  // `channels` (el HILO mediador↔parte/abogado) en todo este archivo —
+  // llamar igual al medio de comunicación de UN mensaje puntual hubiera
+  // sido confundir dos conceptos distintos con el mismo nombre. Hoy solo
+  // se escriben dos valores reales: 'interno' (chat de siempre) y
+  // 'sistema' (avisos automáticos, senderId null) — 'whatsapp'/'email'
+  // quedan reservados, ningún código los setea todavía. Default 'interno'
+  // cubre todo mensaje viejo sin backfill.
+  ensureColumns(sqlite, 'messages', { via: "TEXT DEFAULT 'interno'" });
+  // Bloque 31 — permite delegar una tarea a una PARTE (antes solo podía
+  // vivir en el equipo mediador vía assignedTo=userId). NULL = tarea
+  // interna de siempre, cero cambio de comportamiento. Con esto la parte
+  // puede verla y marcarla realizada desde su portal (routes/party-portal.js).
+  ensureColumns(sqlite, 'tasks', { assignedToPartyId: 'TEXT' });
   if (isNew && fs.existsSync(LEGACY_JSON_PATH)) {
     migrateFromJson(sqlite, LEGACY_JSON_PATH);
   }

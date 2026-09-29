@@ -264,59 +264,65 @@ function buildAttentionItems(db, mediations, { includeInactive = true } = {}) {
   for (const m of mediations) {
     if (m.closedAt || m.status === 'borrador') continue;
     if (mediationMissingNextAction(m)) {
-      items.push({ type: 'sinProximaAccion', mediationId: m.id, mediationCode: m.code, title: 'Sin próxima acción definida', detail: 'La mediación está activa pero no tiene próxima acción cargada.', priority: 'pendiente', dueDate: null, refId: m.id, suggestedActions: ['definirProximaAccion', 'verMediacion'] });
+      items.push({ type: 'sinProximaAccion', mediationId: m.id, mediationCode: m.code, title: 'Sin próxima acción definida', detail: 'La mediación está activa pero no tiene próxima acción cargada.', priority: 'pendiente', dueDate: null, refId: m.id, responsible: 'Vos', suggestedActions: ['definirProximaAccion', 'verMediacion'] });
     } else if (mediationNextActionOverdue(m, now)) {
-      items.push({ type: 'proximaAccionVencida', mediationId: m.id, mediationCode: m.code, title: 'Próxima acción vencida', detail: m.nextActionText, priority: 'vencido', dueDate: m.nextActionDueDate, refId: m.id, suggestedActions: ['verMediacion', 'definirProximaAccion'] });
+      items.push({ type: 'proximaAccionVencida', mediationId: m.id, mediationCode: m.code, title: 'Próxima acción vencida', detail: m.nextActionText, priority: 'vencido', dueDate: m.nextActionDueDate, refId: m.id, responsible: 'Vos', suggestedActions: ['verMediacion', 'definirProximaAccion'] });
     }
   }
 
+  // Bloque 31 §1 — "responsable" visible por ítem: para una tarea/tarea
+  // vencida delegada a una parte (assignedToPartyId, ver db.js), el
+  // responsable real es esa parte, no el equipo mediador.
   for (const t of getOverdueTasks(db, mediationIds, now)) {
-    items.push({ type: 'tareaVencida', mediationId: t.mediationId, mediationCode: mediationById[t.mediationId]?.code, title: t.title, detail: `Vencida el ${t.dueDate}`, priority: 'vencido', dueDate: t.dueDate, refId: t.id, suggestedActions: ['completarTarea', 'editarTarea', 'verMediacion'] });
+    const responsible = t.assignedToPartyId ? (partyDisplayName(db, t.assignedToPartyId) || 'Una parte') : 'Vos';
+    items.push({ type: 'tareaVencida', mediationId: t.mediationId, mediationCode: mediationById[t.mediationId]?.code, title: t.title, detail: `Vencida el ${t.dueDate}`, priority: 'vencido', dueDate: t.dueDate, refId: t.id, responsible, suggestedActions: ['completarTarea', 'editarTarea', 'verMediacion'] });
   }
 
   for (const c of getOverdueCommitments(db, mediationIds, now)) {
-    items.push({ type: 'compromisoVencido', mediationId: c.mediationId, mediationCode: mediationById[c.mediationId]?.code, title: `${partyDisplayName(db, c.partyId) || 'Parte'}: ${c.description}`, detail: `Vencido el ${c.dueDate}`, priority: 'vencido', dueDate: c.dueDate, refId: c.id, suggestedActions: ['contactarParte', 'marcarCompletado', 'ver'] });
+    const responsible = partyDisplayName(db, c.partyId) || 'Parte';
+    items.push({ type: 'compromisoVencido', mediationId: c.mediationId, mediationCode: mediationById[c.mediationId]?.code, title: `${responsible}: ${c.description}`, detail: `Vencido el ${c.dueDate}`, priority: 'vencido', dueDate: c.dueDate, refId: c.id, responsible, suggestedActions: ['contactarParte', 'marcarCompletado', 'ver'] });
   }
 
   for (const h of getHearingsWithPendingConfirmations(db, mediationIds)) {
     const pending = getPendingConfirmations(db, h.id).length;
     const daysUntil = daysBetween(now, new Date(h.date).getTime());
-    items.push({ type: 'audienciaSinConfirmar', mediationId: h.mediationId, mediationCode: mediationById[h.mediationId]?.code, title: `Audiencia ${h.date}${h.startTime ? ' ' + h.startTime : ''}`, detail: `Faltan ${pending} confirmación(es).`, priority: daysUntil <= 2 ? 'critico' : 'proximo', dueDate: h.date, refId: h.id, suggestedActions: ['enviarAviso', 'verMediacion'] });
+    items.push({ type: 'audienciaSinConfirmar', mediationId: h.mediationId, mediationCode: mediationById[h.mediationId]?.code, title: `Audiencia ${h.date}${h.startTime ? ' ' + h.startTime : ''}`, detail: `Faltan ${pending} confirmación(es).`, priority: daysUntil <= 2 ? 'critico' : 'proximo', dueDate: h.date, refId: h.id, responsible: 'Las partes', suggestedActions: ['enviarAviso', 'verMediacion'] });
   }
 
   for (const r of getPendingRescheduleRequests(db, mediationIds)) {
-    items.push({ type: 'solicitudCambioPendiente', mediationId: r.mediationId, mediationCode: mediationById[r.mediationId]?.code, title: 'Solicitud de cambio de audiencia sin resolver', detail: r.reason || null, priority: 'pendiente', dueDate: null, refId: r.id, suggestedActions: ['resolver', 'verMediacion'] });
+    items.push({ type: 'solicitudCambioPendiente', mediationId: r.mediationId, mediationCode: mediationById[r.mediationId]?.code, title: 'Solicitud de cambio de audiencia sin resolver', detail: r.reason || null, priority: 'pendiente', dueDate: null, refId: r.id, responsible: 'Vos', suggestedActions: ['resolver', 'verMediacion'] });
   }
 
   for (const d of getDocumentsPendingReview(db, mediationIds)) {
-    items.push({ type: 'documentoPendienteRevision', mediationId: d.mediationId, mediationCode: mediationById[d.mediationId]?.code, title: d.originalFilename, detail: 'Documento recibido, sin revisar.', priority: 'pendiente', dueDate: null, refId: d.id, suggestedActions: ['crearTarea', 'verDocumento'] });
+    items.push({ type: 'documentoPendienteRevision', mediationId: d.mediationId, mediationCode: mediationById[d.mediationId]?.code, title: d.originalFilename, detail: 'Documento recibido, sin revisar.', priority: 'pendiente', dueDate: null, refId: d.id, responsible: 'Vos', suggestedActions: ['crearTarea', 'verDocumento'] });
   }
 
   for (const h of getHearingsWithoutResult(db, mediationIds, now)) {
-    items.push({ type: 'audienciaSinResultado', mediationId: h.mediationId, mediationCode: mediationById[h.mediationId]?.code, title: `Audiencia del ${h.date} sin resultado registrado`, detail: 'La fecha ya pasó y nadie registró qué pasó.', priority: 'critico', dueDate: h.date, refId: h.id, suggestedActions: ['registrarResultado', 'verMediacion'] });
+    items.push({ type: 'audienciaSinResultado', mediationId: h.mediationId, mediationCode: mediationById[h.mediationId]?.code, title: `Audiencia del ${h.date} sin resultado registrado`, detail: 'La fecha ya pasó y nadie registró qué pasó.', priority: 'critico', dueDate: h.date, refId: h.id, responsible: 'Vos', suggestedActions: ['registrarResultado', 'verMediacion'] });
   }
 
   for (const h of getHearingsDoneWithoutNextAction(db, mediationIds, mediationById)) {
-    items.push({ type: 'audienciaSinProximaAccion', mediationId: h.mediationId, mediationCode: mediationById[h.mediationId]?.code, title: 'Audiencia realizada sin próxima acción', detail: `La audiencia del ${h.date} terminó y la mediación sigue sin próxima acción.`, priority: 'critico', dueDate: null, refId: h.id, suggestedActions: ['definirProximaAccion'] });
+    items.push({ type: 'audienciaSinProximaAccion', mediationId: h.mediationId, mediationCode: mediationById[h.mediationId]?.code, title: 'Audiencia realizada sin próxima acción', detail: `La audiencia del ${h.date} terminó y la mediación sigue sin próxima acción.`, priority: 'critico', dueDate: null, refId: h.id, responsible: 'Vos', suggestedActions: ['definirProximaAccion'] });
   }
 
   if (includeInactive) {
     for (const { mediation, lastActivityAt, thresholdDays } of getInactiveMediations(db, mediations, now)) {
       const lastDate = new Date(lastActivityAt);
-      items.push({ type: 'mediacionInactiva', mediationId: mediation.id, mediationCode: mediation.code, title: 'Sin actividad reciente', detail: `Esta mediación no registra actividad desde el ${lastDate.toLocaleDateString('es-AR')} (umbral: ${thresholdDays} días).`, priority: 'pendiente', dueDate: null, refId: mediation.id, suggestedActions: ['verMediacion', 'registrarActividad', 'crearTarea', 'descartar'] });
+      items.push({ type: 'mediacionInactiva', mediationId: mediation.id, mediationCode: mediation.code, title: 'Sin actividad reciente', detail: `Esta mediación no registra actividad desde el ${lastDate.toLocaleDateString('es-AR')} (umbral: ${thresholdDays} días).`, priority: 'pendiente', dueDate: null, refId: mediation.id, responsible: 'Vos', suggestedActions: ['verMediacion', 'registrarActividad', 'crearTarea', 'descartar'] });
     }
   }
 
   for (const m of getMediationsRequiringClosure(mediations)) {
-    items.push({ type: 'requiereCierre', mediationId: m.id, mediationCode: m.code, title: 'Esta mediación parece lista para cerrarse', detail: `Estado actual: ${m.status}, sin fecha de cierre registrada.`, priority: 'pendiente', dueDate: null, refId: m.id, suggestedActions: ['cerrarMediacion', 'verMediacion'] });
+    items.push({ type: 'requiereCierre', mediationId: m.id, mediationCode: m.code, title: 'Esta mediación parece lista para cerrarse', detail: `Estado actual: ${m.status}, sin fecha de cierre registrada.`, priority: 'pendiente', dueDate: null, refId: m.id, responsible: 'Vos', suggestedActions: ['cerrarMediacion', 'verMediacion'] });
   }
 
   for (const m of mediations) {
     for (const { message, threadType, participantId } of getUnactionedIncomingMessages(db, m, now)) {
-      items.push({ type: 'comunicacionSinAccion', mediationId: m.id, mediationCode: m.code, title: `Mensaje de ${threadType === 'parte' ? (partyDisplayName(db, participantId) || 'una parte') : 'un abogado'} sin acción`, detail: message.text ? (message.text.length > 80 ? message.text.slice(0, 80) + '…' : message.text) : '(mensaje con adjunto)', priority: 'pendiente', dueDate: null, refId: message.id, suggestedActions: ['verComunicacion', 'crearTarea', 'crearCompromiso'] });
+      items.push({ type: 'comunicacionSinAccion', mediationId: m.id, mediationCode: m.code, title: `Mensaje de ${threadType === 'parte' ? (partyDisplayName(db, participantId) || 'una parte') : 'un abogado'} sin acción`, detail: message.text ? (message.text.length > 80 ? message.text.slice(0, 80) + '…' : message.text) : '(mensaje con adjunto)', priority: 'pendiente', dueDate: null, refId: message.id, responsible: 'Vos', suggestedActions: ['verComunicacion', 'crearTarea', 'crearCompromiso'] });
     }
     for (const { party, lastMessageAt, thresholdDays } of getPartiesWithNoResponse(db, m, now)) {
-      items.push({ type: 'parteSinRespuesta', mediationId: m.id, mediationCode: m.code, title: `${partyDisplayName(db, party.id) || 'Una parte'} sin responder`, detail: `Sin respuesta desde hace ${Math.floor(daysBetween(lastMessageAt, now))} día(s) (umbral: ${thresholdDays}).`, priority: 'pendiente', dueDate: null, refId: party.id, suggestedActions: ['verComunicacion', 'contactar', 'crearTarea', 'descartar'] });
+      const responsible = partyDisplayName(db, party.id) || 'Una parte';
+      items.push({ type: 'parteSinRespuesta', mediationId: m.id, mediationCode: m.code, title: `${responsible} sin responder`, detail: `Sin respuesta desde hace ${Math.floor(daysBetween(lastMessageAt, now))} día(s) (umbral: ${thresholdDays}).`, priority: 'pendiente', dueDate: null, refId: party.id, responsible, suggestedActions: ['verComunicacion', 'contactar', 'crearTarea', 'descartar'] });
     }
   }
 

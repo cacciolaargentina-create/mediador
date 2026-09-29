@@ -49,7 +49,7 @@ async function postMessage(io, channel, { senderId, text, flagged, reason, reply
     id: nanoid(), channelId: channel.id, senderId,
     text, flagged: !!flagged, reason: reason || null, pattern: false, readAt: null, createdAt: now,
     replyToId: validReplyToId, deliverAt: deliverDelayMs > 0 ? now + deliverDelayMs : now,
-    attachment: attachment || null,
+    attachment: attachment || null, via: 'interno',
   };
   db.messages.push(msg);
   await commit();
@@ -88,6 +88,7 @@ async function finalizeMessage(io, channel, messageId) {
         id: nanoid(), channelId: channel.id, senderId: null,
         text: `Se detectaron ${flaggedCount} mensajes marcados por el sistema enviados por ${sender ? sender.name : 'un miembro'} en este canal.`,
         flagged: false, reason: null, pattern: true, deliverAt: Date.now(), createdAt: Date.now(),
+        via: 'sistema',
       };
       db.messages.push(patternMsg);
       await commit();
@@ -149,6 +150,7 @@ async function postSystemMessage(io, channel, text) {
   const msg = {
     id: nanoid(), channelId: channel.id, senderId: null,
     text, flagged: false, reason: null, pattern: false, deliverAt: now, createdAt: now,
+    via: 'sistema',
   };
   db.messages.push(msg);
   await commit();

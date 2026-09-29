@@ -86,6 +86,7 @@ const MEDIATION_STATUS_LABELS = {
   incomparecencia:'Incomparecencia', cerrada:'Cerrada',
 };
 const COMMITMENT_STATUS_LABELS = { pendiente:'Pendiente', cumplido:'Cumplido', vencido:'Vencido', cancelado:'Cancelado' };
+const TASK_PRIORITY_LABELS = { baja:'Baja', media:'Media', alta:'Alta', urgente:'Urgente' };
 // Bloque 28 §12 — solo para mostrar "Virtual · Google Meet"; el backend
 // nunca manda acá nada más que el nombre del proveedor (ver routes/party-portal.js).
 const MODALITY_LABELS = { presencial:'Presencial', virtual:'Virtual', hibrida:'Híbrida' };
@@ -113,7 +114,25 @@ async function render(){
       <div style="font-size:14px; font-weight:600; margin-bottom:12px;">${MEDIATION_STATUS_LABELS[data.mediationStatus] || data.mediationStatus}</div>
       <div class="eyebrow" style="margin-bottom:2px;">Pendiente</div>
       <div style="font-size:14px; font-weight:600; color:${data.pendiente ? 'var(--warn)' : 'var(--calm)'};">${data.pendiente ? escapeHtml(data.pendiente) : 'Nada pendiente de tu parte ahora mismo'}</div>
+      ${data.mediator ? `<div class="eyebrow" style="margin-top:12px; margin-bottom:2px;">Tu mediador/a</div><div style="font-size:14px;">${escapeHtml(data.mediator.name || '')}</div>` : ''}
     </div>
+
+    ${data.tasks && data.tasks.length ? `
+    <div class="card">
+      <h2>Tareas para vos</h2>
+      ${data.tasks.map(t => `
+        <div class="item" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+          <div>
+            <strong>${escapeHtml(t.title)}</strong>${t.dueDate ? ` · vence ${fmtDate(t.dueDate)}` : ''}
+            <br><span class="pill ${t.priority === 'urgente' || t.priority === 'alta' ? 'danger' : 'calm'}">${TASK_PRIORITY_LABELS[t.priority] || t.priority}</span>
+          </div>
+          ${t.status === 'completada'
+            ? `<span class="pill calm">Realizada</span>`
+            : `<button class="primary" onclick="completeTask('${t.id}')">Marcar realizada</button>`}
+        </div>
+      `).join('')}
+    </div>
+    ` : ''}
 
     <div class="card">
       <h2>Audiencias</h2>
@@ -219,6 +238,13 @@ async function sendMessage(){
     await api(`/api/party-portal/${token}/messages`, { method:'POST', body: JSON.stringify({ text }) });
     await loadChat();
   }catch(e){ showToast(e.error || 'No se pudo enviar el mensaje.', 'danger'); }
+}
+
+async function completeTask(taskId){
+  try{
+    await api(`/api/party-portal/${token}/tasks/${taskId}/complete`, { method:'POST' });
+    render();
+  }catch(e){ showToast(e.error || 'No se pudo marcar la tarea.', 'danger'); }
 }
 
 async function confirmHearing(hearingId, response){
