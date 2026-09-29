@@ -19,12 +19,16 @@
 // 100% hosteado por Mercado Pago que se buscaba (nunca tocar datos de
 // tarjeta, §24). Mezclar "con plan asociado" con status:"pending" sin
 // card_token_id no es ninguno de los dos flujos que Mercado Pago
-// documenta, y es la explicación más probable del bug externo conocido
+// documenta, y era la explicación más probable del bug externo conocido
 // (mercadopago/sdk-nodejs#480: init_point con "&activation=true" roto)
-// que estaba anotado acá — con el modelo correcto ("sin plan asociado,
-// pago pendiente") esa combinación de parámetros nunca se da, así que la
-// nota de riesgo se sacó (ver docs/MERCADOPAGO_SETUP.md para el detalle
-// completo de la corrección).
+// que estaba anotado acá. CORRECCIÓN (2026-09-29, probado con una
+// suscripción real): el parámetro "&activation=true" sigue apareciendo en
+// el init_point también con este modelo — la suposición de que "esa
+// combinación de parámetros nunca se da" era incorrecta. Lo que SÍ se
+// confirmó end-to-end (API → init_point → checkout real en el browser) es
+// que la página carga bien igual, sin el error del issue original —
+// parece resuelto del lado de Mercado Pago, no por evitar el parámetro
+// (ver docs/MERCADOPAGO_SETUP.md para el detalle completo).
 //
 // POST /preapproval SIN preapproval_plan_id, SIN card_token_id, con
 // status:"pending" y el auto_recurring completo inline devuelve

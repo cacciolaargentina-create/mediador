@@ -109,14 +109,23 @@ actualizada desde disco).
 
 El bug externo que estaba documentado acá (`mercadopago/sdk-nodejs#480`,
 `init_point` con `&activation=true` roto) era específico del modelo "con
-plan asociado" que ya no se usa — con `/preapproval` sin
-`preapproval_plan_id` esa combinación de parámetros no se da. Aun así,
-**nunca asumir que un flujo de pago externo funciona sin probarlo**:
-antes de anunciar billing a usuarios reales, probar `POST
-/api/billing/subscribe` con credenciales de **test** reales y confirmar
-que el `init_point` devuelto abre correctamente la página de autorización
-de Mercado Pago, que el pago de prueba completa, y que el webhook (o la
-reconciliación horaria) efectivamente pasa la cuenta a `active`.
+plan asociado" que ya no se usa. **Corrección tras probarlo de verdad
+(2026-09-29):** el parámetro `&activation=true` SIGUE apareciendo en el
+`init_point` también con `/preapproval` sin `preapproval_plan_id` — la
+suposición de que "esa combinación de parámetros no se da" era incorrecta.
+Lo que sí se confirmó con una suscripción de prueba real end-to-end (API
+`createSubscription` → `init_point` → página de Mercado Pago abierta en un
+browser real) es que, con el parámetro presente, la página de checkout
+carga bien igual (mostró el plan y precio correctos, sin el error "Esta
+página no existe" del issue original) — el bug parece resuelto del lado de
+Mercado Pago, no por evitar el parámetro. Igual: **nunca asumir que un
+flujo de pago externo sigue funcionando sin volver a probarlo** si Mercado
+Pago cambia algo de su lado — antes de anunciar billing a usuarios reales,
+probar `POST /api/billing/subscribe` con credenciales de **test** reales y
+confirmar que el `init_point` devuelto abre correctamente la página de
+autorización de Mercado Pago, que el pago de prueba completa, y que el
+webhook (o la reconciliación horaria) efectivamente pasa la cuenta a
+`active`.
 
 ## Salir a producción
 
