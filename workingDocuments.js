@@ -19,6 +19,14 @@ const MODALITY_LABELS_ES = { presencial: 'Presencial', virtual: 'Virtual', hibri
 function partyLabel(p) {
   return p.legalName || `${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Parte sin nombre';
 }
+// nunca pasar un "YYYY-MM-DD" por `new Date()`: se interpreta como
+// medianoche UTC y en husos con offset negativo (Argentina, UTC-3)
+// muestra el día anterior — mismo bug ya encontrado y evitado en
+// routes/mediations.js (fmtDateEs) y en el panel de vencimientos del
+// cliente (fmtDateOnly).
+function fmtDateEs(ymd) {
+  return String(ymd || '').split('-').reverse().join('/');
+}
 
 // banner "BORRADOR" repetido en cada página — no es una marca de agua
 // diagonal (más difícil de leer/imprimir bien en pdfkit sin líos de
@@ -132,4 +140,121 @@ async function buildConvocationLetterPDF({ mediation, hearing, parties }) {
   });
 }
 
-module.exports = { buildDraftMinutesPDF, buildConvocationLetterPDF };
+// 3.3 — acta de apertura. Deja constancia de que la mediación arrancó y
+// quiénes fueron convocados originalmente — solo datos ya cargados en el
+// expediente (partes, abogados, objeto), nada de contenido inventado.
+async function buildOpeningActPDF({ mediation, parties, lawyers }) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
+    const chunks = [];
+    doc.on('data', (c) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    header(doc, 'Acta de apertura de mediación');
+
+    doc.fontSize(10).font('Helvetica-Bold').text('Mediación: ', { continued: true }).font('Helvetica').text(`${mediation.code} — ${mediation.object}`);
+    if (mediation.internalNumber) doc.font('Helvetica-Bold').text('Número interno: ', { continued: true }).font('Helvetica').text(mediation.internalNumber);
+    doc.font('Helvetica-Bold').text('Tipo: ', { continued: true }).font('Helvetica').text(mediation.type || '—');
+    doc.moveDown(1);
+
+    doc.fontSize(9).font('Helvetica').fillColor('#555')
+      .text('Se deja constancia de la apertura del presente procedimiento de mediación, con la comparecencia e intervención de las siguientes partes y sus representantes letrados según constan cargados en el expediente a esta fecha:');
+    doc.moveDown(0.8);
+
+    doc.fontSize(12).font('Helvetica-Bold').fillColor('#8a5c14').text('Partes convocadas');
+    doc.moveDown(0.3);
+    doc.fontSize(9).font('Helvetica').fillColor('#222');
+    if (parties.length === 0) doc.fillColor('#888').text('— sin partes cargadas —');
+    parties.forEach((p) => {
+      const lawyer = lawyers.find((l) => l.partyId === p.id);
+      doc.font('Helvetica-Bold').fillColor('#222').text(`${partyLabel(p)} (${p.role || 'parte'})`);
+      if (lawyer) doc.fontSize(8).fillColor('#8A989A').text(`   Abogado/a: ${lawyer.name}${lawyer.enrollmentNumber ? ' — Matrícula ' + lawyer.enrollmentNumber : ''}`);
+      doc.fontSize(9).fillColor('#222');
+    });
+    doc.moveDown(1);
+
+    doc.fontSize(9).font('Helvetica').fillColor('#888')
+      .text('(Espacio para completar manualmente — este borrador no incluye contenido generado sobre lo tratado en la apertura.)');
+
+    footer(doc);
+    doc.end();
+  });
+}
+
+// 3.4 — acta de incomparecencia. Se genera para una audiencia puntual
+// marcada 'no_realizada' — usa el estado de confirmación de cada parte
+// (lo único que el sistema realmente sabe sobre quién avisó qué) y la
+// nota cargada al marcar la audiencia como no realizada, nunca afirma
+// por sí solo quién faltó si el dato no está cargado.
+async function buildNoShowActPDF({ mediation, hearing, parties, lawyers, confirmations, note }) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
+    const chunks = [];
+    doc.on('data', (c) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    header(doc, 'Acta de incomparecencia');
+
+    doc.fontSize(10).font('Helvetica-Bold').text('Mediación: ', { continued: true }).font('Helvetica').text(`${mediation.code} — ${mediation.object}`);
+    doc.font('Helvetica-Bold').text('Audiencia del: ', { continued: true }).font('Helvetica').text(`${fmtDateEs(hearing.date)}${hearing.startTime ? ' · ' + hearing.startTime : ''}`);
+    doc.font('Helvetica-Bold').text('Modalidad: ', { continued: true }).font('Helvetica').text(MODALITY_LABELS_ES[hearing.modality] || hearing.modality);
+    doc.moveDown(1);
+
+    doc.fontSize(12).font('Helvetica-Bold').fillColor('#8a5c14').text('Estado de confirmación de las partes');
+    doc.moveDown(0.3);
+    doc.fontSize(9).font('Helvetica').fillColor('#222');
+    if (parties.length === 0) doc.fillColor('#888').text('— sin partes cargadas —');
+    parties.forEach((p) => {
+      const confirmation = confirmations.find((c) => c.partyId === p.id);
+      const lawyer = lawyers.find((l) => l.partyId === p.id);
+      doc.font('Helvetica-Bold').fillColor('#222').text(`${partyLabel(p)} (${p.role || 'parte'})`, { continued: true })
+        .font('Helvetica').fillColor('#555').text(`  —  ${CONFIRMATION_LABELS_ES[confirmation ? confirmation.response : 'pendiente']}`);
+      if (lawyer) doc.fontSize(8).fillColor('#8A989A').text(`   Abogado/a: ${lawyer.name}`);
+      doc.fontSize(9).fillColor('#222');
+    });
+    doc.moveDown(1);
+
+    doc.fontSize(12).font('Helvetica-Bold').fillColor('#8a5c14').text('Observaciones cargadas por el/la mediador/a');
+    doc.moveDown(0.3);
+    doc.fontSize(9).font('Helvetica').fillColor(note ? '#222' : '#888')
+      .text(note || '— sin observaciones cargadas al marcar la audiencia como no realizada —');
+
+    footer(doc);
+    doc.end();
+  });
+}
+
+// 3.5 — acta de reprogramación. Toma fecha anterior/nueva directo del
+// evento HEARING_RESCHEDULED ya registrado (routes/mediations.js) —
+// nunca las recalcula ni las infiere.
+async function buildRescheduleActPDF({ mediation, hearing, fromDate, fromStartTime, toDate, toStartTime, note }) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
+    const chunks = [];
+    doc.on('data', (c) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    header(doc, 'Acta de reprogramación de audiencia');
+
+    doc.fontSize(10).font('Helvetica-Bold').text('Mediación: ', { continued: true }).font('Helvetica').text(`${mediation.code} — ${mediation.object}`);
+    doc.moveDown(0.6);
+
+    doc.font('Helvetica-Bold').text('Fecha original: ', { continued: true }).font('Helvetica').text(`${fmtDateEs(fromDate)}${fromStartTime ? ' · ' + fromStartTime : ''}`);
+    doc.font('Helvetica-Bold').text('Nueva fecha: ', { continued: true }).font('Helvetica').text(`${fmtDateEs(toDate)}${toStartTime ? ' · ' + toStartTime : ''}`);
+    doc.font('Helvetica-Bold').text('Modalidad: ', { continued: true }).font('Helvetica').text(MODALITY_LABELS_ES[hearing.modality] || hearing.modality);
+    doc.moveDown(1);
+
+    doc.fontSize(12).font('Helvetica-Bold').fillColor('#8a5c14').text('Motivo cargado');
+    doc.moveDown(0.3);
+    doc.fontSize(9).font('Helvetica').fillColor(note ? '#222' : '#888')
+      .text(note || '— sin motivo cargado al reprogramar —');
+
+    footer(doc);
+    doc.end();
+  });
+}
+
+module.exports = { buildDraftMinutesPDF, buildConvocationLetterPDF, buildOpeningActPDF, buildNoShowActPDF, buildRescheduleActPDF };

@@ -599,7 +599,7 @@ const TAB_FOR_SCREEN = {
   dashboard:'dashboard', list:'list', detail:'list', new:'list',
   stats:'stats', team:'team', studioMediations:'team',
   agenda:'agenda', requests:'requests', comms:'comms',
-  legalTools:'legalTools', legalAuditor:'legalTools', legalVencimientos:'legalTools',
+  legalTools:'legalTools', legalAuditor:'legalTools', legalVencimientos:'legalTools', legalActas:'legalTools',
 };
 function goTo(screen, id){
   currentMediationId = id || null;
@@ -629,6 +629,7 @@ function goTo(screen, id){
   else if(screen === 'legalTools') renderPromise = renderLegalTools();
   else if(screen === 'legalAuditor') renderPromise = renderLegalAuditor(id);
   else if(screen === 'legalVencimientos') renderPromise = renderLegalVencimientos();
+  else if(screen === 'legalActas') renderPromise = renderLegalActas(id);
   else if(screen === 'commitments') renderPromise = renderCommitmentsScreen();
   else if(screen === 'hearingPrep') renderPromise = renderHearingPreparationScreen();
   else if(screen === 'videoSettings') renderPromise = renderVideoSettings();
@@ -1018,7 +1019,7 @@ async function renderDashboard(){
 // routes/mediations.js).
 const LEGAL_TOOLS = [
   { id: 'auditor', label: 'Auditor de expediente', desc: 'Revisa qué datos están completos, pendientes o inconsistentes en un expediente.', icon: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>', available: true },
-  { id: 'actas', label: 'Generador de actas', desc: 'Actas de apertura, audiencia y cierre a partir de los datos del expediente.', icon: '<path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/>', available: false },
+  { id: 'actas', label: 'Generador de actas', desc: 'Actas de apertura, audiencia, cierre, incomparecencia y reprogramación a partir de los datos del expediente.', icon: '<path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/>', available: true },
   { id: 'honorarios', label: 'Calculadora de honorarios', desc: 'Estimación de honorarios por jurisdicción, con fuente normativa citada.', icon: '<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5h4.5a2 2 0 1 1 0 4H9"/>', available: false },
   { id: 'acuerdos', label: 'Constructor de acuerdos', desc: 'Armá la estructura de un acuerdo: obligaciones, cuotas, vencimientos.', icon: '<path d="M8 12h8M8 16h5"/><rect x="4" y="4" width="16" height="16" rx="2"/>', available: false },
   { id: 'notificaciones', label: 'Generador de notificaciones', desc: 'Plantillas de citación, reprogramación y otros avisos del expediente.', icon: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>', available: false },
@@ -1050,6 +1051,7 @@ function renderLegalTools(){
 function openLegalTool(toolId){
   if(toolId === 'auditor') return goTo('legalAuditor', currentMediationId || null);
   if(toolId === 'vencimientos') return goTo('legalVencimientos');
+  if(toolId === 'actas') return goTo('legalActas', currentMediationId || null);
 }
 
 const AUDIT_STATUS_META = {
@@ -1162,6 +1164,125 @@ async function renderLegalVencimientos(){
       `;
     }).join('')}
   `;
+}
+
+// ---- Generador de actas ----
+// Reusa PDFs que ya existían pero sin ninguna pantalla que los mostrara
+// (draft-minutes, convocation-letter) más tres tipos nuevos que siguen
+// EXACTAMENTE el mismo patrón "documento de trabajo" (workingDocuments.js:
+// banner BORRADOR, sin hash ni firma). El acta de cierre es la única que
+// certifica (hash + firma Ed25519, ya existía desde el Bloque 34) — la
+// separación entre "documento de trabajo" y "documento certificado" se
+// muestra explícita en cada tarjeta, nunca mezclada.
+function actaHearingOptionLabel(h){
+  return `${fmtDateOnly(h.date)}${h.startTime ? ' · ' + h.startTime : ''}${h.status ? ' — ' + (HEARING_STATUS_LABELS[h.status] || h.status) : ''}`;
+}
+async function renderLegalActas(mediationId){
+  const main = document.getElementById('main');
+  if(!mediationId){
+    main.innerHTML = `<p class="empty-hint">Cargando…</p>`;
+    let list;
+    try{ list = await api('/api/mediations'); }
+    catch(e){ main.innerHTML = `<p class="empty-hint">No se pudieron cargar tus mediaciones.</p>`; return; }
+    main.innerHTML = `
+      <a href="#" onclick="event.preventDefault(); goTo('legalTools');" style="font-size:13px; font-weight:600;">← Herramientas legales</a>
+      <h1 style="margin-top:10px;">Generador de actas</h1>
+      <p style="color:var(--text-dim); font-size:15px; margin-bottom:20px;">Elegí un expediente para generar un acta.</p>
+      ${list.length ? `<div class="card">${list.map(m => `
+        <div class="alert-row" onclick="goTo('legalActas','${m.id}')">
+          <div><div style="font-weight:600; font-size:13.5px;">${escapeHtml(m.code)}</div><div class="code">${escapeHtml(m.object || 'Sin carátula')}</div></div>
+          <span class="status-badge ${STATUS_BADGE_CLASS[m.status]||'st-neutral'}">${escapeHtml(STATUS_LABELS[m.status]||m.status)}</span>
+        </div>
+      `).join('')}</div>` : `<p class="empty-hint">Todavía no tenés mediaciones.</p>`}
+    `;
+    return;
+  }
+  main.innerHTML = `<p class="empty-hint">Cargando…</p>`;
+  let mediation, data;
+  try{
+    [mediation, data] = await Promise.all([
+      api('/api/mediations/' + mediationId),
+      api('/api/mediations/' + mediationId + '/legal-tools/actas'),
+    ]);
+  }catch(e){ main.innerHTML = `<p class="empty-hint">No se pudo cargar el generador de actas de este expediente.</p>`; return; }
+
+  const workDocBadge = `<span class="status-badge st-neutral" style="margin-left:8px;">Documento de trabajo</span>`;
+  const certifiedBadge = `<span class="status-badge st-calm" style="margin-left:8px;">Documento certificado</span>`;
+
+  main.innerHTML = `
+    <a href="#" onclick="event.preventDefault(); goTo('legalActas');" style="font-size:13px; font-weight:600;">← Elegir otro expediente</a>
+    <h1 style="margin-top:10px;">Generador de actas</h1>
+    <p style="color:var(--text-dim); font-size:15px; margin-bottom:20px;">${escapeHtml(mediation.code)} — ${escapeHtml(mediation.object || 'Sin carátula')}</p>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h2>Acta de apertura${workDocBadge}</h2>
+      <p class="empty-hint" style="margin:4px 0 10px;">Deja constancia de la apertura del expediente y las partes convocadas. Sin contenido generado — es un borrador para completar a mano.</p>
+      ${data.apertura.eligible
+        ? `<a class="btn-primary" href="/api/mediations/${mediationId}/export/acta-apertura">Descargar borrador</a>`
+        : `<p class="empty-hint">${escapeHtml(data.apertura.reason)}</p>`}
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h2>Acta de audiencia${workDocBadge}</h2>
+      <p class="empty-hint" style="margin:4px 0 10px;">Fecha, modalidad y estado de confirmación de cada parte para una audiencia puntual.</p>
+      ${data.audiencia.eligible ? `
+        <select id="acta-audiencia-select" style="margin-bottom:10px;">
+          ${data.audiencia.hearings.map(h => `<option value="${h.id}">${escapeHtml(actaHearingOptionLabel(h))}</option>`).join('')}
+        </select>
+        <button class="primary" onclick="downloadActaAudiencia('${mediationId}')">Descargar borrador</button>
+      ` : `<p class="empty-hint">Todavía no hay audiencias cargadas en este expediente.</p>`}
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h2>Acta de cierre${data.cierre.resultLabel ? ' (' + escapeHtml(data.cierre.resultLabel) + ')' : ''}${certifiedBadge}</h2>
+      <p class="empty-hint" style="margin:4px 0 10px;">Incluye hash de integridad y firma digital — es el documento final, no un borrador.</p>
+      ${data.cierre.eligible
+        ? `<a class="btn-primary" href="/api/mediations/${mediationId}/export/acta-cierre">Descargar acta de cierre certificada</a>`
+        : `<p class="empty-hint">${escapeHtml(data.cierre.reason)}</p>`}
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h2>Acta de incomparecencia${workDocBadge}</h2>
+      <p class="empty-hint" style="margin:4px 0 10px;">Solo para audiencias ya marcadas como "no realizada" — usa el estado de confirmación de cada parte y la nota cargada al marcarla.</p>
+      ${data.incomparecencia.eligible ? `
+        <select id="acta-incomparecencia-select" style="margin-bottom:10px;">
+          ${data.incomparecencia.hearings.map(h => `<option value="${h.id}">${escapeHtml(fmtDateOnly(h.date))}${h.startTime ? ' · ' + escapeHtml(h.startTime) : ''}</option>`).join('')}
+        </select>
+        <button class="primary" onclick="downloadActaIncomparecencia('${mediationId}')">Descargar borrador</button>
+      ` : `<p class="empty-hint">No hay audiencias marcadas como "no realizada" en este expediente.</p>`}
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h2>Acta de reprogramación${workDocBadge}</h2>
+      <p class="empty-hint" style="margin:4px 0 10px;">Fecha original y nueva fecha, tomadas directo del cambio ya registrado — solo para audiencias que fueron reprogramadas.</p>
+      ${data.reprogramacion.eligible ? `
+        <select id="acta-reprogramacion-select" style="margin-bottom:10px;">
+          ${data.reprogramacion.hearings.map(h => `<option value="${h.id}">${escapeHtml(fmtDateOnly(h.fromDate))} → ${escapeHtml(fmtDateOnly(h.toDate))}</option>`).join('')}
+        </select>
+        <button class="primary" onclick="downloadActaReprogramacion('${mediationId}')">Descargar borrador</button>
+      ` : `<p class="empty-hint">Ninguna audiencia de este expediente fue reprogramada todavía.</p>`}
+    </div>
+
+    <div class="card" style="opacity:.65;">
+      <h2>Otros tipos de acta <span class="legal-tool-soon">Próximamente</span></h2>
+      <p class="empty-hint" style="margin-top:4px;">Plantillas configurables para otros tipos de documento.</p>
+    </div>
+  `;
+}
+function downloadActaAudiencia(mediationId){
+  const sel = document.getElementById('acta-audiencia-select');
+  if(!sel || !sel.value) return;
+  window.open(`/api/mediations/${mediationId}/hearings/${sel.value}/draft-minutes`, '_blank');
+}
+function downloadActaIncomparecencia(mediationId){
+  const sel = document.getElementById('acta-incomparecencia-select');
+  if(!sel || !sel.value) return;
+  window.open(`/api/mediations/${mediationId}/hearings/${sel.value}/acta-incomparecencia`, '_blank');
+}
+function downloadActaReprogramacion(mediationId){
+  const sel = document.getElementById('acta-reprogramacion-select');
+  if(!sel || !sel.value) return;
+  window.open(`/api/mediations/${mediationId}/hearings/${sel.value}/acta-reprogramacion`, '_blank');
 }
 
 // ================= LISTA =================

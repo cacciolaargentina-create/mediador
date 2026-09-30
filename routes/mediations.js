@@ -19,7 +19,7 @@ const { integrityHash, buildMediationPlainContent, buildMediationCertifiedPDF, b
 const { checkHearingConflicts, toMinutes } = require('../agenda');
 const { notifyPartyAboutHearing, notifyLawyerAboutHearing, notifyParty, notifyLawyer, postSystemMessage, baseUrl } = require('../messaging');
 const { askMediationAssistant, askDashboardAssistant, askMediationAssistantAboutDocument, suggestTasksFromNote } = require('../assistant');
-const { buildDraftMinutesPDF, buildConvocationLetterPDF } = require('../workingDocuments');
+const { buildDraftMinutesPDF, buildConvocationLetterPDF, buildOpeningActPDF, buildNoShowActPDF, buildRescheduleActPDF } = require('../workingDocuments');
 const automationEngine = require('../automationEngine');
 const { getHearingPreparationState, getDashboardAttentionItems, getMediationAttentionItems, isAlertDismissed } = automationEngine;
 const archiver = require('archiver');
@@ -1208,6 +1208,51 @@ module.exports = function (io, presence) {
     const counts = { ok: 0, pendiente: 0, inconsistencia: 0, no_aplica: 0 };
     checks.forEach((c) => { counts[c.status] = (counts[c.status] || 0) + 1; });
     res.json({ checks, counts });
+  });
+
+  // Herramientas Legales — Generador de actas: "validación previa" (spec
+  // §4) de qué tipos de acta se pueden generar para ESTE expediente en
+  // este momento, y con qué audiencia puntual en los tres tipos que
+  // dependen de una. Solo lectura — no genera nada acá, el frontend
+  // decide qué mostrar habilitado/deshabilitado con esto.
+  router.get('/:id/legal-tools/actas', requireAuth, requireMediationAccess, (req, res) => {
+    const db = getDB();
+    const mediation = req.mediation;
+    const hearings = db.hearings.filter((h) => h.mediationId === mediation.id).sort((a, b) => a.date.localeCompare(b.date));
+    const parties = db.parties.filter((p) => p.mediationId === mediation.id && p.status === 'activa');
+
+    const apertura = {
+      eligible: parties.length > 0,
+      reason: parties.length > 0 ? null : 'Todavía no hay partes cargadas en el expediente.',
+    };
+
+    const closed = !!mediation.closedAt;
+    const conAcuerdo = ['acuerdo_total', 'acuerdo_parcial'].includes(mediation.closedResult);
+    const cierre = {
+      eligible: closed,
+      reason: closed ? null : 'La mediación todavía no está cerrada.',
+      resultLabel: closed ? (conAcuerdo ? 'con acuerdo' : 'sin acuerdo') : null,
+    };
+
+    const audienciaHearings = hearings.map((h) => ({ id: h.id, date: h.date, startTime: h.startTime, status: h.status }));
+    const audiencia = { eligible: audienciaHearings.length > 0, hearings: audienciaHearings };
+
+    const noShowHearings = hearings.filter((h) => h.status === 'no_realizada').map((h) => ({ id: h.id, date: h.date, startTime: h.startTime }));
+    const incomparecencia = { eligible: noShowHearings.length > 0, hearings: noShowHearings };
+
+    const rescheduleHearings = hearings
+      .map((h) => {
+        const events = db.mediationEvents
+          .filter((e) => e.type === 'HEARING_RESCHEDULED' && e.entityId === h.id)
+          .sort((a, b) => b.createdAt - a.createdAt);
+        if (!events.length) return null;
+        const meta = events[0].metadata || {};
+        return { id: h.id, date: h.date, startTime: h.startTime, fromDate: meta.fromDate, fromStartTime: meta.fromStartTime, toDate: meta.toDate, toStartTime: meta.toStartTime };
+      })
+      .filter(Boolean);
+    const reprogramacion = { eligible: rescheduleHearings.length > 0, hearings: rescheduleHearings };
+
+    res.json({ apertura, cierre, audiencia, incomparecencia, reprogramacion });
   });
 
   // ---------- editar datos generales ----------
@@ -3365,6 +3410,72 @@ module.exports = function (io, presence) {
     } catch (err) {
       console.error('Error generando carta de convocatoria:', err);
       res.status(500).json({ error: 'No se pudo generar la carta de convocatoria' });
+    }
+  });
+
+  // Herramientas Legales — Generador de actas (Bloque 41). Acta de
+  // apertura: documento de trabajo, mismo patrón que draft-minutes de
+  // arriba (banner BORRADOR, sin hash ni firma — eso queda reservado
+  // para el acta de cierre, que es la que certifica el resultado final).
+  router.get('/:id/export/acta-apertura', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    const db = getDB();
+    const mediation = req.mediation;
+    const parties = db.parties.filter((p) => p.mediationId === mediation.id && p.status === 'activa');
+    const lawyers = db.lawyers.filter((l) => l.mediationId === mediation.id);
+    try {
+      const buffer = await buildOpeningActPDF({ mediation, parties, lawyers });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="acta-apertura-${mediation.code}.pdf"`);
+      res.send(buffer);
+    } catch (err) {
+      console.error('Error generando acta de apertura:', err);
+      res.status(500).json({ error: 'No se pudo generar el acta de apertura' });
+    }
+  });
+
+  router.get('/:id/hearings/:hearingId/acta-incomparecencia', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    const db = getDB();
+    const mediation = req.mediation;
+    const hearing = db.hearings.find((h) => h.id === req.params.hearingId && h.mediationId === mediation.id);
+    if (!hearing) return res.status(404).json({ error: 'Audiencia no encontrada en esta mediación' });
+    if (hearing.status !== 'no_realizada') {
+      return res.status(400).json({ error: 'Esta audiencia no está marcada como no realizada.' });
+    }
+    const parties = db.parties.filter((p) => p.mediationId === mediation.id && p.status === 'activa');
+    const lawyers = db.lawyers.filter((l) => l.mediationId === mediation.id);
+    const confirmations = db.hearingConfirmations.filter((c) => c.hearingId === hearing.id);
+    const noteEvent = db.mediationEvents
+      .filter((e) => e.type === 'HEARING_NOT_HELD' && e.entityId === hearing.id)
+      .sort((a, b) => b.createdAt - a.createdAt)[0];
+    try {
+      const buffer = await buildNoShowActPDF({ mediation, hearing, parties, lawyers, confirmations, note: noteEvent?.description || hearing.notes || null });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="acta-incomparecencia-${mediation.code}-${hearing.date}.pdf"`);
+      res.send(buffer);
+    } catch (err) {
+      console.error('Error generando acta de incomparecencia:', err);
+      res.status(500).json({ error: 'No se pudo generar el acta de incomparecencia' });
+    }
+  });
+
+  router.get('/:id/hearings/:hearingId/acta-reprogramacion', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    const db = getDB();
+    const mediation = req.mediation;
+    const hearing = db.hearings.find((h) => h.id === req.params.hearingId && h.mediationId === mediation.id);
+    if (!hearing) return res.status(404).json({ error: 'Audiencia no encontrada en esta mediación' });
+    const event = db.mediationEvents
+      .filter((e) => e.type === 'HEARING_RESCHEDULED' && e.entityId === hearing.id)
+      .sort((a, b) => b.createdAt - a.createdAt)[0];
+    if (!event) return res.status(400).json({ error: 'Esta audiencia no tiene ninguna reprogramación registrada.' });
+    const meta = event.metadata || {};
+    try {
+      const buffer = await buildRescheduleActPDF({ mediation, hearing, fromDate: meta.fromDate, fromStartTime: meta.fromStartTime, toDate: meta.toDate, toStartTime: meta.toStartTime, note: event.description || null });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="acta-reprogramacion-${mediation.code}-${hearing.date}.pdf"`);
+      res.send(buffer);
+    } catch (err) {
+      console.error('Error generando acta de reprogramación:', err);
+      res.status(500).json({ error: 'No se pudo generar el acta de reprogramación' });
     }
   });
 
