@@ -20,6 +20,7 @@ const { checkHearingConflicts, toMinutes } = require('../agenda');
 const { notifyPartyAboutHearing, notifyLawyerAboutHearing, notifyParty, notifyLawyer, postSystemMessage, baseUrl } = require('../messaging');
 const { askMediationAssistant, askDashboardAssistant, askMediationAssistantAboutDocument, suggestTasksFromNote } = require('../assistant');
 const { buildDraftMinutesPDF, buildConvocationLetterPDF, buildOpeningActPDF, buildNoShowActPDF, buildRescheduleActPDF } = require('../workingDocuments');
+const { ensureHonorariosSeeded } = require('../honorariosSeed');
 const automationEngine = require('../automationEngine');
 const { getHearingPreparationState, getDashboardAttentionItems, getMediationAttentionItems, isAlertDismissed } = automationEngine;
 const archiver = require('archiver');
@@ -1190,6 +1191,109 @@ module.exports = function (io, presence) {
     const db = getDB();
     const mine = getMyMediations(db, req.user).filter((m) => !m.closedAt);
     res.json(buildVencimientosPanel(db, mine));
+  });
+
+  // Herramientas Legales — Calculadora de honorarios (Bloque 42). Los
+  // valores (escalas + valor de la unidad) viven en la base, sembrados y
+  // actualizados desde routes/admin-mediador.js — acá solo se LEEN y se
+  // aplican, nunca se hardcodea un peso. Cualquier mediador autenticado
+  // puede consultar esto (no hace falta ser admin para usar la
+  // calculadora, solo para cargar un valor nuevo).
+  router.get('/legal-tools/honorarios/scales', requireAuth, async (req, res) => {
+    const db = getDB();
+    if (ensureHonorariosSeeded(db) > 0) await commit();
+    const scales = db.honorariosScales.map((s) => {
+      const vigente = db.honorariosUnitValues.find((v) => v.scaleId === s.id && v.fechaHasta === null);
+      return { ...s, valorUnidadVigente: vigente || null };
+    });
+    res.json(scales);
+  });
+
+  router.post('/legal-tools/honorarios/calcular', requireAuth, async (req, res) => {
+    const db = getDB();
+    if (ensureHonorariosSeeded(db) > 0) await commit();
+    const { scaleId, monto, montoIndeterminado, sinValorPecuniario, estado, cantidadAudiencias } = req.body || {};
+    const scale = db.honorariosScales.find((s) => s.id === scaleId);
+    if (!scale) return res.status(404).json({ error: 'Escala no encontrada' });
+    const valorUnidad = db.honorariosUnitValues.find((v) => v.scaleId === scale.id && v.fechaHasta === null);
+    if (!valorUnidad) return res.status(400).json({ error: 'No hay un valor de la unidad cargado para esta escala — no se puede estimar sin ese dato.' });
+
+    const advertencias = [
+      `Este valor de la ${scale.unidad} corresponde al período que empieza el ${valorUnidad.fechaDesde} — la última vez que se confirmó contra la fuente oficial fue el ${new Date(valorUnidad.fechaVerificacion).toLocaleDateString('es-AR')}. La ${scale.unidad} se actualiza mes a mes: si pasó más de un mes desde esa fecha, puede haber un valor más nuevo — confirmá en la fuente oficial antes de usar esta estimación como base de un cobro.`,
+      'Esta estimación no incluye gastos administrativos ni costos de notificación, que la autoridad de aplicación fija por separado.',
+      'Carácter indicativo mínimo: los honorarios pueden acordarse voluntariamente, nunca por debajo de este mínimo (art. 28 inciso a, Decreto 1467/2011).',
+    ];
+
+    if (estado === 'en_curso') {
+      const unidades = scale.honorarioProvisionalUnidades;
+      return res.json({
+        unidadAplicable: scale.unidad,
+        tramoAplicado: { item: null, label: 'Honorario provisional — la mediación sigue en curso' },
+        cantidadUnidades: unidades,
+        valorUnidad: { pesos: valorUnidad.valorPesos, fechaDesde: valorUnidad.fechaDesde, fechaVerificacion: valorUnidad.fechaVerificacion, fuente: valorUnidad.fuente, urlFuente: valorUnidad.urlFuente },
+        honorarioEstimadoPesos: unidades * valorUnidad.valorPesos,
+        gastosArancelesAplicables: null,
+        totalEstimadoPesos: unidades * valorUnidad.valorPesos,
+        fechaVigenciaEscala: valorUnidad.fechaDesde,
+        fuenteNormativa: { norma: scale.norma, fuente: scale.fuente, urlFuente: scale.urlFuente, fechaVerificacion: scale.fechaVerificacion },
+        advertencias: ['La mediación todavía está en curso: esto es solo el honorario PROVISIONAL (art. 28 inciso b). El honorario básico se define recién al cierre, según monto y resultado.', ...advertencias],
+      });
+    }
+
+    let tramo, honorarioBasicoUnidades;
+    if (scale.tipoMediacion === 'familiar') {
+      tramo = scale.tramos[0];
+      honorarioBasicoUnidades = tramo.honorarioUnidades;
+    } else if (sinValorPecuniario) {
+      tramo = scale.tramos.find((t) => t.tipo === 'sin_valor_pecuniario');
+      honorarioBasicoUnidades = tramo.honorarioUnidades;
+    } else if (montoIndeterminado) {
+      tramo = scale.tramos.find((t) => t.tipo === 'indeterminado');
+      honorarioBasicoUnidades = tramo.honorarioUnidades;
+    } else {
+      const montoNum = Number(monto);
+      if (!Number.isFinite(montoNum) || montoNum <= 0) {
+        return res.status(400).json({ error: 'Falta un monto válido (o marcá "monto indeterminado" / "sin valor pecuniario")' });
+      }
+      const montoEnUnidades = montoNum / valorUnidad.valorPesos;
+      tramo = scale.tramos.find((t) => !t.tipo && (t.montoHastaUnidades == null || montoEnUnidades <= t.montoHastaUnidades) && (t.montoDesdeUnidades == null || montoEnUnidades > t.montoDesdeUnidades));
+      if (!tramo) return res.status(400).json({ error: 'No se pudo ubicar un tramo de la escala para ese monto' });
+      if (tramo.porcentaje) {
+        honorarioBasicoUnidades = Math.min((montoNum * tramo.porcentaje / 100) / valorUnidad.valorPesos, tramo.topeUnidades);
+      } else {
+        honorarioBasicoUnidades = tramo.honorarioUnidades;
+      }
+    }
+
+    let adicionalUnidades = 0;
+    const adic = scale.adicionalPorAudiencia;
+    const audiencias = Number(cantidadAudiencias) || 0;
+    if (adic && audiencias >= adic.desdeAudiencia) {
+      if (scale.tipoMediacion === 'familiar') {
+        adicionalUnidades = adic.unidadesMayor;
+      } else {
+        adicionalUnidades = (adic.itemsMenor || []).includes(tramo.item) ? adic.unidadesMenor : adic.unidadesMayor;
+      }
+    }
+
+    let totalUnidades = honorarioBasicoUnidades + adicionalUnidades;
+    if (scale.tipoMediacion === 'familiar' && adic && adic.topeUnidades != null) {
+      totalUnidades = Math.min(totalUnidades, adic.topeUnidades);
+    }
+
+    res.json({
+      unidadAplicable: scale.unidad,
+      tramoAplicado: { item: tramo.item, label: tramo.label },
+      cantidadUnidades: totalUnidades,
+      honorarioBasicoUnidades, adicionalUnidades,
+      valorUnidad: { pesos: valorUnidad.valorPesos, fechaDesde: valorUnidad.fechaDesde, fechaVerificacion: valorUnidad.fechaVerificacion, fuente: valorUnidad.fuente, urlFuente: valorUnidad.urlFuente },
+      honorarioEstimadoPesos: totalUnidades * valorUnidad.valorPesos,
+      gastosArancelesAplicables: null,
+      totalEstimadoPesos: totalUnidades * valorUnidad.valorPesos,
+      fechaVigenciaEscala: valorUnidad.fechaDesde,
+      fuenteNormativa: { norma: scale.norma, fuente: scale.fuente, urlFuente: scale.urlFuente, fechaVerificacion: scale.fechaVerificacion },
+      advertencias,
+    });
   });
 
   // ---------- expediente (registro básico — el resumen agregado con

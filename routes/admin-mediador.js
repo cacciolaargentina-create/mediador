@@ -20,6 +20,7 @@ const { logAudit } = require('../audit');
 const { getJobStatuses, getRecentErrors } = require('../systemStatus');
 const { getMyMediations } = require('../mediationAccess');
 const radarEngine = require('../radarEngine');
+const { ensureHonorariosSeeded } = require('../honorariosSeed');
 
 // Bloque 29 — acciones que SÍ importan para el Log de Seguridad (spec §16),
 // distinto del audit log genérico (§17, que muestra TODO). Clasificado por
@@ -769,6 +770,53 @@ module.exports = function () {
     logAudit(db, { actorId: req.user.id, action: 'admin_feature_flag_toggled', meta: { key: flag.key, enabled: flag.enabled } });
     await commit();
     res.json(flag);
+  });
+
+  // ================= HERRAMIENTAS LEGALES — CALCULADORA DE HONORARIOS
+  // (Bloque 42) =================
+  // Datos y semilla en honorariosSeed.js, compartido con routes/mediations.js
+  // (que expone la lectura a cualquier mediador — no hace falta ser admin
+  // para USAR la calculadora, solo para cargar un valor nuevo). Nunca
+  // hardcodear un valor monetario acá NI en el frontend: esto solo siembra
+  // la estructura y el primer valor conocido; de ahí en más se actualiza
+  // agregando filas nuevas vía POST .../unit-values (nunca pisando las
+  // viejas), exactamente lo que pide la spec ("actualizable sin modificar
+  // el código de la aplicación").
+  router.get('/honorarios/scales', async (req, res) => {
+    const db = getDB();
+    if (ensureHonorariosSeeded(db) > 0) await commit();
+    const scales = db.honorariosScales.map((s) => ({
+      ...s,
+      unitValues: db.honorariosUnitValues.filter((v) => v.scaleId === s.id).sort((a, b) => b.fechaDesde.localeCompare(a.fechaDesde)),
+    }));
+    res.json(scales);
+  });
+  // Cargar el valor de un mes nuevo — ESTO es lo que hace "actualizable sin
+  // tocar código" real: cierra (fechaHasta) el valor vigente anterior y abre
+  // uno nuevo. Nunca pisa ni borra el histórico.
+  router.post('/honorarios/scales/:scaleId/unit-values', async (req, res) => {
+    const db = getDB();
+    const scale = db.honorariosScales.find((s) => s.id === req.params.scaleId);
+    if (!scale) return res.status(404).json({ error: 'Escala no encontrada' });
+    const { valorPesos, fechaDesde, fuente, urlFuente } = req.body || {};
+    if (!valorPesos || !Number.isFinite(Number(valorPesos)) || Number(valorPesos) <= 0) {
+      return res.status(400).json({ error: 'Falta un valorPesos válido' });
+    }
+    if (!fechaDesde) return res.status(400).json({ error: 'Falta fechaDesde' });
+    if (!fuente || !urlFuente) return res.status(400).json({ error: 'Falta fuente y urlFuente — no se carga un valor sin fuente verificable' });
+    const vigente = db.honorariosUnitValues.find((v) => v.scaleId === scale.id && v.fechaHasta === null);
+    if (vigente) {
+      const dayBefore = new Date(new Date(fechaDesde + 'T00:00:00').getTime() - 86400000).toISOString().slice(0, 10);
+      vigente.fechaHasta = dayBefore;
+    }
+    const nuevo = {
+      id: nanoid(), scaleId: scale.id, valorPesos: Number(valorPesos), fechaDesde, fechaHasta: null,
+      fuente, urlFuente, fechaVerificacion: Date.now(), createdAt: Date.now(), createdBy: req.user.id,
+    };
+    db.honorariosUnitValues.push(nuevo);
+    logAudit(db, { actorId: req.user.id, action: 'admin_honorarios_unit_value_added', meta: { scaleId: scale.id, valorPesos: nuevo.valorPesos, fechaDesde } });
+    await commit();
+    res.json(nuevo);
   });
 
   // ================= AUDITORÍA (§17) =================

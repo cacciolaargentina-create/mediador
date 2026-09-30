@@ -104,6 +104,19 @@ const EMPTY_DB = {
   supportAccessGrants: [], // { id, adminUserId, mediationId, reason, durationMinutes, startedAt, expiresAt, endedAt|null, resourcesAccessed } — read-only por definición (nunca habilita POST/PATCH). Vence solo por tiempo (expiresAt) o manualmente (endedAt) — nunca queda "para siempre". resourcesAccessed: array de strings (qué se consultó mientras estuvo activo), para poder responder "¿qué recurso fue consultado?"
   impersonationSessions: [], // { id, adminUserId, targetUserId, reason, durationMinutes, startedAt, expiresAt, endedAt|null } — "ver como usuario": solo lectura, nunca permite mandar mensajes/modificar nada (eso se valida en cada ruta, no acá)
   featureFlags: [], // { id, key, label, enabled, updatedAt, updatedBy|null } — activar/desactivar funcionalidad sin tocar código (spec §22). Nunca sustituye autorización: un flag prendido no le da acceso a quien no tiene permiso.
+
+  // ===== Herramientas Legales — Calculadora de honorarios (Bloque 42).
+  // Separado en dos tablas a propósito: honorariosScales es la ESTRUCTURA
+  // de la norma (tramos en unidades, rara vez cambia — solo si el
+  // Ministerio/la SCBA modifica la reglamentación en sí), honorariosUnitValues
+  // es el VALOR en pesos de esa unidad, que sí cambia todos los meses. Ningún
+  // valor monetario vive en el frontend ni hardcodeado en código — ambas
+  // tablas se cargan por seed versionado (ver routes/admin-mediador.js) y se
+  // actualizan agregando FILAS NUEVAS, nunca pisando las viejas (así el
+  // cálculo de una mediación cerrada hace tiempo puede recalcularse con el
+  // valor vigente EN ESE MOMENTO, no con el de hoy). =====
+  honorariosScales: [], // { id, jurisdiccion:'nacion', tipoMediacion:'general'|'familiar', unidad:'UHOM', norma, honorarioProvisionalUnidades, tramos:[{item,label,honorarioUnidades,montoDesdeUnidades|null,montoHastaUnidades|null,porcentaje|null,topeUnidades|null}], adicionalPorAudiencia:{desdeAudiencia,itemsMenor:['A','B'],unidadesMenor,unidadesMayor}, fuente, urlFuente, fechaVerificacion, createdAt }
+  honorariosUnitValues: [], // { id, scaleId, valorPesos, fechaDesde, fechaHasta|null(null=vigente), fuente, urlFuente, fechaVerificacion, createdAt, createdBy|null } — fechaHasta null = valor vigente; al cargar un valor nuevo se cierra (fechaHasta) el anterior, nunca se borra
 };
 
 const SCHEMA = `
@@ -451,6 +464,16 @@ CREATE TABLE IF NOT EXISTS feature_flags (
   id TEXT PRIMARY KEY, key TEXT UNIQUE, label TEXT, enabled INTEGER DEFAULT 0,
   updatedAt INTEGER, updatedBy TEXT
 );
+CREATE TABLE IF NOT EXISTS honorarios_scales (
+  id TEXT PRIMARY KEY, jurisdiccion TEXT, tipoMediacion TEXT, unidad TEXT, norma TEXT,
+  honorarioProvisionalUnidades REAL, tramos TEXT, adicionalPorAudiencia TEXT,
+  fuente TEXT, urlFuente TEXT, fechaVerificacion INTEGER, createdAt INTEGER
+);
+CREATE TABLE IF NOT EXISTS honorarios_unit_values (
+  id TEXT PRIMARY KEY, scaleId TEXT, valorPesos REAL, fechaDesde TEXT, fechaHasta TEXT,
+  fuente TEXT, urlFuente TEXT, fechaVerificacion INTEGER, createdAt INTEGER, createdBy TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_honorarios_unit_values_scale ON honorarios_unit_values(scaleId);
 CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status);
 CREATE INDEX IF NOT EXISTS idx_support_access_grants_mediation ON support_access_grants(mediationId);
 CREATE INDEX IF NOT EXISTS idx_support_access_grants_admin ON support_access_grants(adminUserId);
@@ -480,6 +503,7 @@ const JSON_COLUMNS = {
   mediationEvents: ['metadata'],
   hearings: ['meetingMetadata'],
   supportAccessGrants: ['resourcesAccessed'],
+  honorariosScales: ['tramos', 'adicionalPorAudiencia'],
 };
 const TABLE_NAMES = {
   users: 'users', channels: 'channels', members: 'members', messages: 'messages',
@@ -507,6 +531,7 @@ const TABLE_NAMES = {
   billingEvents: 'billing_events', billingPayments: 'billing_payments',
   supportTickets: 'support_tickets', supportAccessGrants: 'support_access_grants',
   impersonationSessions: 'impersonation_sessions', featureFlags: 'feature_flags',
+  honorariosScales: 'honorarios_scales', honorariosUnitValues: 'honorarios_unit_values',
 };
 
 function rowToRecord(collectionKey, row) {

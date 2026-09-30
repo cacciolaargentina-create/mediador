@@ -599,7 +599,7 @@ const TAB_FOR_SCREEN = {
   dashboard:'dashboard', list:'list', detail:'list', new:'list',
   stats:'stats', team:'team', studioMediations:'team',
   agenda:'agenda', requests:'requests', comms:'comms',
-  legalTools:'legalTools', legalAuditor:'legalTools', legalVencimientos:'legalTools', legalActas:'legalTools',
+  legalTools:'legalTools', legalAuditor:'legalTools', legalVencimientos:'legalTools', legalActas:'legalTools', legalHonorarios:'legalTools',
 };
 function goTo(screen, id){
   currentMediationId = id || null;
@@ -630,6 +630,7 @@ function goTo(screen, id){
   else if(screen === 'legalAuditor') renderPromise = renderLegalAuditor(id);
   else if(screen === 'legalVencimientos') renderPromise = renderLegalVencimientos();
   else if(screen === 'legalActas') renderPromise = renderLegalActas(id);
+  else if(screen === 'legalHonorarios') renderPromise = renderLegalHonorarios();
   else if(screen === 'commitments') renderPromise = renderCommitmentsScreen();
   else if(screen === 'hearingPrep') renderPromise = renderHearingPreparationScreen();
   else if(screen === 'videoSettings') renderPromise = renderVideoSettings();
@@ -1020,7 +1021,7 @@ async function renderDashboard(){
 const LEGAL_TOOLS = [
   { id: 'auditor', label: 'Auditor de expediente', desc: 'Revisa qué datos están completos, pendientes o inconsistentes en un expediente.', icon: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>', available: true },
   { id: 'actas', label: 'Generador de actas', desc: 'Actas de apertura, audiencia, cierre, incomparecencia y reprogramación a partir de los datos del expediente.', icon: '<path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/>', available: true },
-  { id: 'honorarios', label: 'Calculadora de honorarios', desc: 'Estimación de honorarios por jurisdicción, con fuente normativa citada.', icon: '<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5h4.5a2 2 0 1 1 0 4H9"/>', available: false },
+  { id: 'honorarios', label: 'Calculadora de honorarios', desc: 'Estimación de honorarios por jurisdicción, con fuente normativa citada.', icon: '<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5h4.5a2 2 0 1 1 0 4H9"/>', available: true },
   { id: 'acuerdos', label: 'Constructor de acuerdos', desc: 'Armá la estructura de un acuerdo: obligaciones, cuotas, vencimientos.', icon: '<path d="M8 12h8M8 16h5"/><rect x="4" y="4" width="16" height="16" rx="2"/>', available: false },
   { id: 'notificaciones', label: 'Generador de notificaciones', desc: 'Plantillas de citación, reprogramación y otros avisos del expediente.', icon: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>', available: false },
   { id: 'vencimientos', label: 'Control de vencimientos', desc: 'Panel de vencimientos de todos tus expedientes, agrupados por urgencia.', icon: '<rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4M8 14h.01M12 14h.01M16 14h.01"/>', available: true },
@@ -1052,6 +1053,7 @@ function openLegalTool(toolId){
   if(toolId === 'auditor') return goTo('legalAuditor', currentMediationId || null);
   if(toolId === 'vencimientos') return goTo('legalVencimientos');
   if(toolId === 'actas') return goTo('legalActas', currentMediationId || null);
+  if(toolId === 'honorarios') return goTo('legalHonorarios');
 }
 
 const AUDIT_STATUS_META = {
@@ -1283,6 +1285,128 @@ function downloadActaReprogramacion(mediationId){
   const sel = document.getElementById('acta-reprogramacion-select');
   if(!sel || !sel.value) return;
   window.open(`/api/mediations/${mediationId}/hearings/${sel.value}/acta-reprogramacion`, '_blank');
+}
+
+// ---- Calculadora de honorarios ----
+// Ningún valor monetario vive acá — todo (escalas, valor de la unidad)
+// viene de GET /legal-tools/honorarios/scales, que lee de la base
+// (sembrada y actualizada desde el admin console, ver routes/admin-mediador.js).
+// Esta pantalla solo arma el formulario y muestra lo que el servidor
+// calculó — cambiar el valor de la UHOM el mes que viene no requiere
+// tocar esta pantalla ni ningún otro código.
+let honorariosScalesCache = null;
+async function renderLegalHonorarios(){
+  const main = document.getElementById('main');
+  main.innerHTML = `<p class="empty-hint">Cargando…</p>`;
+  try{ honorariosScalesCache = await api('/api/mediations/legal-tools/honorarios/scales'); }
+  catch(e){ main.innerHTML = `<p class="empty-hint">No se pudo cargar la calculadora de honorarios.</p>`; return; }
+  if(!honorariosScalesCache.length){
+    main.innerHTML = `
+      <a href="#" onclick="event.preventDefault(); goTo('legalTools');" style="font-size:13px; font-weight:600;">← Herramientas legales</a>
+      <h1 style="margin-top:10px;">Calculadora de honorarios</h1>
+      <p class="empty-hint">Todavía no hay ninguna escala cargada.</p>
+    `;
+    return;
+  }
+  main.innerHTML = `
+    <a href="#" onclick="event.preventDefault(); goTo('legalTools');" style="font-size:13px; font-weight:600;">← Herramientas legales</a>
+    <h1 style="margin-top:10px;">Calculadora de honorarios</h1>
+    <p style="color:var(--text-dim); font-size:15px; margin-bottom:20px;">Estimación según la escala oficial vigente — nunca un valor inventado. Revisá siempre la fuente antes de usarlo para un cobro.</p>
+    <div class="card">
+      <label style="display:block; margin-bottom:12px;">
+        <span style="font-size:13px; color:var(--text-dim); display:block; margin-bottom:4px;">Jurisdicción</span>
+        <select id="honorarios-jurisdiccion" disabled><option>Nación / CABA (mediación civil y comercial)</option></select>
+      </label>
+      <label style="display:block; margin-bottom:12px;">
+        <span style="font-size:13px; color:var(--text-dim); display:block; margin-bottom:4px;">Tipo de mediación</span>
+        <select id="honorarios-tipo" onchange="onHonorariosTipoChange()">
+          <option value="nacion-general">General</option>
+          <option value="nacion-familiar">Familiar (cuidado personal / comunicación / plan de parentalidad)</option>
+        </select>
+      </label>
+      <label style="display:block; margin-bottom:12px;">
+        <span style="font-size:13px; color:var(--text-dim); display:block; margin-bottom:4px;">Estado de la mediación</span>
+        <select id="honorarios-estado">
+          <option value="en_curso">En curso</option>
+          <option value="cerrada_con_acuerdo">Cerrada con acuerdo</option>
+          <option value="cerrada_sin_acuerdo">Cerrada sin acuerdo</option>
+        </select>
+      </label>
+      <label style="display:block; margin-bottom:8px;">
+        <span style="font-size:13px; color:var(--text-dim); display:block; margin-bottom:4px;">Monto del reclamo o del acuerdo (ARS)</span>
+        <input type="number" id="honorarios-monto" min="0" step="0.01" placeholder="Ej: 5000000">
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:13.5px;" id="honorarios-indeterminado-wrap">
+        <input type="checkbox" id="honorarios-indeterminado" onchange="onHonorariosMontoFlagChange()" style="width:auto;"> Monto indeterminado (valor incierto o fuera del comercio)
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; margin-bottom:12px; font-size:13.5px;" id="honorarios-sinvalor-wrap">
+        <input type="checkbox" id="honorarios-sinvalor" onchange="onHonorariosMontoFlagChange()" style="width:auto;"> Sin valor pecuniario
+      </label>
+      <label style="display:block; margin-bottom:16px;">
+        <span style="font-size:13px; color:var(--text-dim); display:block; margin-bottom:4px;">Cantidad de audiencias realizadas</span>
+        <input type="number" id="honorarios-audiencias" min="0" step="1" value="1">
+      </label>
+      <button class="primary" onclick="calcularHonorarios()">Calcular</button>
+    </div>
+    <div id="honorarios-resultado"></div>
+  `;
+}
+function onHonorariosTipoChange(){
+  const tipo = document.getElementById('honorarios-tipo').value;
+  const isFamiliar = tipo === 'nacion-familiar';
+  document.getElementById('honorarios-indeterminado-wrap').style.display = isFamiliar ? 'none' : 'flex';
+  document.getElementById('honorarios-sinvalor-wrap').style.display = isFamiliar ? 'none' : 'flex';
+  document.getElementById('honorarios-monto').closest('label').style.display = isFamiliar ? 'none' : 'block';
+}
+function onHonorariosMontoFlagChange(){
+  const indet = document.getElementById('honorarios-indeterminado');
+  const sinval = document.getElementById('honorarios-sinvalor');
+  if(indet.checked) sinval.checked = false;
+  if(sinval.checked) indet.checked = false;
+  const montoDisabled = indet.checked || sinval.checked;
+  document.getElementById('honorarios-monto').disabled = montoDisabled;
+}
+async function calcularHonorarios(){
+  const scaleId = document.getElementById('honorarios-tipo').value;
+  const estado = document.getElementById('honorarios-estado').value;
+  const montoIndeterminado = document.getElementById('honorarios-indeterminado').checked;
+  const sinValorPecuniario = document.getElementById('honorarios-sinvalor').checked;
+  const monto = document.getElementById('honorarios-monto').value;
+  const cantidadAudiencias = document.getElementById('honorarios-audiencias').value;
+  const resultEl = document.getElementById('honorarios-resultado');
+  resultEl.innerHTML = `<p class="empty-hint">Calculando…</p>`;
+  let r;
+  try{
+    r = await api('/api/mediations/legal-tools/honorarios/calcular', { method:'POST', body: JSON.stringify({ scaleId, estado, montoIndeterminado, sinValorPecuniario, monto, cantidadAudiencias }) });
+  }catch(e){
+    resultEl.innerHTML = `<div class="card" style="margin-top:16px;"><p class="empty-hint">${escapeHtml((e && e.error) || 'No se pudo calcular.')}</p></div>`;
+    return;
+  }
+  const fmtPesos = (n) => '$' + Math.round(n).toLocaleString('es-AR');
+  resultEl.innerHTML = `
+    <div class="card" style="margin-top:16px;">
+      <h2>Resultado</h2>
+      <div class="task-item"><div class="title">Unidad aplicable</div><div class="sub">${escapeHtml(r.unidadAplicable)}</div></div>
+      <div class="task-item"><div class="title">Tramo aplicado</div><div class="sub">${r.tramoAplicado.item ? '(' + escapeHtml(r.tramoAplicado.item) + ') ' : ''}${escapeHtml(r.tramoAplicado.label)}</div></div>
+      <div class="task-item"><div class="title">Cantidad de unidades</div><div class="sub">${r.cantidadUnidades} ${escapeHtml(r.unidadAplicable)}${r.adicionalUnidades ? ` (incluye ${r.adicionalUnidades} de adicional por audiencias)` : ''}</div></div>
+      <div class="task-item"><div class="title">Valor de la unidad</div><div class="sub">${fmtPesos(r.valorUnidad.pesos)} — vigente desde ${fmtDateOnly(r.valorUnidad.fechaDesde)}</div></div>
+      <div class="task-item"><div class="title">Honorario estimado</div><div class="sub" style="font-weight:600; color:var(--text);">${fmtPesos(r.honorarioEstimadoPesos)}</div></div>
+      <div class="task-item"><div class="title">Gastos/aranceles aplicables</div><div class="sub">${r.gastosArancelesAplicables == null ? 'No modelado — la autoridad de aplicación los fija por separado, consultá la fuente oficial.' : fmtPesos(r.gastosArancelesAplicables)}</div></div>
+      <div class="task-item"><div class="title">Total estimado</div><div class="sub" style="font-weight:600; color:var(--text);">${fmtPesos(r.totalEstimadoPesos)} ${r.gastosArancelesAplicables == null ? '(sin gastos/aranceles)' : ''}</div></div>
+      <div class="task-item"><div class="title">Fecha de vigencia de la escala usada</div><div class="sub">${fmtDateOnly(r.fechaVigenciaEscala)}</div></div>
+    </div>
+    <div class="card" style="margin-top:16px;">
+      <h2>Fuente normativa</h2>
+      <p style="font-size:13.5px; margin:4px 0;">${escapeHtml(r.fuenteNormativa.norma)}</p>
+      <p style="font-size:13px; color:var(--text-dim);"><a href="${escapeHtml(r.fuenteNormativa.urlFuente)}" target="_blank" rel="noopener">${escapeHtml(r.fuenteNormativa.fuente)}</a> · verificado el ${new Date(r.fuenteNormativa.fechaVerificacion).toLocaleDateString('es-AR')}</p>
+    </div>
+    <div class="card" style="margin-top:16px; background:var(--color-warning-soft, #FFF6DF);">
+      <h2>Advertencias</h2>
+      <ul style="margin:6px 0 0; padding-left:18px; font-size:13px;">
+        ${r.advertencias.map(a => `<li style="margin-bottom:6px;">${escapeHtml(a)}</li>`).join('')}
+      </ul>
+    </div>
+  `;
 }
 
 // ================= LISTA =================
