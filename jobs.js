@@ -469,7 +469,56 @@ async function checkHearingsStartingSoon(io) {
   return { hearingsAlerted, messagesPosted };
 }
 
+// Bloque 43 §8 — recordatorio al mediador cuando el plazo de 60 días de
+// una mediación entra en 15/7/3 días hábiles restantes. Reusa notifyMediator
+// (mismo canal configurable por mediación que el resto de los avisos) y
+// corre con la MISMA cadencia horaria que checkMediationDeadlines — nada
+// nuevo en la infraestructura de jobs, solo una función más.
+//
+// Idempotencia: mediation.legalDeadlineRemindersSent guarda qué umbrales
+// (15/7/3) ya se avisaron para esta mediación — así una corrida hora a hora
+// no manda el mismo aviso una y otra vez mientras el plazo sigue en esa
+// misma franja. Si una prórroga corre la fecha límite más allá de un
+// umbral ya avisado, ese umbral se vuelve a habilitar solo (se compara
+// contra remainingBusinessDays actual, no contra un estado fijo).
+const LEGAL_DEADLINE_REMINDER_THRESHOLDS = [15, 7, 3];
+
+async function checkLegalDeadlineReminders() {
+  const db = getDB();
+  const { computeMediationDeadline } = require('./legalDeadlines');
+  let reminded = 0;
+  for (const mediation of db.mediations) {
+    if (mediation.closedAt || mediation.status === 'borrador') continue;
+    const info = computeMediationDeadline(db, mediation);
+    if (!info.calculable || !info.started) continue;
+    const remaining = info.remainingBusinessDays;
+    const sent = new Set(mediation.legalDeadlineRemindersSent || []);
+    for (const threshold of LEGAL_DEADLINE_REMINDER_THRESHOLDS) {
+      if (remaining <= threshold && remaining >= 0 && !sent.has(threshold)) {
+        await notifyMediator(db, mediation, {
+          title: 'Plazo de mediación por vencer',
+          body: `${mediation.code}: quedan ${remaining} día(s) hábil(es) del plazo de ${info.termBusinessDays} días (vence el ${info.deadlineDate}).`,
+          url: '/',
+        });
+        sent.add(threshold);
+        reminded++;
+      }
+    }
+    // umbrales que ya no aplican (el plazo se alejó de nuevo, típicamente
+    // por una prórroga) se limpian para poder volver a avisar si se
+    // acercan otra vez.
+    for (const threshold of [...sent]) {
+      if (remaining > threshold) sent.delete(threshold);
+    }
+    const nextSent = [...sent].sort((a, b) => b - a);
+    const prevSent = mediation.legalDeadlineRemindersSent || [];
+    if (JSON.stringify(nextSent) !== JSON.stringify(prevSent)) mediation.legalDeadlineRemindersSent = nextSent;
+  }
+  if (reminded > 0) await commit();
+  return { reminded };
+}
+
 module.exports = {
   checkUnjoinedChannels, generateWeeklySummaries, checkMediationDeadlines, notifyMediator,
-  checkHearingsStartingSoon, REMINDER_AFTER_MS, SUMMARY_PERIOD_MS,
+  checkHearingsStartingSoon, checkLegalDeadlineReminders, REMINDER_AFTER_MS, SUMMARY_PERIOD_MS,
 };

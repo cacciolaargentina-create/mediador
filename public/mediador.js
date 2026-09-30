@@ -659,6 +659,7 @@ const ATTENTION_ACTION_LABELS = {
   crearTarea: 'Crear tarea', verDocumento: 'Ver documento', registrarResultado: 'Registrar resultado',
   verComunicacion: 'Ver comunicación', crearCompromiso: 'Crear compromiso', cerrarMediacion: 'Cerrar mediación',
   registrarActividad: 'Registrar actividad', descartar: 'Descartar', contactar: 'Contactar',
+  verPlazos: 'Ver plazos',
 };
 // a qué sección del expediente saltar según de dónde salió la alerta —
 // mismos anchors (#section-xxx) que ya usa el subnav del expediente.
@@ -667,7 +668,7 @@ const ATTENTION_ACTION_SECTION = {
   contactarParte: 'section-comunicaciones', verComunicacion: 'section-comunicaciones', contactar: 'section-comunicaciones', crearCompromiso: 'section-compromisos',
   marcarCompletado: 'section-compromisos', verDocumento: 'section-documentos',
   registrarResultado: 'section-audiencias', enviarAviso: 'section-audiencias', resolver: 'section-audiencias',
-  cerrarMediacion: 'section-admin',
+  cerrarMediacion: 'section-admin', verPlazos: 'section-plazos',
 };
 
 // Bloque 38 — tarjeta de plan compacta, ahora en el PIE DEL SIDEBAR (persiste
@@ -2326,6 +2327,7 @@ async function createMediation(){
 let currentParties = []; // cache para no tener que resolver nombre de parte a mano en cada lugar que lo necesita (abogados, confirmaciones de audiencia)
 let currentDocuments = []; // Bloque 19 — para el selector de "adjuntar documento existente" en Comunicaciones, sin otro fetch
 let currentHearings = []; // Bloque 19 — para el selector de audiencia en "Gestionar cambio" desde un mensaje
+let currentPlazos = null; // Bloque 43 — respuesta de GET .../legal-tools/plazos, cacheada para los formularios de la sección Plazos
 
 const PARTY_ROLE_LABELS = { requirente: 'Requirente', requerido: 'Requerido', otro: 'Otro' };
 const HEARING_MODALITY_LABELS = { presencial: 'Presencial', virtual: 'Virtual', hibrida: 'Híbrida' };
@@ -2655,6 +2657,176 @@ function partyName(partyId){
   return p.legalName || `${p.firstName || ''} ${p.lastName || ''}`.trim() || '—';
 }
 
+// ================= Bloque 43 — Motor de Plazos Legales =================
+// Sección "Plazos" del expediente. Todos los cómputos vienen ya resueltos
+// del backend (legalDeadlines.js) — acá solo se pinta, nunca se suma un
+// día a mano. NO es asesoramiento legal (ver docs/PLAZOS_LEGALES.md): solo
+// aritmética sobre fechas que el propio mediador cargó.
+const JURISDICTION_LABELS_FALLBACK = { nacion: 'Nación (Ley 26.589)' };
+const NOTIFICATION_MEDIUM_LABELS = { carta_documento: 'Carta documento', cedula: 'Cédula', acta_notarial: 'Acta notarial', personal: 'Notificación personal', electronico: 'Electrónico' };
+const NOTIFICATION_STATUS_LABELS = { enviada: 'Enviada', recibida: 'Recibida', rechazada: 'Rechazada', no_localizado: 'No localizado' };
+const NOTIFICATION_STATUS_CLASS = { enviada: 'p-pendiente', recibida: 'p-proximo', rechazada: 'p-vencido', no_localizado: 'p-vencido' };
+
+function deadlineUrgencyClass(remaining){
+  if(remaining == null) return 'p-pendiente';
+  if(remaining < 0) return 'p-vencido';
+  if(remaining <= 7) return 'p-critico';
+  if(remaining <= 15) return 'p-proximo';
+  return 'p-pendiente';
+}
+
+function renderPlazosSection(m, parties, documents, plazos){
+  const requeridos = parties.filter(p => p.role === 'requerido' && p.status !== 'inactiva');
+  const jurisdictionOptions = (plazos.availableJurisdictions || []).map(j =>
+    `<option value="${j.code}" ${m.jurisdiction === j.code ? 'selected' : ''}>${escapeHtml(j.label)}</option>`
+  ).join('');
+
+  const deadline = plazos.deadline || { calculable: false, reason: 'Sin datos.' };
+  let deadlineHtml;
+  if(!deadline.calculable){
+    deadlineHtml = `<p class="empty-hint">${escapeHtml(deadline.reason || 'No se puede calcular el plazo todavía.')}</p>`;
+  } else {
+    const partyRows = (deadline.parties || []).map(pi => `
+      <div class="status-history-item">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div><strong>${escapeHtml(pi.name || 'Parte requerida')}</strong></div>
+          <span class="attn-badge ${pi.notified ? 'p-proximo' : 'p-vencido'}">${pi.notified ? 'Notificada' : 'Sin notificación efectiva'}</span>
+        </div>
+        ${pi.effectiveNotification ? `<div style="font-size:12px; color:var(--text-dim); margin-top:4px;">Recibida el ${fmtDate(pi.effectiveNotification.receivedDate)} · ${NOTIFICATION_MEDIUM_LABELS[pi.effectiveNotification.medium] || pi.effectiveNotification.medium}</div>` : ''}
+      </div>
+    `).join('');
+
+    deadlineHtml = `
+      ${partyRows}
+      ${!deadline.started ? `<p class="empty-hint">El plazo todavía no empezó a correr — falta notificación fehaciente efectiva de al menos un requerido.</p>` : `
+        <div class="card-highlight" style="margin-top:10px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+            <div>
+              <div style="font-size:12px; opacity:.75;">Plazo de la mediación (${deadline.termBusinessDays} días hábiles)</div>
+              <div style="font-size:19px; font-weight:700;">Vence el ${fmtDate(deadline.deadlineDate)}</div>
+            </div>
+            <span class="attn-badge ${deadlineUrgencyClass(deadline.remainingBusinessDays)}">${deadline.remainingBusinessDays < 0 ? `Vencido hace ${Math.abs(deadline.remainingBusinessDays)} día(s) hábil(es)` : `Quedan ${deadline.remainingBusinessDays} día(s) hábil(es)`}</span>
+          </div>
+          <div style="font-size:12px; margin-top:8px; opacity:.85;">
+            ${(deadline.explanation || []).map(line => `<div>· ${escapeHtml(line)}</div>`).join('')}
+          </div>
+          ${deadline.computationStartManuallyOverridden ? `<button class="ghost" style="margin-top:8px; padding:6px 10px; font-size:11px;" onclick="clearDeadlineOverride('${m.id}')">Quitar corrección manual de la fecha base</button>` : ''}
+        </div>
+      `}
+      <button class="ghost" style="width:100%; margin-top:8px;" onclick="toggleForm('extension-form')">+ Registrar prórroga acordada</button>
+      <div id="extension-form" style="display:none; margin-top:10px;">
+        <label>Días hábiles adicionales (o dejar vacío y usar fecha límite nueva)</label>
+        <input id="extension-days" type="number" min="1" placeholder="Ej: 20">
+        <label>Nueva fecha límite directa (opcional, en vez de días)</label>
+        <input id="extension-new-date" type="date">
+        <label>Fecha del acuerdo</label>
+        <input id="extension-agreed-date" type="date">
+        <label>Motivo</label>
+        <textarea id="extension-reason" rows="2" placeholder="Ej: acuerdo de partes en audiencia del ..."></textarea>
+        <button class="primary" style="width:100%;" onclick="addDeadlineExtension('${m.id}')">Guardar prórroga</button>
+      </div>
+      <button class="ghost" style="width:100%; margin-top:8px;" onclick="toggleForm('override-form')">Corregir fecha base manualmente</button>
+      <div id="override-form" style="display:none; margin-top:10px;">
+        <label>Fecha base corregida</label>
+        <input id="override-date" type="date" value="${m.deadlineStartOverride || ''}">
+        <label>Motivo (queda registrado en auditoría)</label>
+        <textarea id="override-reason" rows="2" placeholder="Por qué se corrige la fecha de inicio del cómputo"></textarea>
+        <button class="primary" style="width:100%;" onclick="setDeadlineOverride('${m.id}')">Guardar corrección</button>
+      </div>
+    `;
+  }
+
+  const notifications = plazos.notifications || [];
+  const notificationsHtml = notifications.length ? notifications.map(n => `
+    <div class="status-history-item">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <strong>${escapeHtml(partyName(n.partyId))}</strong> — ${NOTIFICATION_MEDIUM_LABELS[n.medium] || n.medium}
+          ${n.pieceId ? ` · Pieza ${escapeHtml(n.pieceId)}` : ''}
+        </div>
+        <span class="attn-badge ${NOTIFICATION_STATUS_CLASS[n.status] || 'p-pendiente'}">${NOTIFICATION_STATUS_LABELS[n.status] || n.status}</span>
+      </div>
+      <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">
+        ${n.sentDate ? `Enviada ${fmtDate(n.sentDate)}` : 'Sin fecha de envío'}${n.receivedDate ? ` · Recibida ${fmtDate(n.receivedDate)}` : ''}
+      </div>
+      ${n.observations ? `<div style="font-size:12px; margin-top:4px;">${escapeHtml(n.observations)}</div>` : ''}
+    </div>
+  `).join('') : `<p class="empty-hint">Todavía no hay notificaciones registradas.</p>`;
+
+  const hearingNoticeHtml = plazos.nextHearing && plazos.hearingNotice && plazos.hearingNotice.calculable ? `
+    <div class="status-history-item">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>Próxima audiencia: <strong>${fmtDate(plazos.nextHearing.date)}</strong></div>
+        <span class="attn-badge ${plazos.hearingNotice.meetsMinimum ? 'p-proximo' : 'p-vencido'}">${plazos.hearingNotice.meetsMinimum ? 'Aviso mínimo OK' : 'Aviso mínimo no verificado'}</span>
+      </div>
+      <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">${escapeHtml(plazos.hearingNotice.explanation)}</div>
+    </div>
+  ` : '';
+
+  const actaHtml = plazos.actaDisponibilidad ? `
+    <div class="status-history-item">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>Acta de cierre a disposición de las partes</div>
+        <span class="attn-badge ${plazos.actaDisponibilidad.reached ? 'p-proximo' : 'p-pendiente'}">${plazos.actaDisponibilidad.reached ? 'Prescripción reanudada' : 'Corriendo'}</span>
+      </div>
+      <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">${escapeHtml(plazos.actaDisponibilidad.explanation)}</div>
+    </div>
+  ` : '';
+
+  return `
+    <div class="card" id="section-plazos">
+      <h2>Plazos</h2>
+      <p style="font-size:12px; color:var(--text-faint); margin-top:-6px;">Cómputo automático, no es asesoramiento legal — verificá siempre contra el expediente judicial.</p>
+
+      <label>Jurisdicción</label>
+      <select id="jurisdiction-select">
+        <option value="">Sin definir</option>
+        ${jurisdictionOptions}
+      </select>
+      <button class="ghost" style="width:100%; margin-top:6px;" onclick="saveJurisdiction('${m.id}')">Guardar jurisdicción</button>
+
+      <div class="eyebrow" style="margin-top:18px;">Plazo de la mediación</div>
+      ${deadlineHtml}
+
+      <div class="eyebrow" style="margin-top:18px;">Notificación fehaciente</div>
+      ${notificationsHtml}
+      <button class="ghost" style="width:100%; margin-top:8px;" onclick="toggleForm('notification-form')">+ Registrar notificación</button>
+      <div id="notification-form" style="display:none; margin-top:10px;">
+        <label>Parte requerida</label>
+        <select id="notification-party">
+          ${requeridos.length ? requeridos.map(p => `<option value="${p.id}">${escapeHtml(partyName(p.id))}</option>`).join('') : '<option value="">(no hay partes con rol "requerido")</option>'}
+        </select>
+        <label>Medio</label>
+        <select id="notification-medium">
+          ${Object.entries(NOTIFICATION_MEDIUM_LABELS).map(([k,v]) => `<option value="${k}">${v}</option>`).join('')}
+        </select>
+        <label>N° de pieza / identificador (opcional)</label>
+        <input id="notification-piece" placeholder="Ej: CD123456789AR">
+        <label>Fecha de envío</label>
+        <input id="notification-sent" type="date">
+        <label>Estado</label>
+        <select id="notification-status" onchange="document.getElementById('notification-received-wrap').style.display = this.value==='recibida' ? '' : 'none';">
+          ${Object.entries(NOTIFICATION_STATUS_LABELS).map(([k,v]) => `<option value="${k}">${v}</option>`).join('')}
+        </select>
+        <div id="notification-received-wrap" style="display:none;">
+          <label>Fecha de recepción efectiva</label>
+          <input id="notification-received" type="date">
+        </div>
+        <label>Prueba — documento ya cargado (opcional)</label>
+        <select id="notification-document">
+          <option value="">Ninguno</option>
+          ${documents.map(d => `<option value="${d.id}">${escapeHtml(d.originalFilename)}</option>`).join('')}
+        </select>
+        <label>Observaciones (opcional)</label>
+        <textarea id="notification-observations" rows="2"></textarea>
+        <button class="primary" style="width:100%;" onclick="addPartyNotification('${m.id}')">Guardar notificación</button>
+      </div>
+
+      ${hearingNoticeHtml || actaHtml ? `<div class="eyebrow" style="margin-top:18px;">Otros plazos</div>${hearingNoticeHtml}${actaHtml}` : ''}
+    </div>
+  `;
+}
+
 // Bloque 24 — asistente de carga guiada. El paso actual dentro del wizard es
 // puramente de sesión del browser (no se persiste en el servidor): si se
 // recarga la página a mitad de camino, lo que ya se guardó sigue existiendo,
@@ -2790,9 +2962,9 @@ function renderOnboardingWizard(m, parties){
 async function renderDetail(id){
   const main = document.getElementById('main');
   main.innerHTML = `<p class="empty-hint">Cargando…</p>`;
-  let m, history, parties, lawyers, hearings, documents, timeline, tasks, commitments, access, communications, myStudio;
+  let m, history, parties, lawyers, hearings, documents, timeline, tasks, commitments, access, communications, myStudio, plazos;
   try{
-    [m, history, parties, lawyers, hearings, documents, timeline, tasks, commitments, access, communications] = await Promise.all([
+    [m, history, parties, lawyers, hearings, documents, timeline, tasks, commitments, access, communications, plazos] = await Promise.all([
       api(`/api/mediations/${id}`),
       api(`/api/mediations/${id}/status-history`),
       api(`/api/mediations/${id}/parties`),
@@ -2804,6 +2976,7 @@ async function renderDetail(id){
       api(`/api/mediations/${id}/commitments`),
       api(`/api/mediations/${id}/access`),
       api(`/api/mediations/${id}/communications`),
+      api(`/api/mediations/${id}/legal-tools/plazos`),
     ]);
   }catch(e){ main.innerHTML = `<p class="empty-hint">${escapeHtml(e.error || 'No se pudo cargar la mediación.')}</p>`; return; }
   try{ myStudio = await api('/api/studios/me'); }catch(e){ myStudio = null; }
@@ -2812,6 +2985,7 @@ async function renderDetail(id){
   currentHearings = hearings;
   currentTimelineFull = timeline;
   currentTimelineMediationId = id;
+  currentPlazos = plazos;
 
   // Bloque 24 — el wizard se muestra si es un ALTA sin partes todavía (nunca
   // si ya hay al menos una, ni por primera vez ni al recargar — spec §1/§7
@@ -2887,6 +3061,7 @@ async function renderDetail(id){
       <a href="#section-comunicaciones">Comunicaciones</a>
       <a href="#section-tareas">Tareas</a>
       <a href="#section-compromisos">Compromisos</a>
+      <a href="#section-plazos">Plazos</a>
       <a href="#section-timeline">Timeline</a>
       <a href="#section-admin">Administración</a>
     </nav>
@@ -3157,6 +3332,8 @@ async function renderDetail(id){
         <button class="primary" style="width:100%;" onclick="addCommitment('${m.id}')">Guardar compromiso</button>
       </div>
     </div>
+
+    ${renderPlazosSection(m, parties, documents, plazos)}
 
     <div class="card" id="section-timeline">
       <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
@@ -4301,6 +4478,71 @@ async function addCommitment(mediationId){
     pendingSourceMessageId = null;
     renderDetail(mediationId);
   }catch(e){ showToast(e.error || 'No se pudo guardar el compromiso.', 'danger'); }
+}
+
+// ================= Bloque 43 — handlers de la sección Plazos =================
+async function saveJurisdiction(mediationId){
+  const jurisdiction = document.getElementById('jurisdiction-select').value || null;
+  try{
+    await api(`/api/mediations/${mediationId}/jurisdiction`, { method:'PATCH', body: JSON.stringify({ jurisdiction }) });
+    showToast('Jurisdicción actualizada.', 'success');
+    renderDetail(mediationId);
+  }catch(e){ showToast(e.error || 'No se pudo guardar la jurisdicción.', 'danger'); }
+}
+
+async function addPartyNotification(mediationId){
+  const partyId = document.getElementById('notification-party').value;
+  if(!partyId){ showToast('Falta la parte requerida.', 'danger'); return; }
+  const status = document.getElementById('notification-status').value;
+  const receivedDate = document.getElementById('notification-received').value || null;
+  if(status === 'recibida' && !receivedDate){ showToast('Falta la fecha de recepción efectiva.', 'danger'); return; }
+  try{
+    await api(`/api/mediations/${mediationId}/party-notifications`, { method:'POST', body: JSON.stringify({
+      partyId, medium: document.getElementById('notification-medium').value,
+      pieceId: document.getElementById('notification-piece').value.trim() || null,
+      sentDate: document.getElementById('notification-sent').value || null,
+      status, receivedDate,
+      documentId: document.getElementById('notification-document').value || null,
+      observations: document.getElementById('notification-observations').value.trim() || null,
+    })});
+    showToast('Notificación registrada.', 'success');
+    renderDetail(mediationId);
+  }catch(e){ showToast(e.error || 'No se pudo registrar la notificación.', 'danger'); }
+}
+
+async function addDeadlineExtension(mediationId){
+  const daysRaw = document.getElementById('extension-days').value;
+  const newDeadlineDate = document.getElementById('extension-new-date').value || null;
+  const agreedDate = document.getElementById('extension-agreed-date').value;
+  const reason = document.getElementById('extension-reason').value.trim();
+  if(!agreedDate || !reason){ showToast('Faltan la fecha del acuerdo y el motivo.', 'danger'); return; }
+  if(!daysRaw && !newDeadlineDate){ showToast('Indicá días adicionales o una nueva fecha límite.', 'danger'); return; }
+  try{
+    await api(`/api/mediations/${mediationId}/deadline-extensions`, { method:'POST', body: JSON.stringify({
+      days: daysRaw ? Number(daysRaw) : null, newDeadlineDate, agreedDate, reason,
+    })});
+    showToast('Prórroga registrada.', 'success');
+    renderDetail(mediationId);
+  }catch(e){ showToast(e.error || 'No se pudo registrar la prórroga.', 'danger'); }
+}
+
+async function setDeadlineOverride(mediationId){
+  const date = document.getElementById('override-date').value;
+  const reason = document.getElementById('override-reason').value.trim();
+  if(!date || !reason){ showToast('Faltan la fecha corregida y el motivo.', 'danger'); return; }
+  try{
+    await api(`/api/mediations/${mediationId}/deadline-start-override`, { method:'PATCH', body: JSON.stringify({ date, reason }) });
+    showToast('Fecha base corregida.', 'success');
+    renderDetail(mediationId);
+  }catch(e){ showToast(e.error || 'No se pudo guardar la corrección.', 'danger'); }
+}
+
+async function clearDeadlineOverride(mediationId){
+  if(!confirm('¿Quitar la corrección manual? El cómputo vuelve a calcularse por notificación.')) return;
+  try{
+    await api(`/api/mediations/${mediationId}/deadline-start-override`, { method:'PATCH', body: JSON.stringify({ date: null }) });
+    renderDetail(mediationId);
+  }catch(e){ showToast(e.error || 'No se pudo quitar la corrección.', 'danger'); }
 }
 
 async function changeCommitmentStatus(mediationId, commitmentId, status){

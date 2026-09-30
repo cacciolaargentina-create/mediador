@@ -29,6 +29,17 @@ if (process.env.NODE_ENV === 'production' && !process.env.FRONTEND_URL) {
   if (created > 0) await commit();
 })().catch((e) => console.error('Error sembrando planes de billing:', e));
 
+// Bloque 43 — calendario de días hábiles: siembra (idempotente, por
+// year+date) los feriados/feria judicial del año en curso y el siguiente,
+// para que el motor de plazos legales nunca arranque con la tabla vacía.
+// Un admin puede cargar/corregir fechas a mano después sin que esto las
+// pise (ver businessCalendar.js:seedDefaultHolidays).
+(async () => {
+  const { seedDefaultHolidays } = require('./businessCalendar');
+  const added = seedDefaultHolidays(getDB());
+  if (added > 0) await commit();
+})().catch((e) => console.error('Error sembrando el calendario de días hábiles:', e));
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -302,13 +313,18 @@ setInterval(() => runTrackedJob('checkAndSendReminders', 'recordatorios', checkA
 // canales sin unir (Tarea C) y resumen semanal (Tarea D) — corren cada
 // 2hs; cada función internamente decide si le toca actuar o no en esa
 // corrida, así que no hace falta un intervalo más fino que ese.
-const { checkUnjoinedChannels, generateWeeklySummaries, checkMediationDeadlines, checkHearingsStartingSoon } = require('./jobs');
+const { checkUnjoinedChannels, generateWeeklySummaries, checkMediationDeadlines, checkHearingsStartingSoon, checkLegalDeadlineReminders } = require('./jobs');
 setTimeout(() => runTrackedJob('checkUnjoinedChannels', 'job de canales sin unir', checkUnjoinedChannels), 15 * 1000);
 setInterval(() => runTrackedJob('checkUnjoinedChannels', 'job de canales sin unir', checkUnjoinedChannels), 2 * 60 * 60 * 1000);
 setTimeout(() => runTrackedJob('generateWeeklySummaries', 'job de resumen semanal', generateWeeklySummaries), 20 * 1000);
 setInterval(() => runTrackedJob('generateWeeklySummaries', 'job de resumen semanal', generateWeeklySummaries), 2 * 60 * 60 * 1000);
 setTimeout(() => runTrackedJob('checkMediationDeadlines', 'job de vencimientos de Mediador', checkMediationDeadlines), 25 * 1000);
 setInterval(() => runTrackedJob('checkMediationDeadlines', 'job de vencimientos de Mediador', checkMediationDeadlines), 60 * 60 * 1000);
+
+// Bloque 43 §8 — recordatorios del motor de plazos legales (15/7/3 días
+// hábiles restantes). Misma cadencia horaria que checkMediationDeadlines.
+setTimeout(() => runTrackedJob('checkLegalDeadlineReminders', 'job de recordatorios de plazos legales', checkLegalDeadlineReminders), 28 * 1000);
+setInterval(() => runTrackedJob('checkLegalDeadlineReminders', 'job de recordatorios de plazos legales', checkLegalDeadlineReminders), 60 * 60 * 1000);
 
 // Bloque 26 §2 — mensaje de "audiencia por empezar" en el chat. Cadencia
 // PROPIA de 5 minutos (no la hora del resto de los jobs de arriba) — es lo

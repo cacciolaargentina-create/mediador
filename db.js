@@ -117,6 +117,17 @@ const EMPTY_DB = {
   // valor vigente EN ESE MOMENTO, no con el de hoy). =====
   honorariosScales: [], // { id, jurisdiccion:'nacion', tipoMediacion:'general'|'familiar', unidad:'UHOM', norma, honorarioProvisionalUnidades, tramos:[{item,label,honorarioUnidades,montoDesdeUnidades|null,montoHastaUnidades|null,porcentaje|null,topeUnidades|null}], adicionalPorAudiencia:{desdeAudiencia,itemsMenor:['A','B'],unidadesMenor,unidadesMayor}, fuente, urlFuente, fechaVerificacion, createdAt }
   honorariosUnitValues: [], // { id, scaleId, valorPesos, fechaDesde, fechaHasta|null(null=vigente), fuente, urlFuente, fechaVerificacion, createdAt, createdBy|null } — fechaHasta null = valor vigente; al cargar un valor nuevo se cierra (fechaHasta) el anterior, nunca se borra
+
+  // ===== Bloque 43. Motor de Plazos Legales y Notificación Fehaciente.
+  // No duplica nada existente: reutiliza parties.role ('requerido'),
+  // documents (prueba de notificación), mediationEvents (auditoría de
+  // correcciones de fecha base) y jobs.js/automationEngine.js (recordatorios
+  // y centro de atención). Lo único nuevo es lo que de verdad faltaba: el
+  // calendario de días hábiles, el registro de notificación fehaciente por
+  // parte, y el registro de prórrogas acordadas. Ver docs/PLAZOS_LEGALES.md. =====
+  legalHolidays: [], // { id, year, date:'YYYY-MM-DD', type:'feriado_nacional'|'feria_judicial'|'asueto'|'otro', description, createdAt } — día NO hábil para el cómputo de plazos (ver businessCalendar.js). Se siembra al arrancar el servidor, de forma idempotente (por year+date), para el año en curso y el siguiente — nunca pisa filas cargadas a mano por un admin. Cargar feriados de años futuros/trasladables es una tarea manual (ver documentación); si el año en curso no tiene ninguna fila, el centro de atención avisa (solo a admin de plataforma)
+  partyNotifications: [], // { id, mediationId, partyId, medium:'carta_documento'|'cedula'|'acta_notarial'|'personal'|'electronico', pieceId|null, sentDate|null(YYYY-MM-DD), status:'enviada'|'recibida'|'rechazada'|'no_localizado', receivedDate|null(YYYY-MM-DD) — el cómputo del plazo de 60 días hábiles usa SIEMPRE receivedDate, nunca sentDate (pueden diferir), documentId|null(prueba adjunta, reutiliza la tabla documents existente — nunca un adjunto paralelo), observations|null, createdBy, createdAt, updatedAt } — mientras una parte con role:'requerido' no tenga ninguna fila acá, su plazo se muestra como "no iniciado" (spec §5) y aparece en el centro de atención
+  mediationDeadlineExtensions: [], // { id, mediationId, days|null, newDeadlineDate|null, reason, agreedDate(YYYY-MM-DD), recordedBy, createdAt } — prórroga del plazo de 60 días por acuerdo de partes (spec §4.1). Se puede cargar en días a sumar O una fecha límite nueva directa; nunca se borra una prórroga ya cargada, es un registro histórico
 };
 
 const SCHEMA = `
@@ -478,6 +489,23 @@ CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status)
 CREATE INDEX IF NOT EXISTS idx_support_access_grants_mediation ON support_access_grants(mediationId);
 CREATE INDEX IF NOT EXISTS idx_support_access_grants_admin ON support_access_grants(adminUserId);
 CREATE INDEX IF NOT EXISTS idx_impersonation_sessions_admin ON impersonation_sessions(adminUserId);
+
+CREATE TABLE IF NOT EXISTS legal_holidays (
+  id TEXT PRIMARY KEY, year INTEGER, date TEXT, type TEXT, description TEXT, createdAt INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_legal_holidays_year_date ON legal_holidays(year, date);
+CREATE TABLE IF NOT EXISTS party_notifications (
+  id TEXT PRIMARY KEY, mediationId TEXT, partyId TEXT, medium TEXT, pieceId TEXT,
+  sentDate TEXT, status TEXT DEFAULT 'enviada', receivedDate TEXT, documentId TEXT,
+  observations TEXT, createdBy TEXT, createdAt INTEGER, updatedAt INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_party_notifications_mediation ON party_notifications(mediationId);
+CREATE INDEX IF NOT EXISTS idx_party_notifications_party ON party_notifications(partyId);
+CREATE TABLE IF NOT EXISTS mediation_deadline_extensions (
+  id TEXT PRIMARY KEY, mediationId TEXT, days INTEGER, newDeadlineDate TEXT,
+  reason TEXT, agreedDate TEXT, recordedBy TEXT, createdAt INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_mediation_deadline_extensions_mediation ON mediation_deadline_extensions(mediationId);
 `;
 
 // columnas que se guardan como 0/1 en SQLite pero son boolean en JS —
@@ -504,6 +532,7 @@ const JSON_COLUMNS = {
   hearings: ['meetingMetadata'],
   supportAccessGrants: ['resourcesAccessed'],
   honorariosScales: ['tramos', 'adicionalPorAudiencia'],
+  mediations: ['legalDeadlineRemindersSent'],
 };
 const TABLE_NAMES = {
   users: 'users', channels: 'channels', members: 'members', messages: 'messages',
@@ -532,6 +561,8 @@ const TABLE_NAMES = {
   supportTickets: 'support_tickets', supportAccessGrants: 'support_access_grants',
   impersonationSessions: 'impersonation_sessions', featureFlags: 'feature_flags',
   honorariosScales: 'honorarios_scales', honorariosUnitValues: 'honorarios_unit_values',
+  legalHolidays: 'legal_holidays', partyNotifications: 'party_notifications',
+  mediationDeadlineExtensions: 'mediation_deadline_extensions',
 };
 
 function rowToRecord(collectionKey, row) {
@@ -704,6 +735,19 @@ function openDb() {
   // NULL en todo documento existente = sin comentario, cero cambio de
   // comportamiento.
   ensureColumns(sqlite, 'documents', { reviewNotes: 'TEXT' });
+  // Bloque 43 — jurisdicción de la mediación (hoy solo 'nacion' tiene
+  // reglas cargadas; ver jurisdictionRules.js). NULL = "sin jurisdicción
+  // cargada", el motor de plazos lo muestra como "no calculable" (spec §3),
+  // nunca inventa un valor por defecto. deadlineStartOverride* (spec §7):
+  // corrección manual de la fecha base del cómputo de 60 días, con su
+  // propio registro de auditoría (quién/cuándo) — además se loguea un
+  // mediationEvent en cada corrección, no solo estas columnas.
+  ensureColumns(sqlite, 'mediations', {
+    jurisdiction: 'TEXT',
+    deadlineStartOverride: 'TEXT', deadlineStartOverrideReason: 'TEXT',
+    deadlineStartOverrideBy: 'TEXT', deadlineStartOverrideAt: 'INTEGER',
+    legalDeadlineRemindersSent: 'TEXT',
+  });
   if (isNew && fs.existsSync(LEGACY_JSON_PATH)) {
     migrateFromJson(sqlite, LEGACY_JSON_PATH);
   }

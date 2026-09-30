@@ -18,6 +18,7 @@ const { getDB, commit } = require('../db');
 const { isAdminUser, requirePlatformAdmin } = require('../roles');
 const { logAudit } = require('../audit');
 const { getJobStatuses, getRecentErrors } = require('../systemStatus');
+const { yearHasHolidaysLoaded } = require('../businessCalendar');
 const { getMyMediations } = require('../mediationAccess');
 const radarEngine = require('../radarEngine');
 const { ensureHonorariosSeeded } = require('../honorariosSeed');
@@ -472,6 +473,15 @@ module.exports = function () {
     // de espacio en disco en este stack); se declara explícitamente en vez
     // de simular un estado.
     checks.almacenamiento = { status: 'NO_IMPLEMENTADO', detail: 'Sin chequeo de espacio en disco implementado todavía' };
+
+    // Bloque 43 §6 — si el año en curso no tiene NINGÚN feriado cargado en
+    // legal_holidays, el cómputo de plazos legales (businessCalendar.js)
+    // trataría todo el año como si no tuviera feriados — hay que avisarle a
+    // un admin de plataforma, nunca asumirlo en silencio.
+    const currentYear = new Date().getUTCFullYear();
+    checks.plazosLegales = yearHasHolidaysLoaded(db, currentYear)
+      ? { status: 'OK' }
+      : { status: 'ATENCION', detail: `No hay feriados/feria judicial cargados para ${currentYear} — el cómputo de plazos legales puede estar tratando días no hábiles como hábiles.` };
 
     res.json(checks);
   });

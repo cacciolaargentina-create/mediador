@@ -17,6 +17,8 @@
 // 17, 19). Acá se centralizan sin cambiar su criterio — routes/
 // mediations.js pasa a llamarlos en vez de tener la lógica embebida.
 
+const { computeMediationDeadline, checkHearingNotice } = require('./legalDeadlines');
+
 const DEFAULT_INACTIVITY_THRESHOLD_DAYS = 21;
 const DEFAULT_PARTY_NO_RESPONSE_THRESHOLD_DAYS = 5;
 const UNACTIONED_MESSAGE_WINDOW_DAYS = 14; // más viejo que esto ya no es "algo para atender hoy"
@@ -299,6 +301,56 @@ function getHearingPreparationDetails(db, mediation, hearing, { confirmations, d
   };
 }
 
+// ================= Bloque 43 — detectores del motor de plazos legales =================
+// Reutilizan legalDeadlines.js (el cómputo en sí) — acá solo se decide
+// CUÁNDO eso amerita un ítem del centro de atención y con qué severidad.
+// Ninguno de estos bloquea nada, son siempre avisos (spec §4.2/§6).
+
+const LEGAL_DEADLINE_WARNING_BUSINESS_DAYS = 15; // a partir de acá empieza a avisar (severidad creciente 15/7/3)
+
+function getLegalDeadlineAttentionState(db, mediation) {
+  const info = computeMediationDeadline(db, mediation);
+  if (!info.calculable || !info.started) return { info, alert: null };
+  const remaining = info.remainingBusinessDays;
+  if (remaining < 0) return { info, alert: 'vencido' };
+  if (remaining <= LEGAL_DEADLINE_WARNING_BUSINESS_DAYS) return { info, alert: 'proximo' };
+  return { info, alert: null };
+}
+
+function getRequeridosSinNotificacion(db, mediation) {
+  return db.parties.filter((p) => p.mediationId === mediation.id && p.role === 'requerido' && p.status !== 'inactiva'
+    && !db.partyNotifications.some((n) => n.partyId === p.id));
+}
+
+function getNotificacionesSinSeguimiento(db, mediation) {
+  const requeridos = db.parties.filter((p) => p.mediationId === mediation.id && p.role === 'requerido' && p.status !== 'inactiva');
+  const out = [];
+  for (const p of requeridos) {
+    const notifications = db.partyNotifications.filter((n) => n.partyId === p.id).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    if (!notifications.length) continue;
+    const last = notifications[notifications.length - 1];
+    if (['no_localizado', 'rechazada'].includes(last.status)) out.push({ party: p, notification: last });
+  }
+  return out;
+}
+
+// audiencias activas que no cumplen el mínimo de 3 días hábiles entre el
+// momento en que se programaron/reprogramaron y su fecha (ver limitación
+// documentada en legalDeadlines.js:checkHearingNotice).
+function getHearingsWithoutMinimumNotice(db, mediation, now = Date.now()) {
+  if (!mediation.jurisdiction) return [];
+  const hearings = db.hearings.filter((h) => h.mediationId === mediation.id
+    && ['propuesta', 'programada', 'confirmada'].includes(h.status)
+    && new Date(h.date).getTime() >= now);
+  const out = [];
+  for (const h of hearings) {
+    const scheduledAt = h.lastModifiedAt || h.createdAt || now;
+    const check = checkHearingNotice(db, mediation, h.date, scheduledAt);
+    if (check.calculable && !check.meetsMinimum) out.push({ hearing: h, check });
+  }
+  return out;
+}
+
 // ================= feed combinado (§1/§2 — centro de atención) =================
 // Arma una lista PLANA y normalizada { type, mediationId, mediationCode,
 // title, detail, priority, dueDate, refId, suggestedActions } combinando
@@ -370,6 +422,32 @@ function buildAttentionItems(db, mediations, { includeInactive = true } = {}) {
     items.push({ type: 'requiereCierre', mediationId: m.id, mediationCode: m.code, title: 'Esta mediación parece lista para cerrarse', detail: `Estado actual: ${m.status}, sin fecha de cierre registrada.`, priority: 'pendiente', dueDate: null, refId: m.id, responsible: 'Vos', suggestedActions: ['cerrarMediacion', 'verMediacion'] });
   }
 
+  // Bloque 43 — motor de plazos legales. Solo mediaciones activas (mismo
+  // criterio que sinProximaAccion más arriba: cerradas/borrador no
+  // necesitan seguimiento de plazo).
+  for (const m of mediations) {
+    if (m.closedAt || m.status === 'borrador') continue;
+
+    const { info: deadlineInfo, alert } = getLegalDeadlineAttentionState(db, m);
+    if (alert === 'vencido') {
+      items.push({ type: 'plazoMediacionVencido', mediationId: m.id, mediationCode: m.code, title: 'Plazo de la mediación vencido', detail: `El plazo de ${deadlineInfo.termBusinessDays} días hábiles venció el ${deadlineInfo.deadlineDate} (${Math.abs(deadlineInfo.remainingBusinessDays)} día(s) hábil(es) de más).`, priority: 'vencido', dueDate: deadlineInfo.deadlineDate, refId: m.id, responsible: 'Vos', suggestedActions: ['verPlazos', 'verMediacion'] });
+    } else if (alert === 'proximo') {
+      const remaining = deadlineInfo.remainingBusinessDays;
+      items.push({ type: 'plazoMediacionProximoAVencer', mediationId: m.id, mediationCode: m.code, title: 'Plazo de la mediación por vencer', detail: `Quedan ${remaining} día(s) hábil(es) (vence el ${deadlineInfo.deadlineDate}).`, priority: remaining <= 7 ? 'critico' : 'proximo', dueDate: deadlineInfo.deadlineDate, refId: m.id, responsible: 'Vos', suggestedActions: ['verPlazos', 'verMediacion'] });
+    }
+
+    for (const p of getRequeridosSinNotificacion(db, m)) {
+      items.push({ type: 'requeridoSinNotificacion', mediationId: m.id, mediationCode: m.code, title: `${partyDisplayName(db, p.id) || 'Parte requerida'} sin notificación registrada`, detail: 'No hay ninguna notificación fehaciente cargada — el plazo de la mediación no puede empezar a contarse.', priority: 'pendiente', dueDate: null, refId: p.id, responsible: 'Vos', suggestedActions: ['verPlazos', 'verMediacion'] });
+    }
+    for (const { party, notification } of getNotificacionesSinSeguimiento(db, m)) {
+      const statusLabel = notification.status === 'rechazada' ? 'rechazada' : 'sin localizar a la persona';
+      items.push({ type: 'notificacionSinSeguimiento', mediationId: m.id, mediationCode: m.code, title: `Notificación a ${partyDisplayName(db, party.id) || 'una parte requerida'} ${statusLabel}`, detail: 'Requiere una acción de seguimiento (reintentar por otro medio, o registrar una notificación nueva).', priority: 'pendiente', dueDate: null, refId: notification.id, responsible: 'Vos', suggestedActions: ['verPlazos', 'verMediacion'] });
+    }
+    for (const { hearing, check } of getHearingsWithoutMinimumNotice(db, m, now)) {
+      items.push({ type: 'audienciaSinAvisoMinimo', mediationId: m.id, mediationCode: m.code, title: `Audiencia del ${hearing.date} sin el aviso mínimo de ${check.requiredBusinessDays} días hábiles`, detail: check.explanation, priority: 'pendiente', dueDate: hearing.date, refId: hearing.id, responsible: 'Vos', suggestedActions: ['verMediacion'] });
+    }
+  }
+
   for (const m of mediations) {
     for (const { message, threadType, participantId } of getUnactionedIncomingMessages(db, m, now)) {
       items.push({ type: 'comunicacionSinAccion', mediationId: m.id, mediationCode: m.code, title: `Mensaje de ${threadType === 'parte' ? (partyDisplayName(db, participantId) || 'una parte') : 'un abogado'} sin acción`, detail: message.text ? (message.text.length > 80 ? message.text.slice(0, 80) + '…' : message.text) : '(mensaje con adjunto)', priority: 'pendiente', dueDate: null, refId: message.id, responsible: 'Vos', suggestedActions: ['verComunicacion', 'crearTarea', 'crearCompromiso'] });
@@ -408,4 +486,6 @@ module.exports = {
   isAlertDismissed,
   getHearingPreparationState, validateModalityData,
   getMediationAttentionItems, getDashboardAttentionItems,
+  getLegalDeadlineAttentionState, getRequeridosSinNotificacion,
+  getNotificacionesSinSeguimiento, getHearingsWithoutMinimumNotice,
 };

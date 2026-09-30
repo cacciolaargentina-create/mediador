@@ -21,6 +21,8 @@ const { notifyPartyAboutHearing, notifyLawyerAboutHearing, notifyParty, notifyLa
 const { askMediationAssistant, askDashboardAssistant, askMediationAssistantAboutDocument, suggestTasksFromNote } = require('../assistant');
 const { buildDraftMinutesPDF, buildConvocationLetterPDF, buildOpeningActPDF, buildNoShowActPDF, buildRescheduleActPDF } = require('../workingDocuments');
 const { ensureHonorariosSeeded } = require('../honorariosSeed');
+const { computeMediationDeadline, checkHearingNotice, computeActaDisponibilidad } = require('../legalDeadlines');
+const { listJurisdictions, getJurisdictionRules } = require('../jurisdictionRules');
 const automationEngine = require('../automationEngine');
 const { getHearingPreparationState, getDashboardAttentionItems, getMediationAttentionItems, isAlertDismissed, CLOSURE_WORTHY_STATUSES } = automationEngine;
 const archiver = require('archiver');
@@ -166,6 +168,7 @@ function serializeMediation(m) {
     inactivityThresholdDays: m.inactivityThresholdDays ?? automationEngine.DEFAULT_INACTIVITY_THRESHOLD_DAYS,
     partyNoResponseThresholdDays: m.partyNoResponseThresholdDays ?? automationEngine.DEFAULT_PARTY_NO_RESPONSE_THRESHOLD_DAYS,
     onboardingDismissedAt: m.onboardingDismissedAt || null,
+    jurisdiction: m.jurisdiction || null,
     createdAt: m.createdAt,
   };
 }
@@ -1357,6 +1360,206 @@ module.exports = function (io, presence) {
     const reprogramacion = { eligible: rescheduleHearings.length > 0, hearings: rescheduleHearings };
 
     res.json({ apertura, cierre, audiencia, incomparecencia, reprogramacion });
+  });
+
+  // ================= Bloque 43 — Motor de Plazos Legales =================
+  // Sección "PLAZOS" del expediente (spec §7). Solo lectura para cualquiera
+  // con acceso a la mediación (igual que /audit y /legal-tools/actas) —
+  // parties/lawyers NUNCA llegan acá: entran por routes/party-portal.js con
+  // su propio token, un router completamente distinto (ver requireMediationAccess
+  // más arriba, que solo resuelve req.user de sesión, nunca portalToken).
+  function serializePartyNotification(n) {
+    return {
+      id: n.id, mediationId: n.mediationId, partyId: n.partyId, medium: n.medium,
+      pieceId: n.pieceId || null, sentDate: n.sentDate || null, status: n.status,
+      receivedDate: n.receivedDate || null, documentId: n.documentId || null,
+      observations: n.observations || null, createdBy: n.createdBy, createdAt: n.createdAt, updatedAt: n.updatedAt,
+    };
+  }
+  router.get('/:id/legal-tools/plazos', requireAuth, requireMediationAccess, (req, res) => {
+    const db = getDB();
+    const mediation = req.mediation;
+    const deadline = computeMediationDeadline(db, mediation);
+    const nextHearing = db.hearings
+      .filter((h) => h.mediationId === mediation.id && ['propuesta', 'programada', 'confirmada'].includes(h.status) && new Date(h.date).getTime() >= Date.now())
+      .sort((a, b) => a.date.localeCompare(b.date))[0] || null;
+    const hearingNotice = nextHearing && mediation.jurisdiction
+      ? checkHearingNotice(db, mediation, nextHearing.date, nextHearing.lastModifiedAt || nextHearing.createdAt)
+      : null;
+    const actaDisponibilidad = computeActaDisponibilidad(db, mediation);
+    const extensions = db.mediationDeadlineExtensions.filter((e) => e.mediationId === mediation.id).sort((a, b) => a.createdAt - b.createdAt);
+    const notifications = db.partyNotifications.filter((n) => n.mediationId === mediation.id).sort((a, b) => a.createdAt - b.createdAt);
+    res.json({
+      jurisdiction: mediation.jurisdiction || null,
+      jurisdictionLabel: mediation.jurisdiction ? (getJurisdictionRules(mediation.jurisdiction) || {}).label || mediation.jurisdiction : null,
+      availableJurisdictions: listJurisdictions(),
+      deadline,
+      nextHearing: nextHearing ? { id: nextHearing.id, date: nextHearing.date, startTime: nextHearing.startTime, status: nextHearing.status } : null,
+      hearingNotice,
+      actaDisponibilidad,
+      extensions,
+      notifications: notifications.map(serializePartyNotification),
+      deadlineStartOverride: mediation.deadlineStartOverride || null,
+      deadlineStartOverrideReason: mediation.deadlineStartOverrideReason || null,
+      deadlineStartOverrideBy: mediation.deadlineStartOverrideBy || null,
+      deadlineStartOverrideAt: mediation.deadlineStartOverrideAt || null,
+    });
+  });
+
+  // jurisdicción de la mediación — dato administrativo (de dónde se
+  // presentó el expediente), no un juicio profesional sobre el fondo, así
+  // que queda abierto a requireEditAccess (mediador+asistente+admin), igual
+  // criterio que cargar el objeto/tipo de la mediación.
+  router.patch('/:id/jurisdiction', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    const { jurisdiction } = req.body || {};
+    if (jurisdiction !== null && !getJurisdictionRules(jurisdiction)) {
+      return res.status(400).json({ error: 'Jurisdicción inválida o todavía no soportada.' });
+    }
+    const db = getDB();
+    const mediation = db.mediations.find((m) => m.id === req.mediation.id);
+    mediation.jurisdiction = jurisdiction || null;
+    logMediationEvent(db, {
+      mediationId: mediation.id, type: 'MEDIATION_JURISDICTION_SET', actorId: req.user.id,
+      entityType: 'mediation', entityId: mediation.id,
+      title: `Jurisdicción: ${jurisdiction || '(sin definir)'}`,
+    });
+    await commit();
+    res.json(serializeMediation(mediation));
+  });
+
+  // ---------- notificación fehaciente por parte (spec §5) ----------
+  router.get('/:id/party-notifications', requireAuth, requireMediationAccess, (req, res) => {
+    const db = getDB();
+    const list = db.partyNotifications.filter((n) => n.mediationId === req.mediation.id).sort((a, b) => a.createdAt - b.createdAt);
+    res.json(list.map(serializePartyNotification));
+  });
+
+  const NOTIFICATION_MEDIUMS = ['carta_documento', 'cedula', 'acta_notarial', 'personal', 'electronico'];
+  const NOTIFICATION_STATUSES = ['enviada', 'recibida', 'rechazada', 'no_localizado'];
+
+  router.post('/:id/party-notifications', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    const { partyId, medium, pieceId, sentDate, status, receivedDate, documentId, observations } = req.body || {};
+    const db = getDB();
+    const party = db.parties.find((p) => p.id === partyId && p.mediationId === req.mediation.id);
+    if (!party) return res.status(400).json({ error: 'Parte inválida para esta mediación.' });
+    if (!medium || !NOTIFICATION_MEDIUMS.includes(medium)) return res.status(400).json({ error: 'Medio de notificación inválido.' });
+    const finalStatus = status || 'enviada';
+    if (!NOTIFICATION_STATUSES.includes(finalStatus)) return res.status(400).json({ error: 'Estado de notificación inválido.' });
+    if (finalStatus === 'recibida' && !receivedDate) return res.status(400).json({ error: 'Falta la fecha de recepción efectiva.' });
+    if (documentId && !db.documents.some((d) => d.id === documentId && d.mediationId === req.mediation.id)) {
+      return res.status(400).json({ error: 'El documento indicado como prueba no pertenece a esta mediación.' });
+    }
+    const now = Date.now();
+    const notification = {
+      id: nanoid(), mediationId: req.mediation.id, partyId, medium,
+      pieceId: pieceId || null, sentDate: sentDate || null, status: finalStatus,
+      receivedDate: receivedDate || null, documentId: documentId || null,
+      observations: observations || null, createdBy: req.user.id, createdAt: now, updatedAt: now,
+    };
+    db.partyNotifications.push(notification);
+    logMediationEvent(db, {
+      mediationId: req.mediation.id, type: 'PARTY_NOTIFICATION_REGISTERED', actorId: req.user.id,
+      entityType: 'partyNotification', entityId: notification.id,
+      title: `Notificación fehaciente registrada — ${party.legalName || `${party.firstName || ''} ${party.lastName || ''}`.trim()} (${finalStatus})`,
+    });
+    await commit();
+    res.json(serializePartyNotification(notification));
+  });
+
+  router.patch('/:id/party-notifications/:notifId', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    const db = getDB();
+    const notification = db.partyNotifications.find((n) => n.id === req.params.notifId && n.mediationId === req.mediation.id);
+    if (!notification) return res.status(404).json({ error: 'Notificación no encontrada.' });
+    const { medium, pieceId, sentDate, status, receivedDate, documentId, observations } = req.body || {};
+    if (medium !== undefined) {
+      if (!NOTIFICATION_MEDIUMS.includes(medium)) return res.status(400).json({ error: 'Medio de notificación inválido.' });
+      notification.medium = medium;
+    }
+    if (status !== undefined) {
+      if (!NOTIFICATION_STATUSES.includes(status)) return res.status(400).json({ error: 'Estado de notificación inválido.' });
+      notification.status = status;
+    }
+    if (notification.status === 'recibida' && !((receivedDate !== undefined ? receivedDate : notification.receivedDate))) {
+      return res.status(400).json({ error: 'Falta la fecha de recepción efectiva.' });
+    }
+    if (pieceId !== undefined) notification.pieceId = pieceId || null;
+    if (sentDate !== undefined) notification.sentDate = sentDate || null;
+    if (receivedDate !== undefined) notification.receivedDate = receivedDate || null;
+    if (observations !== undefined) notification.observations = observations || null;
+    if (documentId !== undefined) {
+      if (documentId && !db.documents.some((d) => d.id === documentId && d.mediationId === req.mediation.id)) {
+        return res.status(400).json({ error: 'El documento indicado como prueba no pertenece a esta mediación.' });
+      }
+      notification.documentId = documentId || null;
+    }
+    notification.updatedAt = Date.now();
+    logMediationEvent(db, {
+      mediationId: req.mediation.id, type: 'PARTY_NOTIFICATION_UPDATED', actorId: req.user.id,
+      entityType: 'partyNotification', entityId: notification.id,
+      title: `Notificación fehaciente actualizada (${notification.status})`,
+    });
+    await commit();
+    res.json(serializePartyNotification(notification));
+  });
+
+  // ---------- prórroga del plazo de 60 días (spec §4.1) y corrección
+  // manual de la fecha base (spec §7) — reservado al mediador/admin, no al
+  // asistente: ambas cosas alteran el cómputo legal del plazo, mismo
+  // criterio que cerrar la mediación o registrar su resultado (ver
+  // POST /:id/close y POST /:id/status más arriba). ----------
+  router.post('/:id/deadline-extensions', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    if (req.mediationRole === 'asistente') {
+      return res.status(403).json({ error: 'Registrar una prórroga del plazo es exclusivo del mediador responsable — un asistente no puede hacerlo.' });
+    }
+    const { days, newDeadlineDate, reason, agreedDate } = req.body || {};
+    if (!reason || !agreedDate) return res.status(400).json({ error: 'Faltan el motivo y la fecha del acuerdo de prórroga.' });
+    if (!days && !newDeadlineDate) return res.status(400).json({ error: 'Indicá cuántos días hábiles se suman, o la nueva fecha límite directa.' });
+    const db = getDB();
+    const extension = {
+      id: nanoid(), mediationId: req.mediation.id, days: days || null, newDeadlineDate: newDeadlineDate || null,
+      reason, agreedDate, recordedBy: req.user.id, createdAt: Date.now(),
+    };
+    db.mediationDeadlineExtensions.push(extension);
+    logMediationEvent(db, {
+      mediationId: req.mediation.id, type: 'MEDIATION_DEADLINE_EXTENDED', actorId: req.user.id,
+      entityType: 'mediationDeadlineExtension', entityId: extension.id,
+      title: `Prórroga del plazo registrada${days ? ` (+${days} días hábiles)` : ` (nueva fecha: ${newDeadlineDate})`}`,
+      description: reason,
+    });
+    await commit();
+    res.json(extension);
+  });
+
+  router.patch('/:id/deadline-start-override', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    if (req.mediationRole === 'asistente') {
+      return res.status(403).json({ error: 'Corregir la fecha base del cómputo del plazo es exclusivo del mediador responsable — un asistente no puede hacerlo.' });
+    }
+    const { date, reason } = req.body || {};
+    const db = getDB();
+    const mediation = db.mediations.find((m) => m.id === req.mediation.id);
+    if (date === null) {
+      mediation.deadlineStartOverride = null;
+      mediation.deadlineStartOverrideReason = null;
+      mediation.deadlineStartOverrideBy = null;
+      mediation.deadlineStartOverrideAt = null;
+      logMediationEvent(db, {
+        mediationId: mediation.id, type: 'MEDIATION_DEADLINE_START_OVERRIDE_CLEARED', actorId: req.user.id,
+        entityType: 'mediation', entityId: mediation.id, title: 'Corrección manual de la fecha base retirada — vuelve a calcularse por notificación',
+      });
+    } else {
+      if (!date || !reason) return res.status(400).json({ error: 'Faltan la fecha corregida y el motivo del registro de auditoría.' });
+      mediation.deadlineStartOverride = date;
+      mediation.deadlineStartOverrideReason = reason;
+      mediation.deadlineStartOverrideBy = req.user.id;
+      mediation.deadlineStartOverrideAt = Date.now();
+      logMediationEvent(db, {
+        mediationId: mediation.id, type: 'MEDIATION_DEADLINE_START_OVERRIDE_SET', actorId: req.user.id,
+        entityType: 'mediation', entityId: mediation.id,
+        title: `Fecha base del plazo corregida manualmente a ${date}`, description: reason,
+      });
+    }
+    await commit();
+    res.json(serializeMediation(mediation));
   });
 
   // ---------- editar datos generales ----------
