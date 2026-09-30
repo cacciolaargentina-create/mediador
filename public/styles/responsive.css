@@ -13,6 +13,31 @@
   .mediador-app .trust-strip-inner{ grid-template-columns: repeat(2, minmax(0,1fr)); }
 }
 
+/* ---- tablet propiamente (768-1023, no mobile): sidebar colapsada a solo
+   íconos — spec Bloque 38. Los textos se ocultan visualmente pero quedan
+   para lectores de pantalla; title="" en cada item da el nombre al pasar
+   el mouse. Los grupos ("Trabajo"/"Seguimiento"/"Estudio") no tienen
+   sentido como texto en 56px de ancho, se ocultan. ---- */
+@media (min-width: 768px) and (max-width: 1023px){
+  .mediador-app .sidebar{ width: 68px; padding-left: var(--space-2); padding-right: var(--space-2); }
+  .mediador-app .main{ margin-left: 68px; }
+  .mediador-app .sidebar-logo{ padding-left: 4px; padding-right: 4px; }
+  .mediador-app .sidebar-logo .mediador-logo-text{ display: none; }
+  .mediador-app .sidebar-group-label{ display: none; }
+  .mediador-app .sidebar-item{ justify-content: center; padding: 0; }
+  .mediador-app .sidebar-item span:not(.sidebar-badge){ display: none; }
+  .mediador-app .sidebar-item .sidebar-badge{ position: absolute; top: 2px; right: 2px; margin-left: 0; }
+  .mediador-app .sidebar-item{ position: relative; }
+  .mediador-app .sidebar-plan-card{ align-items: center; text-align: center; }
+  .mediador-app .sidebar-plan-label, .mediador-app .sidebar-plan-link{ display: none; }
+  .mediador-app .account-btn .account-name{ display: none; }
+  .mediador-app .account-btn .caret{ display: none; }
+
+  /* Bloque 38 — KPIs de a 2 en tablet (la referencia pide 4 en desktop) */
+  .mediador-app .kpi-grid{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mediador-app .dash-row-7-5, .mediador-app .dash-row-8-4, .mediador-app .dash-row-3{ grid-template-columns: 1fr; }
+}
+
 /* ---- mobile: sidebar se convierte en drawer, topbar gana botón de menú ---- */
 @media (max-width: 767px){
   .mediador-app .sidebar{
@@ -67,6 +92,21 @@
 
   /* comunicaciones: lista + chat pasan a ancho completo, apilados */
   .mediador-app .comms-layout{ flex-direction: column; }
+
+  /* Bloque 38 — buscador de la topbar colapsado a ícono en mobile; al
+     tocarlo se abre como overlay fijo arriba de la página (ver
+     toggleTopbarSearch en mediador.js), con el backdrop oscureciendo
+     el resto. */
+  .mediador-app .topbar-search-icon-btn{ display: inline-flex; }
+  .mediador-app .topbar-search-wrap{ flex: 0 0 auto; max-width: none; }
+  .mediador-app .topbar-search{ display: none; }
+  .mediador-app .topbar-search-wrap.search-open .topbar-search{
+    display: flex; position: fixed; top: 10px; left: 12px; right: 12px; z-index: 26;
+  }
+  .mediador-app .topbar-search-wrap.search-open .topbar-search-results{
+    position: fixed; top: 62px; left: 12px; right: 12px;
+  }
+  .mediador-app .topbar-bell-panel{ position: fixed; top: 58px; left: 12px; right: 12px; width: auto; }
 }
 
 @media (min-width: 768px) and (max-width: 1023px){

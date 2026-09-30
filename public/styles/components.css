@@ -307,3 +307,212 @@
 .mediador-app .sidebar-footer .account-btn:hover, .mediador-app .sidebar-footer .account-btn[aria-expanded="true"]{ background: var(--color-sidebar-hover); border-color: transparent; }
 .mediador-app .sidebar-footer .account-btn .account-name{ color: var(--color-text-on-dark); max-width: 130px; }
 .mediador-app .sidebar-footer .account-menu{ top: auto; bottom: calc(100% + 8px); left: 0; right: 0; transform-origin: bottom left; width: 100%; }
+
+/* ================= BLOQUE 38 — DASHBOARD REDISEÑADO =================
+   Componentes nuevos: encabezado con acciones, KPIs, lista de atención
+   con badge de prioridad, audiencias con recuadro de fecha, tabla de
+   últimas mediaciones (+ versión tarjeta para mobile), anillo de estado,
+   fila de comunicaciones/tareas/documentos y bloque "Próximamente". */
+
+.mediador-app .dash-header{ display: flex; justify-content: space-between; align-items: flex-end; gap: var(--space-6); flex-wrap: wrap; margin-bottom: var(--space-6); }
+.mediador-app .dash-header h1{ margin: 0; font-size: 30px; line-height: 1.2; letter-spacing: -.015em; }
+.mediador-app .dash-header p{ margin: 6px 0 0; font-size: 15px; color: var(--color-text-secondary); }
+.mediador-app .dash-header-actions{ display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.mediador-app .dash-continue-btn{
+  display: inline-flex; align-items: center; gap: var(--space-2); height: 44px; padding: 0 var(--space-4);
+  border-radius: var(--radius-md); border: 1px solid var(--color-border); background: var(--color-surface);
+  color: var(--color-text); font-size: 14px; font-weight: var(--font-weight-semibold); text-decoration: none; white-space: nowrap;
+}
+.mediador-app .dash-continue-btn svg{ width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.mediador-app .dash-continue-btn:hover{ background: var(--color-surface-2); }
+
+.mediador-app .kpi-grid{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-5); margin-bottom: var(--space-5); }
+.mediador-app .kpi-card{
+  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg);
+  padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-3);
+  text-decoration: none; color: var(--color-text);
+}
+a.kpi-card{ cursor: pointer; }
+a.kpi-card:hover{ border-color: var(--color-text-muted); }
+.mediador-app .kpi-card-head{ display: flex; align-items: center; gap: 12px; }
+.mediador-app .kpi-icon{ width: 40px; height: 40px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.mediador-app .kpi-icon svg{ width: 20px; height: 20px; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.mediador-app .kpi-icon.calm{ background: var(--color-brand-soft); }
+.mediador-app .kpi-icon.calm svg{ stroke: var(--color-brand-dark); }
+.mediador-app .kpi-icon.blue{ background: #EDF4FD; }
+.mediador-app .kpi-icon.blue svg{ stroke: #2F5FA3; }
+.mediador-app .kpi-icon.warn{ background: var(--color-warning-soft); }
+.mediador-app .kpi-icon.warn svg{ stroke: #7A5310; }
+.mediador-app .kpi-icon.green{ background: #E8F7F0; }
+.mediador-app .kpi-icon.green svg{ stroke: #166B47; }
+.mediador-app .kpi-card-head span{ font-size: 14px; font-weight: var(--font-weight-semibold); color: #3E4B4E; }
+.mediador-app .kpi-value-row{ display: flex; justify-content: space-between; align-items: flex-end; }
+.mediador-app .kpi-value{ font-size: 34px; font-weight: var(--font-weight-bold); line-height: 1; font-variant-numeric: tabular-nums; }
+.mediador-app .kpi-sub{ font-size: 13px; color: var(--color-text-secondary); }
+.mediador-app .kpi-sub.empty{ font-style: italic; }
+
+.mediador-app .dash-row-7-5{ display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: var(--space-5); margin-bottom: var(--space-5); }
+.mediador-app .dash-row-8-4{ display: grid; grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); gap: var(--space-5); margin-bottom: var(--space-5); }
+.mediador-app .dash-row-3{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-5); margin-bottom: var(--space-5); }
+.mediador-app .dash-row-final{ display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 4fr) minmax(0, 3fr); gap: var(--space-5); }
+.mediador-app .dash-section{ background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-6); display: flex; flex-direction: column; min-width: 0; }
+.mediador-app .dash-section-head{ display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2); gap: var(--space-3); }
+.mediador-app .dash-section-head h2{ margin: 0; font-size: 18px; font-weight: var(--font-weight-bold); }
+.mediador-app .dash-section-head .count{ font-size: 13px; font-weight: var(--font-weight-semibold); color: var(--color-text-secondary); white-space: nowrap; }
+.mediador-app .dash-section-head a{ font-size: 13px; font-weight: var(--font-weight-semibold); text-decoration: none; color: var(--color-brand-dark); white-space: nowrap; }
+
+/* ---- centro de atención ---- */
+.mediador-app .attn-row{ display: flex; gap: var(--space-4); align-items: center; padding: var(--space-4) 0; border-bottom: 1px solid var(--color-border-light); }
+.mediador-app .attn-row:last-child{ border-bottom: none; padding-bottom: 0; }
+.mediador-app .attn-badge{ width: 84px; flex-shrink: 0; text-align: center; font-size: 12px; font-weight: var(--font-weight-semibold); padding: 4px 0; border-radius: var(--radius-pill); }
+.mediador-app .attn-badge.p-vencido{ color: #A63636; background: var(--color-danger-soft); }
+.mediador-app .attn-badge.p-critico{ color: #7A5310; background: var(--color-warning-soft); }
+.mediador-app .attn-badge.p-proximo{ color: #2F5FA3; background: #EDF4FD; }
+.mediador-app .attn-badge.p-pendiente{ color: #4A5658; background: #E4EAEB; }
+.mediador-app .attn-body{ flex: 1; min-width: 0; }
+.mediador-app .attn-body .mcode{ font-size: 12px; font-weight: var(--font-weight-semibold); color: var(--color-text-secondary); }
+.mediador-app .attn-body .title{ font-size: 15px; font-weight: var(--font-weight-semibold); margin-top: 2px; }
+.mediador-app .attn-body .detail{ font-size: 13px; color: var(--color-text-secondary); margin-top: 2px; }
+.mediador-app .attn-action{ flex-shrink: 0; height: 36px; padding: 0 14px; border-radius: var(--radius-sm); border: 1px solid var(--color-border); background: var(--color-surface); font: inherit; font-size: 13px; font-weight: var(--font-weight-semibold); color: var(--color-text); cursor: pointer; }
+.mediador-app .attn-action:hover{ background: var(--color-surface-2); }
+
+/* ---- próximas audiencias ---- */
+.mediador-app .hearing-row{ display: flex; gap: var(--space-4); align-items: center; padding: var(--space-4) 0; border-bottom: 1px solid var(--color-border-light); }
+.mediador-app .hearing-row:last-child{ border-bottom: none; padding-bottom: 0; }
+.mediador-app .hearing-date-box{ width: 52px; height: 56px; flex-shrink: 0; border-radius: var(--radius-md); background: var(--color-bg); border: 1px solid var(--color-border-light); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.mediador-app .hearing-date-box .d{ font-size: 19px; font-weight: var(--font-weight-bold); line-height: 1; }
+.mediador-app .hearing-date-box .m{ font-size: 12px; font-weight: var(--font-weight-semibold); color: var(--color-text-secondary); margin-top: 3px; }
+.mediador-app .hearing-body{ flex: 1; min-width: 0; }
+.mediador-app .hearing-body .who{ font-size: 15px; font-weight: var(--font-weight-semibold); }
+.mediador-app .hearing-body .meta{ font-size: 13px; color: var(--color-text-secondary); margin-top: 2px; }
+.mediador-app .hearing-confirm-badge{ flex-shrink: 0; font-size: 12px; font-weight: var(--font-weight-semibold); padding: 3px 10px; border-radius: var(--radius-pill); white-space: nowrap; }
+.mediador-app .hearing-confirm-badge.confirmada{ color: #166B47; background: #E8F7F0; }
+.mediador-app .hearing-confirm-badge.sin_confirmar{ color: #7A5310; background: var(--color-warning-soft); }
+.mediador-app .hearing-confirm-badge.propuesta_enviada{ color: #2F5FA3; background: #EDF4FD; }
+
+/* ---- tabla de últimas mediaciones ---- */
+.mediador-app .dash-table{ width: 100%; border-collapse: collapse; font-size: 14px; }
+.mediador-app .dash-table thead tr{ background: var(--color-bg); }
+.mediador-app .dash-table th{ text-align: left; font-size: 12px; font-weight: var(--font-weight-semibold); color: var(--color-text-secondary); padding: 10px 12px; }
+.mediador-app .dash-table td{ padding: 14px 12px; border-bottom: 1px solid var(--color-border-light); }
+.mediador-app .dash-table tr:last-child td{ border-bottom: none; }
+.mediador-app .dash-table .open-link{ display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: var(--radius-sm); color: var(--color-text-secondary); }
+.mediador-app .dash-table .open-link:hover{ background: var(--color-surface-2); }
+.mediador-app .dash-table .open-link svg{ width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.mediador-app .dash-table .next-undefined{ color: #7A5310; font-weight: var(--font-weight-semibold); }
+.mediador-app .status-badge{ font-size: 12px; font-weight: var(--font-weight-semibold); padding: 3px 10px; border-radius: var(--radius-pill); white-space: nowrap; display: inline-block; }
+.mediador-app .status-badge.st-neutral{ color: #4A5658; background: #E4EAEB; }
+.mediador-app .status-badge.st-blue{ color: #2F5FA3; background: #EDF4FD; }
+.mediador-app .status-badge.st-calm{ color: #0E5F58; background: var(--color-brand-soft); }
+.mediador-app .status-badge.st-green{ color: #166B47; background: #E8F7F0; }
+.mediador-app .status-badge.st-danger{ color: #A63636; background: var(--color-danger-soft); }
+
+.mediador-app .dash-table-mobile{ display: none; flex-direction: column; gap: var(--space-3); }
+.mediador-app .dash-table-mobile-card{ border: 1px solid var(--color-border-light); border-radius: var(--radius-md); padding: var(--space-3); text-decoration: none; color: var(--color-text); display: block; }
+.mediador-app .dash-table-mobile-card .row1{ display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); margin-bottom: 4px; }
+.mediador-app .dash-table-mobile-card .code{ font-size: 12px; font-weight: var(--font-weight-semibold); color: var(--color-text-secondary); }
+.mediador-app .dash-table-mobile-card .parties{ font-size: 14.5px; font-weight: var(--font-weight-semibold); }
+.mediador-app .dash-table-mobile-card .meta{ font-size: 12.5px; color: var(--color-text-secondary); margin-top: 4px; }
+
+/* ---- estado de tus mediaciones (anillo SVG) ---- */
+.mediador-app .ring-wrap{ display: flex; justify-content: center; position: relative; margin-bottom: var(--space-5); }
+.mediador-app .ring-center{ position: absolute; top: 0; left: 0; right: 0; height: 150px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.mediador-app .ring-center .n{ font-size: 28px; font-weight: var(--font-weight-bold); line-height: 1; }
+.mediador-app .ring-center .l{ font-size: 12px; color: var(--color-text-secondary); margin-top: 4px; }
+.mediador-app .ring-legend{ display: flex; flex-direction: column; gap: 10px; }
+.mediador-app .ring-legend-row{ display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.mediador-app .ring-legend-dot{ width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.mediador-app .ring-legend-row .lab{ flex: 1; }
+.mediador-app .ring-legend-row .val{ font-weight: var(--font-weight-semibold); }
+
+/* ---- comunicaciones / tareas / documentos (fila de 3) ---- */
+.mediador-app .comm-item{ display: flex; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--color-border-light); text-decoration: none; color: var(--color-text); }
+.mediador-app .comm-item:last-child{ border-bottom: none; padding-bottom: 0; }
+.mediador-app .comm-avatar{ width: 34px; height: 34px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--color-brand-soft); color: var(--color-brand-dark); font-size: 13px; font-weight: var(--font-weight-bold); display: flex; align-items: center; justify-content: center; }
+.mediador-app .comm-body{ flex: 1; min-width: 0; }
+.mediador-app .comm-body .row1{ display: flex; justify-content: space-between; gap: 8px; }
+.mediador-app .comm-body .name{ font-size: 14px; font-weight: var(--font-weight-bold); }
+.mediador-app .comm-body .when{ font-size: 12px; color: var(--color-text-secondary); flex-shrink: 0; }
+.mediador-app .comm-body .preview{ font-size: 13px; color: #3E4B4E; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.mediador-app .task-item{ display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--color-border-light); }
+.mediador-app .task-item:last-child{ border-bottom: none; padding-bottom: 0; }
+.mediador-app .task-item .title{ font-size: 14px; font-weight: var(--font-weight-semibold); }
+.mediador-app .task-item .sub{ font-size: 13px; color: var(--color-text-secondary); margin-top: 2px; }
+
+.mediador-app .doc-item{ display: flex; gap: 12px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--color-border-light); text-decoration: none; color: var(--color-text); }
+.mediador-app .doc-item:last-child{ border-bottom: none; padding-bottom: 0; }
+.mediador-app .doc-item svg{ width: 22px; height: 22px; flex-shrink: 0; fill: none; stroke: var(--color-text-secondary); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.mediador-app .doc-item .title{ font-size: 14px; font-weight: var(--font-weight-semibold); }
+.mediador-app .doc-item .sub{ font-size: 13px; color: var(--color-text-secondary); margin-top: 2px; }
+
+/* ---- fila final: Puente Connect / Qué pasó / Asistente ---- */
+.mediador-app .connect-card{ background: var(--color-sidebar); border-radius: var(--radius-lg); padding: var(--space-7); display: flex; flex-direction: column; gap: var(--space-3); }
+.mediador-app .connect-card-head{ display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.mediador-app .connect-icon{ width: 42px; height: 42px; border-radius: var(--radius-md); background: var(--color-sidebar-active); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.mediador-app .connect-icon svg{ width: 21px; height: 21px; fill: none; stroke: var(--color-brand); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.mediador-app .connect-card-head h2{ margin: 0; font-size: 19px; font-weight: var(--font-weight-bold); color: var(--color-text-on-dark); }
+.mediador-app .connect-soon-pill{ font-size: 12px; font-weight: var(--font-weight-bold); color: var(--color-sidebar); background: var(--color-brand); padding: 3px 10px; border-radius: var(--radius-pill); }
+.mediador-app .connect-card p{ margin: 0; font-size: 15px; line-height: 1.6; color: var(--color-text-on-dark-muted); }
+.mediador-app .connect-card p.small{ font-size: 13px; }
+
+.mediador-app .whatpassed-item{ display: flex; gap: 12px; font-size: 13px; padding: 6px 0; }
+.mediador-app .whatpassed-item .t{ width: 74px; flex-shrink: 0; white-space: nowrap; color: var(--color-text-secondary); font-weight: var(--font-weight-semibold); }
+
+/* ---- panel de la campana (topbar-bell-panel): versión compacta de
+   attn-row, sin botón de acción — ver renderBellAttentionItem. ---- */
+.mediador-app .bell-item{ display: flex; gap: var(--space-3); align-items: center; padding: var(--space-2) var(--space-2); border-radius: var(--radius-sm); text-decoration: none; color: inherit; }
+.mediador-app .bell-item:hover{ background: var(--color-surface-2); }
+.mediador-app .bell-item .attn-badge{ width: 64px; font-size: 11px; padding: 3px 0; }
+.mediador-app .bell-item-body{ flex: 1; min-width: 0; }
+.mediador-app .bell-item-body .mcode{ font-size: 11px; font-weight: var(--font-weight-semibold); color: var(--color-text-secondary); }
+.mediador-app .bell-item-body .title{ font-size: 13px; font-weight: var(--font-weight-medium); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- estados vacíos por sección (usuario nuevo) ---- */
+.mediador-app .dash-empty{ padding: var(--space-5) 0; text-align: center; }
+.mediador-app .dash-empty p{ margin: 0 0 var(--space-3); color: var(--color-text-secondary); font-size: 14px; }
+
+/* ---- responsive del dashboard ---- */
+@media (max-width: 1023px){
+  .mediador-app .kpi-grid{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mediador-app .dash-row-7-5, .mediador-app .dash-row-8-4, .mediador-app .dash-row-3, .mediador-app .dash-row-final{ grid-template-columns: 1fr; }
+}
+@media (max-width: 767px){
+  .mediador-app .dash-header{ flex-direction: column; align-items: stretch; }
+  .mediador-app .dash-header-actions{ flex-direction: column; align-items: stretch; }
+  .mediador-app .dash-header-actions .dash-continue-btn, .mediador-app .dash-header-actions .hero-create-btn{ width: 100%; }
+  .mediador-app .kpi-grid{ grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+  .mediador-app .kpi-card{ padding: var(--space-4); }
+  .mediador-app .kpi-value{ font-size: 26px; }
+  .mediador-app .dash-table{ display: none; }
+  .mediador-app .dash-table-mobile{ display: flex; }
+  .mediador-app .dash-section{ padding: var(--space-4); }
+
+  /* orden pedido por la spec: encabezado, KPIs, atención, audiencias,
+     comunicaciones, el resto — todo el main pasa a flex column con
+     `order` explícito por sección. `order` en flexbox solo compara
+     hermanos DENTRO del mismo contenedor flex: dash-resto y dash-row-3
+     tienen que ser `display:contents` (no contenedores propios) para que
+     dash-comunicaciones (adentro de dash-row-3, adentro de dash-resto)
+     termine siendo hermano directo de dash-atencion/dash-audiencias y su
+     order:5 realmente lo saque antes que "el resto". */
+  .mediador-app .page-content.wide{ display: flex; flex-direction: column; gap: var(--space-5); }
+  .mediador-app .dash-header{ order: 1; }
+  .mediador-app .kpi-grid{ order: 2; }
+  .mediador-app .dash-atencion{ order: 3; }
+  .mediador-app .dash-audiencias{ order: 4; }
+  .mediador-app .dash-comunicaciones{ order: 5; }
+  .mediador-app .dash-resto{ display: contents; }
+  .mediador-app .dash-resto-item, .mediador-app .dash-row-8-4, .mediador-app .dash-row-final{ order: 6; }
+  .mediador-app .dash-row-7-5, .mediador-app .dash-row-3{ display: contents; }
+
+  /* attn-row/hearing-row: en desktop son 3 columnas (badge/date-box +
+     cuerpo + acción/confirmación); a 375px esas columnas fijas dejan el
+     cuerpo demasiado angosto (el título queda de una palabra por línea)
+     y el botón de acción centrado verticalmente en medio del texto
+     envuelto. Se apilan verticalmente. */
+  .mediador-app .attn-row{ flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+  .mediador-app .attn-action{ width: 100%; }
+  .mediador-app .hearing-row{ flex-wrap: wrap; }
+  .mediador-app .hearing-body{ min-width: 140px; }
+}

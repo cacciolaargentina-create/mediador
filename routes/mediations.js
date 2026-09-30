@@ -373,15 +373,37 @@ module.exports = function (io, presence) {
   // ---------- buscar (por número/nombre/DNI/etc — hoy solo por code/
   // object/internalNumber; se amplía a partes en el Bloque 4 cuando
   // exista la tabla parties) ----------
+  // Bloque 38 — además de código/objeto/legajo (internalNumber), ahora
+  // también por apellido/nombre de las partes y nombre/matrícula del
+  // abogado — mismos campos que ya existían en parties/lawyers, sin
+  // agregar ninguno nuevo (jurisdicción y honorarios no existen en el
+  // modelo, quedan afuera a propósito).
   router.get('/search', requireAuth, (req, res) => {
     const q = (req.query.q || '').trim().toLowerCase();
     if (q.length < 2) return res.json([]);
     const db = getDB();
     const scope = getMyMediations(db, req.user);
+    const scopeIds = new Set(scope.map((m) => m.id));
+    const partyMatchIds = new Set(
+      db.parties.filter((p) => scopeIds.has(p.mediationId) && (
+        (p.firstName || '').toLowerCase().includes(q) ||
+        (p.lastName || '').toLowerCase().includes(q) ||
+        (p.legalName || '').toLowerCase().includes(q) ||
+        (p.documentNumber || '').toLowerCase().includes(q)
+      )).map((p) => p.mediationId)
+    );
+    const lawyerMatchIds = new Set(
+      db.lawyers.filter((l) => scopeIds.has(l.mediationId) && (
+        (l.name || '').toLowerCase().includes(q) ||
+        (l.enrollmentNumber || '').toLowerCase().includes(q)
+      )).map((l) => l.mediationId)
+    );
     const results = scope.filter((m) =>
       m.code.toLowerCase().includes(q) ||
       (m.object || '').toLowerCase().includes(q) ||
-      (m.internalNumber || '').toLowerCase().includes(q)
+      (m.internalNumber || '').toLowerCase().includes(q) ||
+      partyMatchIds.has(m.id) ||
+      lawyerMatchIds.has(m.id)
     );
     res.json(results.map(serializeMediation));
   });
@@ -462,12 +484,35 @@ module.exports = function (io, presence) {
       .filter((h) => db.hearingConfirmations.some((c) => c.hearingId === h.id && c.response === 'pendiente'))
       .map((h) => ({ id: h.id, mediationId: h.mediationId, mediationCode: mediationById[h.mediationId]?.code || null, date: h.date, startTime: h.startTime }));
 
+    // Bloque 38 — resumen de confirmación por audiencia (para el badge
+    // "Confirmada" / "N sin confirmar" / "Propuesta enviada" del
+    // dashboard nuevo) y nombres de las partes convocadas — mismos datos
+    // que ya se calculaban por separado (hearingConfirmations, parties),
+    // juntados acá para no hacer un segundo viaje desde el frontend.
+    function hearingConfirmationSummary(h) {
+      if (h.status === 'propuesta') return { label: 'propuesta_enviada', pendientes: 0 };
+      const rows = db.hearingConfirmations.filter((c) => c.hearingId === h.id);
+      const pendientes = rows.filter((c) => c.response === 'pendiente').length;
+      return pendientes > 0 ? { label: 'sin_confirmar', pendientes } : { label: 'confirmada', pendientes: 0 };
+    }
+    function activePartyNames(mediationId) {
+      return db.parties
+        .filter((p) => p.mediationId === mediationId && p.status === 'activa')
+        .map((p) => partyDisplayName(db, p.id))
+        .filter(Boolean);
+    }
+
     const proximasAudiencias = db.hearings
       .filter((h) => mineIds.has(h.mediationId) && ['programada', 'confirmada'].includes(h.status))
       .filter((h) => new Date(h.date).getTime() >= now - 24 * 60 * 60 * 1000) // no mostrar audiencias muy viejas que quedaron sin cerrar
       .sort((a, b) => a.date.localeCompare(b.date))
       .slice(0, 10)
-      .map((h) => ({ id: h.id, mediationId: h.mediationId, mediationCode: mediationById[h.mediationId]?.code || null, date: h.date, startTime: h.startTime, modality: h.modality, status: h.status }));
+      .map((h) => ({
+        id: h.id, mediationId: h.mediationId, mediationCode: mediationById[h.mediationId]?.code || null,
+        date: h.date, startTime: h.startTime, modality: h.modality, status: h.status,
+        partyNames: activePartyNames(h.mediationId),
+        confirmation: hearingConfirmationSummary(h),
+      }));
 
     const tareasPendientes = myMediationTasks
       .filter((t) => ['pendiente', 'en_proceso'].includes(t.status))
@@ -544,6 +589,76 @@ module.exports = function (io, presence) {
 
     const porEstado = {};
     for (const m of mine) porEstado[m.status] = (porEstado[m.status] || 0) + 1;
+
+    // Bloque 38 — datos nuevos del dashboard rediseñado. Todo calculado a
+    // partir de tablas que ya existían (mediations/mediation_events/
+    // documents/feature_flags), sin tocar el modelo ni los permisos —
+    // mismo criterio que el resto de este endpoint.
+
+    // "Últimas mediaciones": ordenadas por actividad real (el último
+    // mediation_event de cada una), no por fecha de creación — así una
+    // mediación vieja con movimiento hoy aparece antes que una nueva sin
+    // tocar. Sin evento propio todavía, cae a createdAt.
+    const lastEventAtByMediation = {};
+    for (const e of db.mediationEvents) {
+      if (!mineIds.has(e.mediationId)) continue;
+      if (!lastEventAtByMediation[e.mediationId] || e.createdAt > lastEventAtByMediation[e.mediationId].createdAt) {
+        lastEventAtByMediation[e.mediationId] = { createdAt: e.createdAt, type: e.type, title: e.title };
+      }
+    }
+    const ultimasMediaciones = mine
+      .slice()
+      .sort((a, b) => (lastEventAtByMediation[b.id]?.createdAt || b.createdAt) - (lastEventAtByMediation[a.id]?.createdAt || a.createdAt))
+      .slice(0, 5)
+      .map((m) => ({
+        id: m.id, code: m.code, object: m.object, status: m.status,
+        partyNames: activePartyNames(m.id),
+        nextActionText: m.nextActionText || null,
+        lastActivity: lastEventAtByMediation[m.id]
+          ? { title: lastEventAtByMediation[m.id].title, createdAt: lastEventAtByMediation[m.id].createdAt }
+          : { title: 'Mediación creada', createdAt: m.createdAt },
+      }));
+
+    // "Documentos recientes": últimos 3 de TODAS las mediaciones del
+    // usuario, mismo serializer que ya usa el expediente (nunca expone
+    // storagePath).
+    const documentosRecientes = db.documents
+      .filter((d) => mineIds.has(d.mediationId))
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, 3)
+      .map((d) => ({ ...serializeDocument(d), mediationCode: mediationById[d.mediationId]?.code || null }));
+
+    // "Continuar [código]": la última mediación donde ESTE usuario dejó
+    // actividad (actorId, no cualquier evento del sistema) — el atajo del
+    // encabezado para retomar justo donde se quedó.
+    const myLastEvent = db.mediationEvents
+      .filter((e) => mineIds.has(e.mediationId) && e.actorId === req.user.id)
+      .sort((a, b) => b.createdAt - a.createdAt)[0] || null;
+    const continuarMediacion = myLastEvent
+      ? { id: myLastEvent.mediationId, code: mediationById[myLastEvent.mediationId]?.code || null }
+      : null;
+
+    // Tendencia de 6 meses y resultados de cierre — mismo cálculo exacto
+    // que ya usa GET /stats (no se duplica la lógica, se copia la misma
+    // agregación porque el dashboard la necesita en la misma respuesta).
+    const nowDate = new Date();
+    const creadasPorMes = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(nowDate.getFullYear(), nowDate.getMonth() - i, 1);
+      const key = d.toISOString().slice(0, 7);
+      const count = mine.filter((m) => new Date(m.createdAt).toISOString().slice(0, 7) === key).length;
+      creadasPorMes.push({ month: key, count });
+    }
+    const cerradasList = mine.filter((m) => m.closedAt);
+    const porResultado = {};
+    cerradasList.forEach((m) => { porResultado[m.closedResult] = (porResultado[m.closedResult] || 0) + 1; });
+    const acuerdosLogrados = cerradasList.filter((m) => ['acuerdo_total', 'acuerdo_parcial'].includes(m.closedResult)).length;
+
+    // Puente Connect: gateado por feature flag (Admin Console, Bloque 29)
+    // — sin fila sembrada todavía, el default es visible (mismo criterio
+    // que el resto de los flags, ver routes/admin-mediador.js).
+    const puenteConnectFlag = db.featureFlags.find((f) => f.key === 'puenteConnect');
+    const puenteConnectEnabled = puenteConnectFlag ? !!puenteConnectFlag.enabled : true;
 
     // Bloque 19 — "comunicaciones pendientes": un número, no una alerta
     // por mensaje (spec: "evitar ruido"). Mismo cálculo de no-leído que
@@ -629,6 +744,14 @@ module.exports = function (io, presence) {
         ...audienciasCanceladasRecientemente.map((h) => ({ type: 'audienciaCancelada', mediationId: h.mediationId, mediationCode: h.mediationCode, title: `Audiencia cancelada · ${h.date}`, detail: 'Revisar si corresponde reagendar.', priority: 'pendiente', dueDate: null, refId: h.id, responsible: 'Vos', suggestedActions: ['verMediacion'] })),
         ...fallosNotificacion.map((f) => ({ type: 'falloNotificacion', mediationId: f.mediationId, mediationCode: f.mediationCode, title: `Notificación a ${f.userName || 'alguien'} no llegó`, detail: null, priority: 'pendiente', dueDate: null, refId: f.mediationId, responsible: 'Vos', suggestedActions: ['verMediacion'] })),
       ].sort((a, b) => ({ vencido: 1, critico: 2, proximo: 3, pendiente: 4 }[a.priority] - { vencido: 1, critico: 2, proximo: 3, pendiente: 4 }[b.priority])),
+      // Bloque 38 — dashboard rediseñado
+      ultimasMediaciones,
+      documentosRecientes,
+      continuarMediacion,
+      creadasPorMes,
+      porResultado,
+      acuerdosLogrados,
+      puenteConnectEnabled,
     });
   });
 

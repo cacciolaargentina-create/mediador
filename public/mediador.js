@@ -101,6 +101,103 @@ function updateCommsBadge(count){
   else { badge.style.display = 'none'; }
 }
 
+// Bloque 38 — buscador global de la topbar. En desktop el input está
+// siempre visible; en mobile el ícono lo abre como overlay (ver
+// responsive.css, .topbar-search-wrap.search-open). Reusa el MISMO
+// endpoint GET /api/mediations/search que ya usaba el buscador de la
+// pantalla "Mis Mediaciones" — nunca un buscador paralelo.
+let topbarSearchDebounce = null;
+function toggleTopbarSearch(){
+  const wrap = document.querySelector('.topbar-search-wrap');
+  if(!wrap) return;
+  if(wrap.classList.contains('search-open')){ closeTopbarSearch(); return; }
+  closeTopbarBell();
+  wrap.classList.add('search-open');
+  const backdrop = document.getElementById('topbar-search-backdrop');
+  if(backdrop) backdrop.hidden = false;
+  setTimeout(() => document.getElementById('topbar-search-input')?.focus(), 50);
+}
+function closeTopbarSearch(){
+  const wrap = document.querySelector('.topbar-search-wrap');
+  if(wrap) wrap.classList.remove('search-open');
+  const backdrop = document.getElementById('topbar-search-backdrop');
+  if(backdrop) backdrop.hidden = true;
+  const results = document.getElementById('topbar-search-results');
+  if(results){ results.hidden = true; results.innerHTML = ''; }
+  const input = document.getElementById('topbar-search-input');
+  if(input) input.value = '';
+  clearTimeout(topbarSearchDebounce);
+}
+function onTopbarSearchInput(value){
+  clearTimeout(topbarSearchDebounce);
+  const resultsEl = document.getElementById('topbar-search-results');
+  if(!resultsEl) return;
+  const q = (value || '').trim();
+  if(q.length < 2){ resultsEl.hidden = true; resultsEl.innerHTML = ''; return; }
+  topbarSearchDebounce = setTimeout(async () => {
+    let results;
+    try{ results = await api('/api/mediations/search?q=' + encodeURIComponent(q)); }
+    catch(e){ return; }
+    resultsEl.innerHTML = results.length ? results.slice(0, 8).map(m => `
+      <a class="topbar-search-result" href="#" onclick="event.preventDefault(); closeTopbarSearch(); goTo('detail','${m.id}');">
+        <div class="code">${escapeHtml(m.code)}</div>
+        <div class="obj">${escapeHtml(m.object || 'Sin carátula')}</div>
+      </a>
+    `).join('') : `<div class="topbar-search-empty">Sin resultados para "${escapeHtml(q)}"</div>`;
+    resultsEl.hidden = false;
+  }, 250);
+}
+
+// Bloque 38 — campana de la topbar: reusa currentAttentionItems, el MISMO
+// centro de atención calculado en el servidor que ya usa el dashboard
+// (ver comentario de currentAttentionItems más abajo) — nunca un cálculo
+// paralelo de "qué requiere atención".
+function updateTopbarBellBadge(){
+  const badge = document.getElementById('topbar-bell-badge');
+  if(!badge) return;
+  const n = currentAttentionItems.length;
+  if(n > 0){ badge.textContent = n > 9 ? '9+' : String(n); badge.hidden = false; }
+  else badge.hidden = true;
+}
+function onDocClickCloseTopbarBell(e){
+  const panel = document.getElementById('topbar-bell-panel');
+  const bell = document.getElementById('topbar-bell');
+  if(!panel || panel.hidden) return;
+  if(panel.contains(e.target) || (bell && bell.contains(e.target))) return;
+  closeTopbarBell();
+}
+// Compacta (sin botón de acción) — la fila completa de renderAttentionItem
+// está pensada para el ancho de la sección del dashboard, no para un panel
+// angosto de 340px.
+function renderBellAttentionItem(item){
+  const badgeClass = ATTENTION_PRIORITY_BADGE_CLASS_38[item.priority] || 'p-pendiente';
+  return `
+    <a class="bell-item" href="#" onclick="event.preventDefault(); closeTopbarBell(); goTo('detail','${item.mediationId}');">
+      <span class="attn-badge ${badgeClass}">${ATTENTION_PRIORITY_LABELS[item.priority] || item.priority}</span>
+      <div class="bell-item-body">
+        <div class="mcode">${escapeHtml(item.mediationCode || '')}</div>
+        <div class="title">${escapeHtml(item.title || '')}</div>
+      </div>
+    </a>
+  `;
+}
+function toggleTopbarBell(){
+  const panel = document.getElementById('topbar-bell-panel');
+  if(!panel) return;
+  if(!panel.hidden){ closeTopbarBell(); return; }
+  closeTopbarSearch();
+  panel.innerHTML = `<h3>Requieren tu atención</h3>` + (currentAttentionItems.length
+    ? currentAttentionItems.slice(0, 8).map((item) => renderBellAttentionItem(item)).join('')
+    : `<p class="empty-hint" style="padding:8px;">Estás al día — nada pendiente.</p>`);
+  panel.hidden = false;
+  document.addEventListener('click', onDocClickCloseTopbarBell, true);
+}
+function closeTopbarBell(){
+  const panel = document.getElementById('topbar-bell-panel');
+  if(panel) panel.hidden = true;
+  document.removeEventListener('click', onDocClickCloseTopbarBell, true);
+}
+
 // Bloque 35 — bandeja de Comunicaciones en vivo. Un solo socket para toda
 // la sesión (no uno por mediación, como el chat de una mediación puntual
 // en la sección Comunicaciones del detalle — ese sigue igual, sin tocar).
@@ -234,6 +331,7 @@ const NEXT_ACTION_RESPONSIBLE_LABELS = { mediador: 'Mediador/a', party: 'Una par
   }
   document.getElementById('app').style.display = 'block';
   renderAccountButton();
+  updateSidebarPlanCard();
   connectCommsSocket();
   initNotifications();
   // Bloque 28 — vuelta del flujo de conexión OAuth de un proveedor de
@@ -507,6 +605,8 @@ function goTo(screen, id){
     b.classList.toggle('active', b.dataset.screen === TAB_FOR_SCREEN[screen]);
   });
   closeSidebar();
+  const mainEl = document.getElementById('main');
+  if(mainEl) mainEl.className = 'page-content'; // Bloque 38 — dashboard agrega "wide"; se resetea acá antes de cada render
   // Bloque 22 — devuelve la promesa del render para que quien necesite
   // hacer algo DESPUÉS de que la pantalla esté lista (ej. bajar a una
   // sección puntual) pueda hacer `await goTo(...)` — los llamados
@@ -561,91 +661,91 @@ const ATTENTION_ACTION_SECTION = {
   cerrarMediacion: 'section-admin',
 };
 
-// Bloque 22 §15 — "Tu día en Mediador": panorama rápido, ordenado por
-// urgencia operativa (audiencias de hoy primero), sin rankings ni
-// puntajes — son conteos y una lista corta, nada más. Separado del
-// centro de atención: esto es "qué tenés en el radar hoy", no "qué está
-// mal" (una audiencia de hoy ya confirmada no es un problema, pero sigue
-// siendo relevante saber que es hoy).
-// Bloque 29 §26 — tarjeta discreta, nunca el elemento principal del
-// dashboard. Si billing es null (falló el fetch) o no hay entitlements, no
-// se muestra nada — mejor ausente que roto.
-function renderPlanCard(billing){
-  if(!billing) return '';
-  const acc = billing.account;
-  const isFree = billing.effectivePlanCode === 'FREE';
-  if(acc.status === 'past_due'){
-    return `
-      <div class="card-highlight is-overdue">
-        <strong>Hay un problema con tu pago.</strong><br>
-        <span style="font-size:13px;">Actualizá tu medio de pago para mantener activo tu plan.</span>
-        <div style="margin-top:8px;"><button class="ghost" onclick="goTo('billing')">Resolver</button></div>
-      </div>
-    `;
-  }
-  return `
-    <div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-      <div>
-        <div class="eyebrow" style="margin-bottom:2px;">PLAN</div>
-        <strong>${escapeHtml(isFree ? 'Gratuito' : billing.effectivePlanCode)}</strong>
-        ${!isFree ? ` · <span class="pill ${BILLING_STATUS_CLASS[acc.status]||''}">${BILLING_STATUS_LABELS[acc.status]||acc.status}</span>` : ''}
-        ${acc.currentPeriodEnd ? `<div class="empty-hint" style="padding:0; text-align:left; margin-top:2px;">Próximo período: ${fmtDate(new Date(acc.currentPeriodEnd).toISOString())}</div>` : ''}
-      </div>
-      <a href="#" onclick="event.preventDefault(); goTo('billing');" style="color:var(--calm); font-size:13px; white-space:nowrap;">Ver facturación →</a>
-    </div>
-  `;
+// Bloque 38 — tarjeta de plan compacta, ahora en el PIE DEL SIDEBAR (persiste
+// entre pantallas, ver public/index.html), no adentro del cuerpo del
+// dashboard como antes (reemplaza a la vieja renderPlanCard). Se carga una
+// sola vez al loguearse (boot()) — el plan no cambia tan seguido como para
+// justificar pedirlo de nuevo en cada navegación.
+async function updateSidebarPlanCard(){
+  const el = document.getElementById('sidebar-plan-name');
+  if(!el) return;
+  try{
+    const billing = await api('/api/billing/me');
+    const isFree = billing.effectivePlanCode === 'FREE';
+    el.textContent = isFree ? 'Gratuito' : (BILLING_STATUS_LABELS[billing.account.status] ? billing.effectivePlanCode : billing.effectivePlanCode);
+    if(billing.account.status === 'past_due'){
+      el.textContent += ' — pago pendiente';
+    }
+  }catch(e){ /* silencioso — el link "Ver planes" sigue andando igual sin el nombre cargado */ }
 }
 
-function renderTuDiaCard(d){
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const hoy = d.proximasAudiencias.filter(h => h.date === todayStr);
-  const proximas = d.proximasAudiencias.filter(h => h.date !== todayStr).slice(0, 3);
-  const counts = [
-    { n: hoy.length, label: hoy.length === 1 ? 'audiencia hoy' : 'audiencias hoy' },
-    { n: d.necesitanAtencion.tareasVencidas.length, label: 'tareas vencidas' },
-    { n: d.necesitanAtencion.compromisosVencidos.length, label: 'compromisos vencidos' },
-    { n: d.alertasAgenda.solicitudesCambioPendientes.length, label: 'solicitudes pendientes' },
-    { n: d.necesitanAtencion.sinProximaAccion.length, label: 'sin próxima acción' },
-    { n: d.necesitanAtencion.documentosPendientesRevision.length, label: 'documentos por revisar' },
-  ].filter(c => c.n > 0);
-  if(!counts.length && !hoy.length && !proximas.length) return '';
-  return `
-    <div class="card">
-      <h2>Tu día en Mediador</h2>
-      ${counts.length ? `<div class="stat-row" style="margin-bottom:10px;">${counts.map(c => `<div><div class="stat" style="font-size:20px;">${c.n}</div><div class="stat-label">${c.label}</div></div>`).join('')}</div>` : ''}
-      ${hoy.map(h => `
-        <div class="alert-row" onclick="goTo('detail','${h.mediationId}')">
-          <div><div style="font-weight:600; font-size:13.5px;">Audiencia hoy${h.startTime ? ' ' + h.startTime : ''}</div><div class="code">${escapeHtml(h.mediationCode || '')}</div></div>
-          <span class="pill calm">hoy</span>
-        </div>
-      `).join('')}
-      ${proximas.map(h => `
-        <div class="alert-row" onclick="goTo('detail','${h.mediationId}')">
-          <div><div style="font-weight:600; font-size:13.5px;">Audiencia ${fmtDate(h.date)}${h.startTime ? ' ' + h.startTime : ''}</div><div class="code">${escapeHtml(h.mediationCode || '')}</div></div>
-          <span class="pill calm">próxima</span>
-        </div>
-      `).join('')}
-    </div>
-  `;
-}
-
+// Bloque 38 — badge de prioridad con las clases nuevas (p-vencido/
+// p-critico/p-proximo/p-pendiente, ver components.css) en vez de las
+// pills genéricas de antes — mismo dato (item.priority), solo cambia el
+// tratamiento visual para que se lea como semáforo real.
+const ATTENTION_PRIORITY_BADGE_CLASS_38 = { vencido: 'p-vencido', critico: 'p-critico', proximo: 'p-proximo', pendiente: 'p-pendiente' };
 function renderAttentionItem(item, idx){
-  const badgeClass = ATTENTION_PRIORITY_BADGE_CLASS[item.priority] || 'calm';
+  const badgeClass = ATTENTION_PRIORITY_BADGE_CLASS_38[item.priority] || 'p-pendiente';
+  const actions = item.suggestedActions || [];
   return `
-    <div class="alert-row" style="cursor:default; flex-direction:column; align-items:stretch; gap:6px;">
-      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
-        <div style="cursor:pointer;" onclick="goTo('detail','${item.mediationId}')">
-          <div class="code">${escapeHtml(item.mediationCode || '')}${item.responsible ? ` · Responsable: ${escapeHtml(item.responsible)}` : ''}</div>
-          <div style="font-weight:600; font-size:13.5px;">${escapeHtml(item.title || '')}</div>
-          ${item.detail ? `<div style="font-size:12px; color:var(--text-dim); margin-top:2px;">${escapeHtml(item.detail)}</div>` : ''}
-        </div>
-        <span class="pill ${badgeClass}" style="flex-shrink:0;">${ATTENTION_PRIORITY_LABELS[item.priority] || item.priority}</span>
+    <div class="attn-row">
+      <span class="attn-badge ${badgeClass}">${ATTENTION_PRIORITY_LABELS[item.priority] || item.priority}</span>
+      <div class="attn-body" style="cursor:pointer;" onclick="goTo('detail','${item.mediationId}')">
+        <div class="mcode">${escapeHtml(item.mediationCode || '')}${item.responsible ? ` · Responsable: ${escapeHtml(item.responsible)}` : ''}</div>
+        <div class="title">${escapeHtml(item.title || '')}</div>
+        ${item.detail ? `<div class="detail">${escapeHtml(item.detail)}</div>` : ''}
       </div>
-      <div style="display:flex; gap:6px; flex-wrap:wrap;">
-        ${(item.suggestedActions || []).map(a => `<button class="ghost" style="padding:5px 10px; font-size:11.5px;" onclick="handleAttentionAction(${idx},'${a}')">${ATTENTION_ACTION_LABELS[a] || a}</button>`).join('')}
-      </div>
+      ${actions.length ? `<button class="attn-action" onclick="handleAttentionAction(${idx},'${actions[0]}')">${ATTENTION_ACTION_LABELS[actions[0]] || actions[0]}</button>` : ''}
     </div>
   `;
+}
+
+// ---- helpers nuevos del Bloque 38 ----
+const MONTH_ABBR_ES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+function hearingDateBox(dateStr){
+  const d = new Date(dateStr + 'T00:00:00');
+  return { day: d.getDate(), month: MONTH_ABBR_ES[d.getMonth()] };
+}
+const HEARING_CONFIRM_LABELS = { confirmada: 'Confirmada', sin_confirmar: 'sin confirmar', propuesta_enviada: 'Propuesta enviada' };
+function hearingConfirmBadgeHtml(confirmation){
+  if(!confirmation) return '';
+  const label = confirmation.label === 'sin_confirmar' ? `${confirmation.pendientes} ${HEARING_CONFIRM_LABELS.sin_confirmar}` : HEARING_CONFIRM_LABELS[confirmation.label];
+  return `<span class="hearing-confirm-badge ${confirmation.label}">${escapeHtml(label)}</span>`;
+}
+const STATUS_BADGE_CLASS = {
+  borrador:'st-neutral', iniciada:'st-neutral', contactando_partes:'st-neutral', notificaciones:'st-neutral',
+  audiencia_programada:'st-blue', en_mediacion:'st-calm', acuerdo:'st-green', acuerdo_parcial:'st-green',
+  sin_acuerdo:'st-neutral', incomparecencia:'st-danger', cerrada:'st-neutral',
+};
+const DASH_DOC_STATUS_LABELS = { pendiente_escaneo:'Procesando', recibido:'Sin revisar', pendiente_revision:'Pendiente', revisado:'Revisado', observado:'Observado', final:'Final' };
+const DOCUMENT_STATUS_CLASS = { pendiente_escaneo:'st-neutral', recibido:'st-blue', pendiente_revision:'st-blue', revisado:'st-green', observado:'st-danger', final:'st-calm' };
+// "11:20" si fue hoy, si no la fecha corta de siempre — mismo criterio
+// que el reloj real, no una aproximación relativa (eso ya lo hace
+// fmtRelativeTime en otros lados; acá la referencia pide hora exacta).
+function fmtActivityTime(ms){
+  const d = new Date(ms);
+  const today = new Date();
+  const isToday = d.toDateString() === today.toDateString();
+  const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+  if(isToday) return d.toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit' });
+  if(d.toDateString() === yesterday.toDateString()) return 'Ayer';
+  return fmtDate(d.toISOString());
+}
+// anillo SVG a mano (sin librería): cada segmento es un círculo con
+// stroke-dasharray proporcional al total y stroke-dashoffset acumulado —
+// mismo círculo r=54 (circunferencia ≈339.29) que la referencia aprobada.
+function buildRingSvg(segments){
+  const total = segments.reduce((s, x) => s + x.value, 0);
+  if(!total) return null;
+  const R = 54, C = 2 * Math.PI * R;
+  let offset = 0;
+  const circles = segments.filter(s => s.value > 0).map(s => {
+    const len = (s.value / total) * C;
+    const el = `<circle cx="75" cy="75" r="${R}" fill="none" stroke="${s.color}" stroke-width="18" stroke-dasharray="${len.toFixed(2)} ${C.toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}"/>`;
+    offset += len;
+    return el;
+  }).join('');
+  return { total, svg: `<svg width="150" height="150" viewBox="0 0 150 150" aria-hidden="true"><g transform="rotate(-90 75 75)">${circles}</g></svg>` };
 }
 
 // DETECTAR → PROPONER → CONFIRMAR → EJECUTAR — este dispatcher es el
@@ -684,95 +784,218 @@ async function handleAttentionAction(idx, action){
 
 async function renderDashboard(){
   const main = document.getElementById('main');
+  main.className = 'page-content wide';
   main.innerHTML = `<p class="empty-hint">Cargando…</p>`;
-  let d, billing;
+  let d;
   try{ d = await api('/api/mediations/dashboard'); }
   catch(e){ main.innerHTML = `<p class="empty-hint">No se pudo cargar el dashboard.</p>`; return; }
-  try{ billing = await api('/api/billing/me'); }catch(e){ billing = null; } // §26 — nunca bloquea el resto del dashboard si esto falla
 
   currentAttentionItems = d.centroAtencion || [];
   updateCommsBadge(d.comunicacionesPendientes);
-  const moreHearings = d.proximasAudiencias.length > 3;
+  updateTopbarBellBadge();
+
+  const isNewUser = d.counts.total === 0;
+  const firstName = escapeHtml((me.name || '').split(' ')[0] || me.name);
+  const todayLabel = new Date().toLocaleDateString('es-AR', { weekday:'long', day:'numeric', month:'long' });
+  const atencionN = currentAttentionItems.length;
+
+  // ---- KPI 1: mediaciones activas + sparkline de creadasPorMes ----
+  const spark = d.creadasPorMes.map((m,i) => `${(i/(d.creadasPorMes.length-1||1))*96},${32 - (m.count / (Math.max(...d.creadasPorMes.map(x=>x.count),1)) * 26)}`).join(' ');
+  const esteMes = d.creadasPorMes[d.creadasPorMes.length-1]?.count ?? 0;
+  const mesAnterior = d.creadasPorMes[d.creadasPorMes.length-2]?.count ?? 0;
+
+  // ---- KPI 3: requieren atención — vencidas/críticas dentro de centroAtencion ----
+  const nVencidas = currentAttentionItems.filter(i => i.priority === 'vencido').length;
+  const nCriticas = currentAttentionItems.filter(i => i.priority === 'critico').length;
+
+  // ---- KPI 4: acuerdos logrados ----
+  const pctAcuerdos = d.counts.cerradas ? Math.round((d.acuerdosLogrados / d.counts.cerradas) * 100) : null;
 
   main.innerHTML = `
-    <button class="hero-create-btn" onclick="goTo('new')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-      Nueva mediación
-    </button>
-
-    <h1>Hola, ${escapeHtml((me.name || '').split(' ')[0] || me.name)}</h1>
-    <p style="color:var(--text-dim); font-size:15px; margin-bottom:18px;">¿Qué requiere tu atención?</p>
-
-    <div class="card">
-      <div class="stat-row">
-        <div><div class="stat">${d.counts.activas}</div><div class="stat-label">activas</div></div>
-        <div><div class="stat">${d.counts.cerradas}</div><div class="stat-label">cerradas</div></div>
-        <div><div class="stat">${d.counts.total}</div><div class="stat-label">total</div></div>
+    <div class="dash-header">
+      <div>
+        <h1>Hola, ${firstName}</h1>
+        <p>${escapeHtml(todayLabel.charAt(0).toUpperCase() + todayLabel.slice(1))}. ${atencionN > 0 ? `Tenés ${atencionN} situaci${atencionN===1?'ón':'ones'} que requiere${atencionN===1?'':'n'} tu atención.` : 'Estás al día — nada requiere tu atención ahora mismo.'}</p>
+      </div>
+      <div class="dash-header-actions">
+        ${d.continuarMediacion ? `<a class="dash-continue-btn" href="#" onclick="event.preventDefault(); goTo('detail','${d.continuarMediacion.id}');">Continuar ${escapeHtml(d.continuarMediacion.code||'')}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>` : ''}
+        <button class="hero-create-btn" onclick="goTo('new')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          Nueva mediación
+        </button>
       </div>
     </div>
 
-    ${d.comunicacionesRecientes && d.comunicacionesRecientes.length ? `
-    <div class="card">
-      <h2>Comunicaciones recientes${d.comunicacionesPendientes ? ` <span class="pill warn" style="font-weight:400;">${d.comunicacionesPendientes}</span>` : ''}</h2>
-      ${d.comunicacionesRecientes.map(c => `
-        <div class="alert-row" onclick="openMediationSection('${c.mediationId}','comunicaciones')" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-          <div style="min-width:0;">
-            <div style="font-weight:600; font-size:13.5px;">${escapeHtml(c.mediationCode)} — ${escapeHtml(c.participantName)}</div>
-            <div style="font-size:12px; color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(c.lastMessage.text)} · ${fmtRelativeTime(c.lastMessage.createdAt)}</div>
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-card-head"><span class="kpi-icon calm"><svg viewBox="0 0 24 24"><path d="M4 5h5l2 2h9v12H4z"/></svg></span><span>Mediaciones activas</span></div>
+        <div class="kpi-value-row">
+          <span class="kpi-value">${d.counts.activas}</span>
+          ${d.creadasPorMes.some(m=>m.count>0) ? `<svg width="96" height="32" viewBox="0 0 96 32" fill="none" aria-hidden="true"><polyline points="${spark}" stroke="var(--calm)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>` : ''}
+        </div>
+        <span class="kpi-sub ${isNewUser?'empty':''}">${isNewUser ? 'Creá tu primera mediación' : `${esteMes} creada${esteMes===1?'':'s'} este mes, ${mesAnterior} el mes anterior`}</span>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-card-head"><span class="kpi-icon blue"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/></svg></span><span>Audiencias próximas</span></div>
+        <span class="kpi-value">${d.proximasAudiencias.length}</span>
+        <span class="kpi-sub ${d.proximasAudiencias.length?'':'empty'}">${d.proximasAudiencias.length ? `La próxima: ${fmtDate(d.proximasAudiencias[0].date)}${d.proximasAudiencias[0].startTime ? ' a las ' + d.proximasAudiencias[0].startTime : ''}` : 'Sin audiencias agendadas'}</span>
+      </div>
+      <a class="kpi-card" href="#atencion" onclick="setTimeout(()=>document.getElementById('atencion')?.scrollIntoView({behavior:'smooth'}),50)">
+        <div class="kpi-card-head"><span class="kpi-icon warn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5h.01"/></svg></span><span>Requieren atención</span></div>
+        <span class="kpi-value">${atencionN}</span>
+        <span class="kpi-sub ${atencionN?'':'empty'}">${atencionN ? `${nVencidas} vencida${nVencidas===1?'':'s'} y ${nCriticas} crítica${nCriticas===1?'':'s'}` : 'Nada pendiente'}</span>
+      </a>
+      <div class="kpi-card">
+        <div class="kpi-card-head"><span class="kpi-icon green"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 5-5"/></svg></span><span>Acuerdos logrados</span></div>
+        <span class="kpi-value">${d.acuerdosLogrados}</span>
+        <span class="kpi-sub ${pctAcuerdos===null?'empty':''}">${pctAcuerdos===null ? 'Todavía no cerraste mediaciones' : `${pctAcuerdos}% de las mediaciones cerradas`}</span>
+      </div>
+    </div>
+
+    <div class="dash-row-7-5">
+      <section class="dash-section dash-atencion" id="atencion">
+        <div class="dash-section-head"><h2>¿Qué requiere tu atención?</h2><span class="count">${atencionN} situaci${atencionN===1?'ón':'ones'}</span></div>
+        ${atencionN ? currentAttentionItems.map((item, idx) => renderAttentionItem(item, idx)).join('') : `<div class="dash-empty"><p>Estás al día — nada pendiente por ahora.</p></div>`}
+      </section>
+      <section class="dash-section dash-audiencias">
+        <div class="dash-section-head"><h2>Próximas audiencias</h2><a href="#" onclick="event.preventDefault(); goTo('agenda');">Ver agenda</a></div>
+        ${d.proximasAudiencias.length ? d.proximasAudiencias.slice(0,3).map(h => { const db_ = hearingDateBox(h.date); return `
+          <div class="hearing-row" onclick="goTo('detail','${h.mediationId}')" style="cursor:pointer;">
+            <div class="hearing-date-box"><span class="d">${db_.day}</span><span class="m">${db_.month}</span></div>
+            <div class="hearing-body">
+              <div class="who">${escapeHtml(h.partyNames.join(' / ') || 'Sin partes cargadas')}</div>
+              <div class="meta">${h.startTime ? h.startTime + ', ' : ''}${escapeHtml(h.modality||'')}, ${escapeHtml(h.mediationCode||'')}</div>
+            </div>
+            ${hearingConfirmBadgeHtml(h.confirmation)}
           </div>
-          ${c.unreadCount ? `<span class="pill warn" style="flex-shrink:0;">${c.unreadCount}</span>` : ''}
-        </div>
-      `).join('')}
-      <p class="empty-hint" style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); goTo('comms');" style="color:var(--calm);">Ver todas →</a></p>
-    </div>
-    ` : ''}
-
-    ${renderPlanCard(billing)}
-
-    ${renderTuDiaCard(d)}
-
-    <div class="card">
-      <h2>¿Qué requiere tu atención?${currentAttentionItems.length ? ` <span class="pill warn" style="font-weight:400;">${currentAttentionItems.length}</span>` : ''}</h2>
-      ${currentAttentionItems.length ? currentAttentionItems.map((item, idx) => renderAttentionItem(item, idx)).join('') : `<p class="empty-hint">Estás al día — nada pendiente por ahora. Podés crear una mediación nueva o revisar la agenda.</p>`}
-      ${moreHearings ? `<p class="empty-hint" style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); goTo('agenda');" style="color:var(--calm);">Ver todas las audiencias en la agenda</a></p>` : ''}
+        `;}).join('') : `<div class="dash-empty"><p>Todavía no tenés audiencias agendadas.</p></div>`}
+      </section>
     </div>
 
-    ${(d.vencenProximamente.tareas.length || d.vencenProximamente.compromisos.length) ? `
-    <div class="card">
-      <h2>Vencen próximamente</h2>
-      ${d.vencenProximamente.tareas.map(t => `
-        <div class="alert-row" onclick="goTo('detail','${t.mediationId}')">
-          <div><div style="font-weight:600; font-size:13.5px;">${escapeHtml(t.title)}</div><div class="code">${escapeHtml(t.mediationCode)}</div></div>
-          <span class="pill calm">vence ${fmtDate(t.dueDate)}</span>
-        </div>
-      `).join('')}
-      ${d.vencenProximamente.compromisos.map(c => `
-        <div class="alert-row" onclick="goTo('detail','${c.mediationId}')">
-          <div><div style="font-weight:600; font-size:13.5px;">${escapeHtml(c.partyName)}: ${escapeHtml(c.description)}</div><div class="code">${escapeHtml(c.mediationCode)}</div></div>
-          <span class="pill calm">vence ${fmtDate(c.dueDate)}</span>
-        </div>
-      `).join('')}
-      <p class="empty-hint" style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); goTo('commitments');" style="color:var(--calm);">Ver todos los compromisos →</a></p>
-    </div>
-    ` : ''}
+    <div class="dash-resto">
+      <div class="dash-row-8-4">
+        <section class="dash-section">
+          <div class="dash-section-head"><h2>Últimas mediaciones</h2><a href="#" onclick="event.preventDefault(); goTo('list');">Ver todas</a></div>
+          ${d.ultimasMediaciones.length ? `
+          <table class="dash-table">
+            <thead><tr><th>Código</th><th>Partes</th><th>Estado</th><th>Próxima acción</th><th>Última actividad</th><th></th></tr></thead>
+            <tbody>
+              ${d.ultimasMediaciones.map(m => `
+                <tr>
+                  <td style="font-weight:600;">${escapeHtml(m.code)}</td>
+                  <td>${escapeHtml(m.partyNames.join(' / ') || '—')}</td>
+                  <td><span class="status-badge ${STATUS_BADGE_CLASS[m.status]||'st-neutral'}">${escapeHtml(STATUS_LABELS[m.status]||m.status)}</span></td>
+                  <td>${m.nextActionText ? escapeHtml(m.nextActionText) : '<span class="next-undefined">Sin definir</span>'}</td>
+                  <td style="color:var(--text-dim);">${escapeHtml(m.lastActivity.title||'')} · ${fmtActivityTime(m.lastActivity.createdAt)}</td>
+                  <td style="text-align:right;"><a class="open-link" href="#" aria-label="Abrir ${escapeHtml(m.code)}" onclick="event.preventDefault(); goTo('detail','${m.id}');"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></a></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div class="dash-table-mobile">
+            ${d.ultimasMediaciones.map(m => `
+              <a class="dash-table-mobile-card" href="#" onclick="event.preventDefault(); goTo('detail','${m.id}');">
+                <div class="row1"><span class="code">${escapeHtml(m.code)}</span><span class="status-badge ${STATUS_BADGE_CLASS[m.status]||'st-neutral'}">${escapeHtml(STATUS_LABELS[m.status]||m.status)}</span></div>
+                <div class="parties">${escapeHtml(m.partyNames.join(' / ') || '—')}</div>
+                <div class="meta">${m.nextActionText ? escapeHtml(m.nextActionText) : 'Sin próxima acción definida'} · ${fmtActivityTime(m.lastActivity.createdAt)}</div>
+              </a>
+            `).join('')}
+          </div>
+          ` : `<div class="dash-empty"><p>Todavía no tenés mediaciones.</p><button class="primary" onclick="goTo('new')">Nueva mediación</button></div>`}
+        </section>
+        <section class="dash-section">
+          <div class="dash-section-head"><h2>Estado de tus mediaciones</h2><a href="#" onclick="event.preventDefault(); goTo('stats');">Estadísticas</a></div>
+          ${(() => {
+            const segments = [
+              { value: d.counts.activas, color: 'var(--calm)', label: 'En curso' },
+              { value: d.porResultado.acuerdo_total||0, color: '#20A36A', label: 'Acuerdo total' },
+              { value: d.porResultado.acuerdo_parcial||0, color: '#4F8EDB', label: 'Acuerdo parcial' },
+              { value: d.porResultado.sin_acuerdo||0, color: '#8A989A', label: 'Sin acuerdo' },
+              { value: (d.porResultado.incomparecencia||0)+(d.porResultado.desistimiento||0)+(d.porResultado.otro||0), color: '#C9D3D4', label: 'Otros cierres' },
+            ];
+            const ring = buildRingSvg(segments);
+            if(!ring) return `<div class="dash-empty"><p>Todavía no hay datos para mostrar.</p></div>`;
+            return `
+              <div class="ring-wrap">${ring.svg}<div class="ring-center"><span class="n">${ring.total}</span><span class="l">mediaciones</span></div></div>
+              <div class="ring-legend">${segments.map(s => `<div class="ring-legend-row"><span class="ring-legend-dot" style="background:${s.color};"></span><span class="lab">${s.label}</span><span class="val">${s.value}</span></div>`).join('')}</div>
+            `;
+          })()}
+        </section>
+      </div>
 
-    <div class="card">
-      <h2>Qué pasó</h2>
-      ${d.actividadReciente.length ? d.actividadReciente.map(e => `
-        <div class="status-history-item">
-          <strong>${escapeHtml(e.mediationCode)}</strong> —
-          ${e.title ? escapeHtml(e.title) : escapeHtml(EVENT_TYPE_LABELS[e.type] || e.type)}
-          <span style="color:var(--text-faint);">· ${fmtDateTime(e.createdAt)}</span>
-        </div>
-      `).join('') : `<p class="empty-hint">Todavía no hay actividad.</p>`}
-    </div>
+      <div class="dash-row-3">
+        <section class="dash-section dash-comunicaciones">
+          <div class="dash-section-head"><h2>Comunicaciones</h2>${d.comunicacionesPendientes ? `<span class="status-badge st-calm">${d.comunicacionesPendientes} sin leer</span>` : ''}</div>
+          ${d.comunicacionesRecientes.length ? d.comunicacionesRecientes.map(c => `
+            <a class="comm-item" href="#" onclick="event.preventDefault(); openMediationSection('${c.mediationId}','comunicaciones');">
+              <span class="comm-avatar">${escapeHtml((c.participantName||'?').split(' ').map(p=>p[0]).slice(0,2).join('').toUpperCase())}</span>
+              <div class="comm-body">
+                <div class="row1"><span class="name">${escapeHtml(c.participantName)}</span><span class="when">${fmtRelativeTime(c.lastMessage.createdAt)}</span></div>
+                <div class="preview">${escapeHtml(c.lastMessage.text)}</div>
+              </div>
+            </a>
+          `).join('') : `<div class="dash-empty"><p>Sin conversaciones todavía.</p></div>`}
+        </section>
+        <section class="dash-resto-item dash-section">
+          <div class="dash-section-head"><h2>Tareas y vencimientos</h2><a href="#" onclick="event.preventDefault(); goTo('commitments');">Ver todas</a></div>
+          ${(() => {
+            const vencidos = [
+              ...d.necesitanAtencion.tareasVencidas.map(t => ({ title: t.title, sub: t.mediationCode, badge: 'Vencido', danger: true })),
+              ...d.necesitanAtencion.compromisosVencidos.map(c => ({ title: c.description, sub: `Compromiso de ${c.partyName||'—'}`, badge: 'Vencido', danger: true })),
+            ];
+            const proximos = [
+              ...d.vencenProximamente.tareas.map(t => ({ title: t.title, sub: t.mediationCode, badge: fmtDate(t.dueDate), danger: false })),
+              ...d.vencenProximamente.compromisos.map(c => ({ title: c.description, sub: `Compromiso de ${c.partyName||'—'}`, badge: fmtDate(c.dueDate), danger: false })),
+            ];
+            const items = [...vencidos, ...proximos].slice(0, 6);
+            if(!items.length) return `<div class="dash-empty"><p>No tenés tareas ni compromisos vencidos o por vencer.</p></div>`;
+            return items.map(it => `
+              <div class="task-item">
+                <div><div class="title">${escapeHtml(it.title)}</div><div class="sub">${escapeHtml(it.sub||'')}</div></div>
+                <span class="status-badge ${it.danger ? 'st-danger' : 'st-neutral'}">${escapeHtml(it.badge)}</span>
+              </div>
+            `).join('');
+          })()}
+        </section>
+        <section class="dash-resto-item dash-section">
+          <div class="dash-section-head"><h2>Documentos recientes</h2></div>
+          ${d.documentosRecientes.length ? d.documentosRecientes.map(doc => `
+            <a class="doc-item" href="/api/mediations/${doc.mediationId}/documents/${doc.id}/download">
+              <svg viewBox="0 0 24 24"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/></svg>
+              <div style="flex:1; min-width:0;"><div class="title">${escapeHtml(doc.originalFilename)}</div><div class="sub">${escapeHtml(doc.mediationCode||'')}</div></div>
+              <span class="status-badge ${DOCUMENT_STATUS_CLASS[doc.status]||'st-neutral'}">${escapeHtml(DASH_DOC_STATUS_LABELS[doc.status]||doc.status)}</span>
+            </a>
+          `).join('') : `<div class="dash-empty"><p>Todavía no se subió ningún documento.</p></div>`}
+        </section>
+      </div>
 
-    <div class="card">
-      <h2>Preguntale al asistente</h2>
-      <div id="dashboard-assistant-answer" style="margin-bottom:8px;"></div>
-      <div style="display:flex; gap:6px;">
-        <input id="dashboard-assistant-question" placeholder="Ej: ¿qué tengo pendiente esta semana?" style="flex:1; margin:0;">
-        <button class="primary" style="flex-shrink:0;" onclick="askDashboardAI()">Preguntar</button>
+      <div class="dash-row-final">
+        ${d.puenteConnectEnabled ? `
+        <section class="connect-card">
+          <div class="connect-card-head">
+            <span class="connect-icon"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></span>
+            <h2>Puente Connect</h2>
+            <span class="connect-soon-pill">Próximamente</span>
+          </div>
+          <p>Vas a poder pasar los datos de tus mediaciones a los formularios del portal oficial sin volver a tipearlos.</p>
+          <p class="small">Al portal oficial vas a seguir entrando vos, con tu propia identidad.</p>
+        </section>
+        ` : ''}
+        <section class="dash-section">
+          <h2 style="margin:0 0 4px; font-size:17px;">Qué pasó</h2>
+          ${d.actividadReciente.length ? d.actividadReciente.slice(0,4).map(e => `
+            <div class="whatpassed-item"><span class="t">${fmtActivityTime(e.createdAt)}</span><span>${e.title ? escapeHtml(e.title) : escapeHtml(EVENT_TYPE_LABELS[e.type] || e.type)}, ${escapeHtml(e.mediationCode||'')}</span></div>
+          `).join('') : `<p class="empty-hint">Todavía no hay actividad.</p>`}
+        </section>
+        <section class="dash-section">
+          <h2 style="margin:0; font-size:17px;">Preguntale al asistente</h2>
+          <label style="display:flex; flex-direction:column; gap:6px; margin-top:12px;">
+            <span style="font-size:13px; color:var(--text-dim);">Tu pregunta sobre tus mediaciones</span>
+            <input id="dashboard-assistant-question" placeholder="¿Qué vence esta semana?">
+          </label>
+          <div id="dashboard-assistant-answer" style="margin:8px 0;"></div>
+          <button class="primary" style="width:100%;" onclick="askDashboardAI()">Preguntar</button>
+        </section>
       </div>
     </div>
   `;

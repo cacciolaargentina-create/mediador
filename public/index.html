@@ -267,15 +267,23 @@
     </div>
     <nav class="sidebar-nav" id="tabs">
       <button class="sidebar-item" data-screen="dashboard" onclick="goTo('dashboard')"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20a1 1 0 0 0 1 1H9a1 1 0 0 0 1-1v-4.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V20a1 1 0 0 0 1 1h2.5a1 1 0 0 0 1-1V9.5"/></svg><span>Inicio</span></button>
+      <div class="sidebar-group-label">Trabajo</div>
       <button class="sidebar-item" data-screen="list" onclick="goTo('list')"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>Mediaciones</span></button>
       <button class="sidebar-item" data-screen="agenda" onclick="goTo('agenda')"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/></svg><span>Agenda</span></button>
       <button class="sidebar-item" data-screen="comms" onclick="goTo('comms')"><svg viewBox="0 0 24 24"><path d="M4 4h16v12H7l-3 3V4Z"/></svg><span>Comunicaciones</span><span class="sidebar-badge" id="comms-badge" style="display:none;"></span></button>
       <button class="sidebar-item" data-screen="requests" onclick="goTo('requests')"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/></svg><span>Solicitudes</span></button>
+      <div class="sidebar-group-label">Seguimiento</div>
       <button class="sidebar-item" data-screen="commitments" onclick="goTo('commitments')"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span>Compromisos</span></button>
       <button class="sidebar-item" data-screen="stats" onclick="goTo('stats')"><svg viewBox="0 0 24 24"><path d="M4 20V10M12 20V4M20 20v-7"/></svg><span>Estadísticas</span></button>
+      <div class="sidebar-group-label">Estudio</div>
       <button class="sidebar-item" data-screen="team" onclick="goTo('team')"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17.5" cy="9.5" r="2.3"/><path d="M15.8 14c2.4.4 4.2 2.5 4.2 5"/></svg><span>Equipo</span></button>
     </nav>
     <div class="sidebar-footer">
+      <a class="sidebar-plan-card" href="#" onclick="event.preventDefault(); goTo('billing');" id="sidebar-plan-card">
+        <span class="sidebar-plan-label">Tu plan</span>
+        <span class="sidebar-plan-name" id="sidebar-plan-name">—</span>
+        <span class="sidebar-plan-link">Ver planes</span>
+      </a>
       <button class="account-btn" id="account-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" onclick="toggleAccountMenu(event)">
         <span id="account-avatar"></span>
         <span class="account-name" id="account-name"></span>
@@ -293,10 +301,28 @@
       <a class="mediador-logo on-light topbar-logo-mobile" href="#" onclick="event.preventDefault(); goTo('dashboard');">
         <img class="mediador-logo-mark" style="width:24px; height:24px;" src="/mediador-icon.svg" alt="">
       </a>
+      <div class="topbar-search-wrap">
+        <button class="topbar-search-icon-btn" id="topbar-search-icon-btn" aria-label="Buscar" onclick="toggleTopbarSearch()">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        </button>
+        <label class="topbar-search" id="topbar-search">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input type="search" id="topbar-search-input" placeholder="Buscar mediación, parte o documento" autocomplete="off" oninput="onTopbarSearchInput(this.value)">
+        </label>
+        <div class="topbar-search-results" id="topbar-search-results" hidden></div>
+      </div>
+      <div class="topbar-actions">
+        <button class="topbar-bell" id="topbar-bell" aria-label="Notificaciones" onclick="toggleTopbarBell()">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+          <span class="topbar-bell-badge" id="topbar-bell-badge" hidden></span>
+        </button>
+        <div class="topbar-bell-panel" id="topbar-bell-panel" hidden></div>
+      </div>
     </header>
     <main class="page-content" id="main"></main>
   </div>
 </div>
+<div class="topbar-search-backdrop" id="topbar-search-backdrop" onclick="closeTopbarSearch()" hidden></div>
 
 <div class="onboarding-backdrop mediador-app" id="onboarding-backdrop">
   <div class="onboarding-card" id="onboarding-card"></div>

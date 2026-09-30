@@ -40,20 +40,82 @@
   padding: 3px 7px; flex-shrink: 0;
 }
 
-.mediador-app .sidebar-footer{ border-top: 1px solid rgba(255,255,255,.08); padding-top: var(--space-3); margin-top: var(--space-3); }
+.mediador-app .sidebar-footer{ border-top: 1px solid rgba(255,255,255,.08); padding-top: var(--space-3); margin-top: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
+
+/* Bloque 38 — títulos de grupo del sidebar: texto, nunca un botón. */
+.mediador-app .sidebar-group-label{
+  font-size: 11.5px; font-weight: var(--font-weight-bold); text-transform: uppercase; letter-spacing: .04em;
+  color: var(--color-text-on-dark-muted); padding: var(--space-4) var(--space-3) 4px; opacity: .75;
+}
+.mediador-app .sidebar-nav > .sidebar-group-label:first-child{ padding-top: var(--space-2); }
+
+/* Bloque 38 — tarjeta de plan compacta al pie del sidebar (mismo dato que
+   renderPlanCard/api/billing/me, versión mínima: nombre del plan + link). */
+.mediador-app .sidebar-plan-card{
+  display: flex; flex-direction: column; gap: 2px; background: var(--color-sidebar-hover);
+  border-radius: var(--radius-md); padding: 10px 12px; text-decoration: none;
+}
+.mediador-app .sidebar-plan-label{ font-size: 11px; font-weight: var(--font-weight-semibold); color: var(--color-text-on-dark-muted); }
+.mediador-app .sidebar-plan-name{ font-size: 14px; font-weight: var(--font-weight-bold); color: var(--color-text-on-dark); }
+.mediador-app .sidebar-plan-link{ font-size: 12px; font-weight: var(--font-weight-semibold); color: var(--color-brand); margin-top: 2px; }
 
 .mediador-app .main{ flex: 1; margin-left: 252px; display: flex; flex-direction: column; min-width: 0; background: var(--color-bg); }
 
 .mediador-app .topbar{
   height: 64px; flex-shrink: 0; background: var(--color-surface); border-bottom: 1px solid var(--color-border-light);
-  display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-6);
+  display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-6);
   position: sticky; top: 0; z-index: 20;
 }
-.mediador-app .topbar-menu-btn{ display: none; background: none; border: none; color: var(--color-text); padding: 6px; cursor: pointer; }
+.mediador-app .topbar-menu-btn{ display: none; background: none; border: none; color: var(--color-text); padding: 6px; cursor: pointer; flex-shrink: 0; }
 .mediador-app .topbar-menu-btn svg{ width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
-.mediador-app .topbar-logo-mobile{ display: none; }
+.mediador-app .topbar-logo-mobile{ display: none; flex-shrink: 0; }
+
+/* Bloque 38 — buscador global de la barra superior. En desktop siempre
+   visible; en mobile se colapsa a un ícono (ver breakpoint 768 abajo) y
+   se abre como panel superpuesto (topbar-search-backdrop). */
+.mediador-app .topbar-search-wrap{ position: relative; flex: 1; max-width: 460px; }
+.mediador-app .topbar-search-icon-btn{ display: none; background: none; border: none; color: var(--color-text-secondary); padding: 8px; cursor: pointer; }
+.mediador-app .topbar-search-icon-btn svg{ width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.mediador-app .topbar-search{
+  display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 14px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg);
+}
+.mediador-app .topbar-search svg{ width: 17px; height: 17px; flex-shrink: 0; fill: none; stroke: var(--color-text-secondary); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.mediador-app .topbar-search input{ flex: 1; border: none; background: transparent; font: inherit; font-size: 14px; color: var(--color-text); outline: none; margin: 0; height: auto; padding: 0; }
+.mediador-app .topbar-search-results{
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; background: var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-md);
+  max-height: 340px; overflow-y: auto; z-index: 25;
+}
+.mediador-app .topbar-search-result{ display: block; padding: 10px 14px; text-decoration: none; color: var(--color-text); border-bottom: 1px solid var(--color-border-light); cursor: pointer; }
+.mediador-app .topbar-search-result:last-child{ border-bottom: none; }
+.mediador-app .topbar-search-result:hover{ background: var(--color-surface-2); }
+.mediador-app .topbar-search-result .code{ font-size: 12px; font-weight: var(--font-weight-semibold); color: var(--color-text-secondary); }
+.mediador-app .topbar-search-result .obj{ font-size: 13.5px; font-weight: var(--font-weight-medium); margin-top: 1px; }
+.mediador-app .topbar-search-empty{ padding: 14px; font-size: 13px; color: var(--color-text-muted); text-align: center; }
+.mediador-app .topbar-search-backdrop{ position: fixed; inset: 0; background: rgba(15,21,23,.4); z-index: 24; }
+
+.mediador-app .topbar-actions{ display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; margin-left: auto; position: relative; }
+.mediador-app .topbar-bell{ position: relative; width: 40px; height: 40px; border: none; background: none; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text-secondary); }
+.mediador-app .topbar-bell:hover{ background: var(--color-surface-2); }
+.mediador-app .topbar-bell svg{ width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.mediador-app .topbar-bell-badge{
+  position: absolute; top: 5px; right: 5px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box;
+  border-radius: var(--radius-pill); background: var(--color-danger); color: #fff; font-size: 10.5px; font-weight: var(--font-weight-bold);
+  display: flex; align-items: center; justify-content: center;
+}
+.mediador-app .topbar-bell-panel{
+  position: absolute; top: calc(100% + 8px); right: 0; width: 340px; max-height: 420px; overflow-y: auto;
+  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md); z-index: 25; padding: var(--space-2);
+}
+.mediador-app .topbar-bell-panel h3{ margin: 4px 8px 8px; font-size: 13px; font-weight: var(--font-weight-bold); }
 
 .mediador-app .page-content{ max-width: 960px; width: 100%; margin: 0 auto; padding: var(--space-7) var(--space-6) var(--space-9); }
+/* Bloque 38 — el dashboard nuevo necesita más ancho que el resto de las
+   pantallas (KPIs en fila, tabla, dos columnas anchas) — se ensancha solo
+   para esa pantalla, el resto sigue con el ancho de lectura de siempre. */
+.mediador-app .page-content.wide{ max-width: 1320px; }
 
 .mediador-app .sidebar-backdrop{ position: fixed; inset: 0; background: rgba(15,21,23,.5); z-index: 39; display: none; }
 .mediador-app .sidebar-backdrop.show{ display: block; }

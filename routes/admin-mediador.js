@@ -741,6 +741,7 @@ module.exports = function () {
     { key: 'partyPortal', label: 'Portal de partes' },
     { key: 'automation', label: 'Automatizaciones' },
     { key: 'radar', label: 'Radar competitivo' },
+    { key: 'puenteConnect', label: 'Puente Connect (bloque "Próximamente" del dashboard)' },
   ];
   function ensureFeatureFlagsSeeded(db) {
     let created = 0;
