@@ -22,7 +22,7 @@ const { askMediationAssistant, askDashboardAssistant, askMediationAssistantAbout
 const { buildDraftMinutesPDF, buildConvocationLetterPDF, buildOpeningActPDF, buildNoShowActPDF, buildRescheduleActPDF } = require('../workingDocuments');
 const { ensureHonorariosSeeded } = require('../honorariosSeed');
 const automationEngine = require('../automationEngine');
-const { getHearingPreparationState, getDashboardAttentionItems, getMediationAttentionItems, isAlertDismissed } = automationEngine;
+const { getHearingPreparationState, getDashboardAttentionItems, getMediationAttentionItems, isAlertDismissed, CLOSURE_WORTHY_STATUSES } = automationEngine;
 const archiver = require('archiver');
 const { postMessage } = require('../messaging');
 const { serializeMessage } = require('../serializers');
@@ -31,7 +31,7 @@ const { createHearingMeeting, updateHearingMeeting, cancelHearingMeeting, serial
 // routes/agenda.js y routes/studios.js también la puedan reusar (antes
 // vivía solo acá, duplicarla en cada archivo hubiera sido el mismo error
 // que esta auditoría vino a corregir en otro lado).
-const { canCreateMediation, canUseVideoMeetings, canUseAdvancedAgenda, canAddStudyMember, canAddAssistant, billingPaywallActive } = require('../entitlements');
+const { canCreateMediation, canUseVideoMeetings, canUseAdvancedAgenda, billingPaywallActive } = require('../entitlements');
 
 // Bloque 17 §14/15 — "YYYY-MM-DD" a "DD/MM/YYYY", mismo formato que ya
 // usa fmtDate() en todo el frontend. Sin esto, texto pensado para una
@@ -1449,6 +1449,17 @@ module.exports = function (io, presence) {
     if (!VALID_STATUSES.includes(status)) {
       return res.status(400).json({ error: 'Estado inválido' });
     }
+    // Bloque 33 §4 — auditoría de permisos: requireEditAccess deja pasar
+    // a 'asistente' igual que a 'mediador' para casi todo (administrativo,
+    // a propósito). Pero registrar el RESULTADO sustantivo de una
+    // mediación (acuerdo/sin acuerdo/acuerdo parcial/incomparecencia) es
+    // juicio profesional, no logística delegable — se reserva, igual que
+    // cerrar la mediación (POST /:id/close, mismo criterio abajo). Reusa
+    // CLOSURE_WORTHY_STATUSES (automationEngine.js) — nunca una lista
+    // paralela de "estados reservados".
+    if (req.mediationRole === 'asistente' && CLOSURE_WORTHY_STATUSES.includes(status)) {
+      return res.status(403).json({ error: 'Registrar el resultado de una mediación (acuerdo, sin acuerdo, etc.) es exclusivo del mediador responsable — un asistente no puede hacerlo.' });
+    }
     const db = getDB();
     const mediation = db.mediations.find((m) => m.id === req.mediation.id);
     // Bloque 10: una vez cerrada, el status no se toca más por acá — antes
@@ -1544,14 +1555,15 @@ module.exports = function (io, presence) {
     }
     const already = db.mediationAccess.find((a) => a.mediationId === req.mediation.id && a.userId === userId);
     if (already) return res.status(400).json({ error: 'Esa persona ya tiene acceso a esta mediación' });
-    // Bloque 32 §4 — maxAssistants (entitlements.js) estaba definido desde
-    // el Bloque 29 sin ningún endpoint que lo aplicara. Se cuenta sobre el
-    // plan del DUEÑO de la mediación (owner), no de quien hace el pedido
-    // (puede ser un admin de estudio asignando en nombre de otro mediador).
-    if (role === 'asistente' && !isAdminUser(req.user) && billingPaywallActive() && !canAddAssistant(db, owner)) {
-      return res.status(402).json({ error: 'Llegaste al límite de asistentes de tu plan — necesitás el plan Profesional (1) o Estudio (ilimitado).', upgradeMessage: 'Sumar un asistente requiere el plan Profesional (1) o Estudio (ilimitado).', code: 'PLAN_LIMIT_REACHED' });
-    }
-
+    // Bloque 33 — maxAssistants YA se aplicó cuando esta persona se sumó
+    // al estudio como asistente (routes/studios.js, invite/accept). Una
+    // vez que es asistente del estudio, asignarla a cuantas mediaciones
+    // haga falta es el mismo asiento, no consume cupo de nuevo — por eso
+    // acá no se vuelve a chequear maxAssistants (la versión de Bloque 32
+    // que sí lo hacía quedó inalcanzable en la práctica: este endpoint ya
+    // exige mismo estudio, y con maxStudyMembers contando también a los
+    // asistentes ningún plan pago podía tener un 2do integrante para
+    // asignar — ver informe de Bloque 33).
     const access = { id: nanoid(), mediationId: req.mediation.id, userId, role, partyId: null, grantedBy: req.user.id, grantedAt: Date.now() };
     db.mediationAccess.push(access);
     logMediationEvent(db, {
@@ -3344,6 +3356,12 @@ module.exports = function (io, presence) {
   });
 
   router.post('/:id/close', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    // Bloque 33 §4 — cerrar la mediación y registrar su resultado legal es
+    // exclusivo del mediador responsable, ver el mismo criterio en
+    // POST /:id/status.
+    if (req.mediationRole === 'asistente') {
+      return res.status(403).json({ error: 'Cerrar una mediación es exclusivo del mediador responsable — un asistente no puede hacerlo.' });
+    }
     const { result, notes, confirmDespiteWarnings } = req.body || {};
     if (!CLOSE_RESULTS.includes(result)) {
       return res.status(400).json({ error: 'Resultado de cierre inválido' });

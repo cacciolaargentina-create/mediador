@@ -404,7 +404,7 @@ module.exports = {
   getPendingRescheduleRequests, getDocumentsPendingReview,
   getHearingsWithoutResult, getHearingsDoneWithoutNextAction,
   getInactiveMediations, getUnactionedIncomingMessages, getPartiesWithNoResponse,
-  getMediationsRequiringClosure,
+  getMediationsRequiringClosure, CLOSURE_WORTHY_STATUSES,
   isAlertDismissed,
   getHearingPreparationState, validateModalityData,
   getMediationAttentionItems, getDashboardAttentionItems,

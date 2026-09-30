@@ -167,7 +167,12 @@ module.exports = function () {
     // falta que req.user tenga studioId seteado todavía (canAddStudyMember/
     // canAddAssistant resuelven el plan siempre por studioId, nunca por
     // user.id — ver el comentario en entitlements.js).
-    const acceptBlocked = billingPaywallActive() && (
+    // Bloque 33 — falta el mismo bypass de admin de plataforma que ya
+    // usa cada otro gate de paywall del repo (canCreateMediation,
+    // canUseVideoMeetings, canUseAdvancedAgenda, el envío de esta misma
+    // invitación más arriba) — un admin aceptando (soporte/pruebas) no
+    // debería quedar atrapado por el límite de un plan ajeno.
+    const acceptBlocked = !isAdminUser(req.user) && billingPaywallActive() && (
       invitation.role === 'asistente'
         ? !canAddAssistant(db, req.user, invitation.studioId)
         : !canAddStudyMember(db, req.user, invitation.studioId)
@@ -222,6 +227,18 @@ module.exports = function () {
       return res.status(400).json({ error: 'No podés cambiar tu propio rol' });
     }
     const fromRole = target.studioRole;
+    // Bloque 33 — cambiar el rol de alguien YA en el estudio puede cruzar
+    // el límite que corresponda (si antes no ocupaba un cupo de
+    // integrante y ahora sí, o viceversa con el de asistentes) — mismo
+    // chequeo que al invitar, para que no sea un atajo para esquivarlo.
+    if (!isAdminUser(req.user) && billingPaywallActive() && fromRole !== role) {
+      if (fromRole === 'asistente' && role !== 'asistente' && !canAddStudyMember(db, req.user, req.user.studioId)) {
+        return res.status(402).json({ error: 'Llegaste al límite de integrantes de tu plan — necesitás el plan Estudio para sumar más gente.', upgradeMessage: 'Sumar más integrantes al estudio requiere el plan Estudio.', code: 'PLAN_LIMIT_REACHED' });
+      }
+      if (fromRole !== 'asistente' && role === 'asistente' && !canAddAssistant(db, req.user, req.user.studioId)) {
+        return res.status(402).json({ error: 'Llegaste al límite de asistentes de tu plan.', upgradeMessage: 'Sumar un asistente requiere el plan Profesional (1) o Estudio (ilimitado).', code: 'PLAN_LIMIT_REACHED' });
+      }
+    }
     target.studioRole = role;
     logAudit(db, { actorId: req.user.id, action: 'studio_role_changed', channelCode: null, meta: { studioId: req.user.studioId, targetUserId: target.id, fromRole, toRole: role } });
     await commit();
