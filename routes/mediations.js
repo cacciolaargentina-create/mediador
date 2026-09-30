@@ -253,7 +253,7 @@ function auditMediation(db, mediation) {
   const tareasVencidas = tasks.filter((t) => ['pendiente', 'en_proceso'].includes(t.status) && t.dueDate && new Date(t.dueDate).getTime() < now);
   push('tareas_vencidas', 'Tareas vencidas', tareasVencidas.length === 0 ? 'ok' : 'inconsistencia',
     tareasVencidas.length === 0 ? null : `${tareasVencidas.length} tarea(s) vencida(s) sin completar.`, 'section-tareas');
-  const compromisosVencidos = commitments.filter((c) => c.status === 'pendiente' && c.dueDate && new Date(c.dueDate).getTime() < now);
+  const compromisosVencidos = commitments.filter((c) => c.status === 'vencido' || (c.status === 'pendiente' && c.dueDate && new Date(c.dueDate).getTime() < now));
   push('compromisos_vencidos', 'Compromisos vencidos', compromisosVencidos.length === 0 ? 'ok' : 'inconsistencia',
     compromisosVencidos.length === 0 ? null : `${compromisosVencidos.length} compromiso(s) vencido(s) sin cumplir.`, 'section-compromisos');
 
@@ -273,6 +273,92 @@ function auditMediation(db, mediation) {
   }
 
   return checks;
+}
+
+// Herramientas Legales — Control de vencimientos. Cruza, sobre TODAS las
+// mediaciones del usuario (no una por una como el dashboard), tres
+// fuentes de vencimiento que YA existen en el modelo: tareas, compromisos
+// y la próxima acción de cada expediente. Nada nuevo se inventa acá —
+// es la misma noción de "vencido" que ya usa auditMediation/dashboard,
+// solo que agrupada en baldes HOY/MAÑANA/PRÓXIMOS 3/PRÓXIMOS 7/VENCIDOS
+// en vez del booleano simple que alcanza para esas otras pantallas.
+const VENCIMIENTO_RESPONSABLE_LABELS = { mediador: 'Mediador/a', party: 'Una parte', lawyer: 'Un abogado' };
+function classifyDueDate(dueDateStr) {
+  if (!dueDateStr) return null;
+  const due = new Date(dueDateStr);
+  if (Number.isNaN(due.getTime())) return null;
+  // Comparar por DÍA calendario (UTC, igual que el resto de los
+  // "YYYY-MM-DD" del sistema — ver commitmentUrgencyLabel en
+  // mediador.js), nunca por milisegundos crudos: dueDateStr no tiene
+  // hora, así que parsea como medianoche UTC de ese día — comparado
+  // contra Date.now() (un instante, no medianoche), "hoy" quedaba mal
+  // clasificado como "vencido" apenas pasaba la medianoche UTC.
+  const dueDay = Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate());
+  const now = new Date();
+  const todayDay = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const diffDays = Math.round((dueDay - todayDay) / (24 * 60 * 60 * 1000));
+  if (diffDays < 0) return 'vencidos';
+  if (diffDays === 0) return 'hoy';
+  if (diffDays === 1) return 'manana';
+  if (diffDays <= 3) return 'proximos3';
+  if (diffDays <= 7) return 'proximos7';
+  return null;
+}
+function buildVencimientosPanel(db, mediations) {
+  const mediationIds = new Set(mediations.map((m) => m.id));
+  const mediationById = {};
+  mediations.forEach((m) => { mediationById[m.id] = m; });
+  const partyName = (id) => {
+    const p = db.parties.find((x) => x.id === id);
+    if (!p) return null;
+    return p.legalName || `${p.firstName || ''} ${p.lastName || ''}`.trim() || null;
+  };
+  const items = [];
+
+  db.tasks
+    .filter((t) => mediationIds.has(t.mediationId) && ['pendiente', 'en_proceso'].includes(t.status) && t.dueDate)
+    .forEach((t) => {
+      const bucket = classifyDueDate(t.dueDate);
+      if (!bucket) return;
+      items.push({
+        id: 'task:' + t.id, mediationId: t.mediationId, mediationCode: mediationById[t.mediationId].code,
+        tipo: 'Tarea', label: t.title, dueDate: t.dueDate,
+        responsable: t.assignedToPartyId ? (partyName(t.assignedToPartyId) || 'Una parte') : 'Mediador/a',
+        bucket,
+      });
+    });
+
+  db.commitments
+    .filter((c) => mediationIds.has(c.mediationId) && ['pendiente', 'vencido'].includes(c.status) && c.dueDate)
+    .forEach((c) => {
+      const bucket = classifyDueDate(c.dueDate);
+      if (!bucket) return;
+      items.push({
+        id: 'commitment:' + c.id, mediationId: c.mediationId, mediationCode: mediationById[c.mediationId].code,
+        tipo: 'Compromiso', label: c.description, dueDate: c.dueDate,
+        responsable: partyName(c.partyId) || 'Una parte',
+        bucket,
+      });
+    });
+
+  mediations
+    .filter((m) => !m.closedAt && m.nextActionDueDate)
+    .forEach((m) => {
+      const bucket = classifyDueDate(m.nextActionDueDate);
+      if (!bucket) return;
+      items.push({
+        id: 'nextaction:' + m.id, mediationId: m.id, mediationCode: m.code,
+        tipo: 'Próxima acción', label: m.nextActionText || 'Próxima acción sin descripción',
+        dueDate: m.nextActionDueDate,
+        responsable: VENCIMIENTO_RESPONSABLE_LABELS[m.nextActionResponsibleType] || '—',
+        bucket,
+      });
+    });
+
+  items.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+  const grouped = { vencidos: [], hoy: [], manana: [], proximos3: [], proximos7: [] };
+  items.forEach((it) => grouped[it.bucket].push(it));
+  return grouped;
 }
 
 module.exports = function (io, presence) {
@@ -1095,6 +1181,15 @@ module.exports = function (io, presence) {
     const db = getDB();
     const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 50);
     res.json(buildCommunicationsInbox(db, req.user, { limit, q: req.query.q }));
+  });
+
+  // Herramientas Legales — Control de vencimientos, cruzando TODAS las
+  // mediaciones del usuario (no una por una). Tiene que registrarse antes
+  // de '/:id' — si no, Express la confundiría con el id de una mediación.
+  router.get('/legal-tools/vencimientos', requireAuth, (req, res) => {
+    const db = getDB();
+    const mine = getMyMediations(db, req.user).filter((m) => !m.closedAt);
+    res.json(buildVencimientosPanel(db, mine));
   });
 
   // ---------- expediente (registro básico — el resumen agregado con

@@ -599,7 +599,7 @@ const TAB_FOR_SCREEN = {
   dashboard:'dashboard', list:'list', detail:'list', new:'list',
   stats:'stats', team:'team', studioMediations:'team',
   agenda:'agenda', requests:'requests', comms:'comms',
-  legalTools:'legalTools', legalAuditor:'legalTools',
+  legalTools:'legalTools', legalAuditor:'legalTools', legalVencimientos:'legalTools',
 };
 function goTo(screen, id){
   currentMediationId = id || null;
@@ -628,6 +628,7 @@ function goTo(screen, id){
   else if(screen === 'comms') renderPromise = renderComunicaciones();
   else if(screen === 'legalTools') renderPromise = renderLegalTools();
   else if(screen === 'legalAuditor') renderPromise = renderLegalAuditor(id);
+  else if(screen === 'legalVencimientos') renderPromise = renderLegalVencimientos();
   else if(screen === 'commitments') renderPromise = renderCommitmentsScreen();
   else if(screen === 'hearingPrep') renderPromise = renderHearingPreparationScreen();
   else if(screen === 'videoSettings') renderPromise = renderVideoSettings();
@@ -1021,7 +1022,7 @@ const LEGAL_TOOLS = [
   { id: 'honorarios', label: 'Calculadora de honorarios', desc: 'Estimación de honorarios por jurisdicción, con fuente normativa citada.', icon: '<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5h4.5a2 2 0 1 1 0 4H9"/>', available: false },
   { id: 'acuerdos', label: 'Constructor de acuerdos', desc: 'Armá la estructura de un acuerdo: obligaciones, cuotas, vencimientos.', icon: '<path d="M8 12h8M8 16h5"/><rect x="4" y="4" width="16" height="16" rx="2"/>', available: false },
   { id: 'notificaciones', label: 'Generador de notificaciones', desc: 'Plantillas de citación, reprogramación y otros avisos del expediente.', icon: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>', available: false },
-  { id: 'vencimientos', label: 'Control de vencimientos', desc: 'Panel de vencimientos de todos tus expedientes, agrupados por urgencia.', icon: '<rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4M8 14h.01M12 14h.01M16 14h.01"/>', available: false },
+  { id: 'vencimientos', label: 'Control de vencimientos', desc: 'Panel de vencimientos de todos tus expedientes, agrupados por urgencia.', icon: '<rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4M8 14h.01M12 14h.01M16 14h.01"/>', available: true },
   { id: 'propuestas', label: 'Calculadora de propuestas', desc: 'Comparación de propuestas de acuerdo — nunca cuál es "mejor".', icon: '<path d="M4 20V10M12 20V4M20 20v-7"/>', available: false },
   { id: 'cumplimiento', label: 'Control de cumplimiento', desc: 'Seguimiento cuota por cuota de los acuerdos ya celebrados.', icon: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>', available: false },
   { id: 'normativa', label: 'Biblioteca normativa', desc: 'Referencias a normativa oficial por jurisdicción, con fuente y fecha.', icon: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/>', available: false },
@@ -1048,6 +1049,7 @@ function renderLegalTools(){
 }
 function openLegalTool(toolId){
   if(toolId === 'auditor') return goTo('legalAuditor', currentMediationId || null);
+  if(toolId === 'vencimientos') return goTo('legalVencimientos');
 }
 
 const AUDIT_STATUS_META = {
@@ -1102,6 +1104,63 @@ async function renderLegalAuditor(mediationId){
         </div>
       `).join('')}
     </div>
+  `;
+}
+
+// ---- Control de vencimientos ----
+// Cruza tareas, compromisos y próxima acción de TODAS las mediaciones del
+// usuario (a diferencia del dashboard, que las muestra mediación por
+// mediación) — mismo dato ya calculado en el servidor (getMyMediations +
+// tasks/commitments/nextActionDueDate), agrupado en baldes de urgencia.
+// fmtDate() pasa por `new Date(iso)`, que interpreta un "YYYY-MM-DD" como
+// medianoche UTC — en cualquier huso horario con offset negativo (como
+// Argentina, UTC-3) eso muestra el día ANTERIOR. Acá, donde "Hoy"/"Mañana"
+// son justamente el punto de todo el panel, ese corrimiento es confuso
+// (mostraría "29/9" en el balde "Hoy" del 30/9) — se formatea la fecha
+// directo del string, sin pasar por Date, para evitarlo. No se tocó
+// fmtDate() en sí porque se usa en toda la app y arreglarlo ahí es un
+// cambio más grande, fuera del alcance de este bloque.
+function fmtDateOnly(dateStr){
+  if(!dateStr) return '—';
+  const [y, m, d] = String(dateStr).slice(0, 10).split('-');
+  return (y && m && d) ? `${d}/${m}/${y}` : dateStr;
+}
+const VENCIMIENTO_BUCKETS = [
+  { key: 'vencidos', label: 'Vencidos', badgeCls: 'st-danger' },
+  { key: 'hoy', label: 'Hoy', badgeCls: 'st-danger' },
+  { key: 'manana', label: 'Mañana', badgeCls: 'st-blue' },
+  { key: 'proximos3', label: 'Próximos 3 días', badgeCls: 'st-blue' },
+  { key: 'proximos7', label: 'Próximos 7 días', badgeCls: 'st-neutral' },
+];
+async function renderLegalVencimientos(){
+  const main = document.getElementById('main');
+  main.innerHTML = `<p class="empty-hint">Cargando…</p>`;
+  let grouped;
+  try{ grouped = await api('/api/mediations/legal-tools/vencimientos'); }
+  catch(e){ main.innerHTML = `<p class="empty-hint">No se pudo cargar el panel de vencimientos.</p>`; return; }
+  const total = VENCIMIENTO_BUCKETS.reduce((sum, b) => sum + grouped[b.key].length, 0);
+  main.innerHTML = `
+    <a href="#" onclick="event.preventDefault(); goTo('legalTools');" style="font-size:13px; font-weight:600;">← Herramientas legales</a>
+    <h1 style="margin-top:10px;">Control de vencimientos</h1>
+    <p style="color:var(--text-dim); font-size:15px; margin-bottom:20px;">Tareas, compromisos y próximas acciones de todos tus expedientes, agrupados por urgencia.</p>
+    ${total === 0 ? `<div class="card"><p class="empty-hint">No tenés nada vencido ni por vencer en los próximos 7 días.</p></div>` : VENCIMIENTO_BUCKETS.map(b => {
+      const items = grouped[b.key];
+      if(!items.length) return '';
+      return `
+        <div class="card" style="margin-bottom:16px;">
+          <h2 style="display:flex; justify-content:space-between; align-items:center;"><span>${b.label}</span><span class="status-badge ${b.badgeCls}">${items.length}</span></h2>
+          ${items.map(it => `
+            <div class="task-item">
+              <div>
+                <div class="title">${escapeHtml(it.label)}</div>
+                <div class="sub">${escapeHtml(it.mediationCode)} · ${escapeHtml(it.tipo)} · Responsable: ${escapeHtml(it.responsable)} · Vence ${fmtDateOnly(it.dueDate)}</div>
+              </div>
+              <button class="ghost" style="flex-shrink:0;" onclick="goTo('detail','${it.mediationId}')">Abrir expediente</button>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }).join('')}
   `;
 }
 
