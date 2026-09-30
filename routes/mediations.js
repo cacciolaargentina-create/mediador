@@ -169,6 +169,112 @@ function serializeMediation(m) {
   };
 }
 
+// Herramientas Legales — Auditor de expediente. Controles de
+// COMPLETITUD/CONSISTENCIA sobre datos que YA existen en el modelo —
+// nunca una obligación jurídica inventada. A propósito NO incluye nada
+// sobre monto, honorarios, jurisdicción ni tomo/folio: esos campos no
+// existen en la base (ver comentario de dashboard más abajo sobre por
+// qué se dejaron afuera a propósito), así que afirmar que "faltan"
+// sería inventar un requisito que el sistema no puede verificar.
+// Cada control es independiente y de solo lectura — no corrige nada,
+// solo informa con un link a la sección del expediente correspondiente.
+function auditMediation(db, mediation) {
+  const checks = [];
+  const push = (id, label, status, detail, sectionAnchor) => {
+    checks.push({ id, label, status, detail: detail || null, sectionAnchor: sectionAnchor || null });
+  };
+  const parties = db.parties.filter((p) => p.mediationId === mediation.id);
+  const activeParties = parties.filter((p) => p.status === 'activa');
+  const lawyers = db.lawyers.filter((l) => l.mediationId === mediation.id);
+  const hearings = db.hearings.filter((h) => h.mediationId === mediation.id);
+  const documents = db.documents.filter((d) => d.mediationId === mediation.id);
+  const tasks = db.tasks.filter((t) => t.mediationId === mediation.id);
+  const commitments = db.commitments.filter((c) => c.mediationId === mediation.id);
+  const now = Date.now();
+  const closed = !!mediation.closedAt;
+  const partyName = (p) => p.legalName || `${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Parte sin nombre';
+
+  // ---- objeto del expediente ----
+  push('objeto', 'Objeto del expediente', mediation.object && mediation.object.trim() ? 'ok' : 'pendiente',
+    mediation.object && mediation.object.trim() ? null : 'No tiene objeto cargado.', 'section-admin');
+
+  // ---- partes ----
+  push('partes_activas', 'Partes cargadas', activeParties.length > 0 ? 'ok' : 'pendiente',
+    activeParties.length > 0 ? `${activeParties.length} parte(s) activa(s).` : 'No hay ninguna parte activa cargada.', 'section-partes');
+  if (activeParties.length > 0) {
+    const sinDocumento = activeParties.filter((p) => !p.documentNumber && !p.taxId);
+    push('partes_documento', 'Documento de identidad de las partes', sinDocumento.length === 0 ? 'ok' : 'pendiente',
+      sinDocumento.length === 0 ? null : `Sin documento cargado: ${sinDocumento.map(partyName).join(', ')}.`, 'section-partes');
+    const sinDomicilio = activeParties.filter((p) => !p.address);
+    push('partes_domicilio', 'Domicilio de las partes', sinDomicilio.length === 0 ? 'ok' : 'pendiente',
+      sinDomicilio.length === 0 ? null : `Sin domicilio cargado: ${sinDomicilio.map(partyName).join(', ')}.`, 'section-partes');
+  } else {
+    push('partes_documento', 'Documento de identidad de las partes', 'no_aplica', null, 'section-partes');
+    push('partes_domicilio', 'Domicilio de las partes', 'no_aplica', null, 'section-partes');
+  }
+
+  // ---- abogados ----
+  if (lawyers.length > 0) {
+    const sinMatricula = lawyers.filter((l) => !l.enrollmentNumber);
+    push('abogados_matricula', 'Matrícula de los abogados', sinMatricula.length === 0 ? 'ok' : 'pendiente',
+      sinMatricula.length === 0 ? `${lawyers.length} abogado(s) con matrícula cargada.` : `Sin matrícula cargada: ${sinMatricula.map((l) => l.name).join(', ')}.`, 'section-abogados');
+  } else {
+    push('abogados_matricula', 'Matrícula de los abogados', 'no_aplica', 'No hay abogados cargados en este expediente.', 'section-abogados');
+  }
+
+  // ---- audiencias ----
+  const activeHearings = hearings.filter((h) => ['programada', 'propuesta'].includes(h.status));
+  if (!closed) {
+    push('audiencias_programadas', 'Audiencia programada', activeHearings.length > 0 ? 'ok' : 'pendiente',
+      activeHearings.length > 0 ? `${activeHearings.length} audiencia(s) programada(s) o propuesta(s).` : 'No hay ninguna audiencia programada ni propuesta.', 'section-audiencias');
+  } else {
+    push('audiencias_programadas', 'Audiencia programada', 'no_aplica', null, 'section-audiencias');
+  }
+  const upcomingProgramadas = hearings.filter((h) => h.status === 'programada' && new Date(`${h.date}T00:00:00`).getTime() >= now);
+  if (upcomingProgramadas.length > 0) {
+    const sinConfirmar = upcomingProgramadas.filter((h) => db.hearingConfirmations.some((c) => c.hearingId === h.id && c.response === 'pendiente'));
+    push('audiencias_confirmacion', 'Confirmación de audiencias próximas', sinConfirmar.length === 0 ? 'ok' : 'pendiente',
+      sinConfirmar.length === 0 ? null : `${sinConfirmar.length} audiencia(s) próxima(s) con confirmaciones pendientes.`, 'section-audiencias');
+  } else {
+    push('audiencias_confirmacion', 'Confirmación de audiencias próximas', 'no_aplica', null, 'section-audiencias');
+  }
+
+  // ---- documentos ----
+  const observados = documents.filter((d) => d.status === 'observado');
+  if (observados.length > 0) {
+    push('documentos_observados', 'Documentos observados', 'inconsistencia', `${observados.length} documento(s) marcado(s) como observado, pendientes de corrección.`, 'section-documentos');
+  } else if (documents.length === 0) {
+    push('documentos_observados', 'Documentos observados', 'pendiente', 'Todavía no se cargó ningún documento en este expediente.', 'section-documentos');
+  } else {
+    push('documentos_observados', 'Documentos observados', 'ok', `${documents.length} documento(s), ninguno observado.`, 'section-documentos');
+  }
+
+  // ---- tareas y compromisos vencidos ----
+  const tareasVencidas = tasks.filter((t) => ['pendiente', 'en_proceso'].includes(t.status) && t.dueDate && new Date(t.dueDate).getTime() < now);
+  push('tareas_vencidas', 'Tareas vencidas', tareasVencidas.length === 0 ? 'ok' : 'inconsistencia',
+    tareasVencidas.length === 0 ? null : `${tareasVencidas.length} tarea(s) vencida(s) sin completar.`, 'section-tareas');
+  const compromisosVencidos = commitments.filter((c) => c.status === 'pendiente' && c.dueDate && new Date(c.dueDate).getTime() < now);
+  push('compromisos_vencidos', 'Compromisos vencidos', compromisosVencidos.length === 0 ? 'ok' : 'inconsistencia',
+    compromisosVencidos.length === 0 ? null : `${compromisosVencidos.length} compromiso(s) vencido(s) sin cumplir.`, 'section-compromisos');
+
+  // ---- próxima acción / cierre ----
+  if (!closed) {
+    push('proxima_accion', 'Próxima acción definida', mediation.nextActionText ? 'ok' : 'pendiente',
+      mediation.nextActionText ? null : 'No tiene próxima acción cargada.', 'section-admin');
+    push('resultado_cierre', 'Resultado del cierre', 'no_aplica', null, 'section-admin');
+    push('documento_certificado', 'Documento certificado generado', 'no_aplica', null, 'section-documentos');
+  } else {
+    push('proxima_accion', 'Próxima acción definida', 'no_aplica', null, 'section-admin');
+    push('resultado_cierre', 'Resultado del cierre', mediation.closedResult ? 'ok' : 'inconsistencia',
+      mediation.closedResult ? null : 'La mediación está cerrada pero no tiene resultado de cierre cargado.', 'section-admin');
+    const tieneExport = db.certifiedExports.some((e) => e.mediationCode === mediation.code);
+    push('documento_certificado', 'Documento certificado generado', tieneExport ? 'ok' : 'pendiente',
+      tieneExport ? 'Se generó al menos un documento certificado para este expediente.' : 'Todavía no se generó ningún documento certificado (acta, constancia) para este expediente.', 'section-documentos');
+  }
+
+  return checks;
+}
+
 module.exports = function (io, presence) {
   const router = express.Router();
 
@@ -996,6 +1102,17 @@ module.exports = function (io, presence) {
   // tablas) ----------
   router.get('/:id', requireAuth, requireMediationAccess, (req, res) => {
     res.json(serializeMediation(req.mediation));
+  });
+
+  // Herramientas Legales — Auditor de expediente (solo lectura, cualquiera
+  // con acceso a la mediación puede consultarlo, igual que el resto de las
+  // pantallas de detalle — no requiere permiso de edición).
+  router.get('/:id/audit', requireAuth, requireMediationAccess, (req, res) => {
+    const db = getDB();
+    const checks = auditMediation(db, req.mediation);
+    const counts = { ok: 0, pendiente: 0, inconsistencia: 0, no_aplica: 0 };
+    checks.forEach((c) => { counts[c.status] = (counts[c.status] || 0) + 1; });
+    res.json({ checks, counts });
   });
 
   // ---------- editar datos generales ----------

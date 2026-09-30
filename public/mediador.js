@@ -71,6 +71,7 @@ function mediationQuickActionsHtml(id, opts = {}){
     <div class="quick-actions" onclick="event.stopPropagation();">
       <button class="ghost ${sizeClass}" onclick="openMediationSection('${id}','comunicaciones')">Chat</button>
       <button class="ghost ${sizeClass}" onclick="openMediationSection('${id}','timeline')">Historial</button>
+      <button class="ghost ${sizeClass}" onclick="goTo('legalAuditor','${id}')">Auditar</button>
       ${opts.hideOpen ? '' : `<button class="ghost ${sizeClass}" onclick="goTo('detail','${id}')">Abrir</button>`}
     </div>`;
 }
@@ -596,6 +597,7 @@ const TAB_FOR_SCREEN = {
   dashboard:'dashboard', list:'list', detail:'list', new:'list',
   stats:'stats', team:'team', studioMediations:'team',
   agenda:'agenda', requests:'requests', comms:'comms',
+  legalTools:'legalTools', legalAuditor:'legalTools',
 };
 function goTo(screen, id){
   currentMediationId = id || null;
@@ -622,6 +624,8 @@ function goTo(screen, id){
   else if(screen === 'agenda') renderPromise = renderAgenda();
   else if(screen === 'requests') renderPromise = renderRequests();
   else if(screen === 'comms') renderPromise = renderComunicaciones();
+  else if(screen === 'legalTools') renderPromise = renderLegalTools();
+  else if(screen === 'legalAuditor') renderPromise = renderLegalAuditor(id);
   else if(screen === 'commitments') renderPromise = renderCommitmentsScreen();
   else if(screen === 'hearingPrep') renderPromise = renderHearingPreparationScreen();
   else if(screen === 'videoSettings') renderPromise = renderVideoSettings();
@@ -997,6 +1001,104 @@ async function renderDashboard(){
           <button class="primary" style="width:100%;" onclick="askDashboardAI()">Preguntar</button>
         </section>
       </div>
+    </div>
+  `;
+}
+
+// ================= HERRAMIENTAS LEGALES (Bloque 39) =================
+// Módulo nuevo, aislado del resto (spec: "no empezar modificando todo el
+// sistema, primero crear componentes/módulos aislados"). Fase 1 acá:
+// solo "Auditor de expediente" queda funcional — el resto de las 11
+// tarjetas quedan como "Próximamente" hasta que se implementen en los
+// bloques siguientes. Ninguna tarjeta inventa datos: el auditor solo
+// lee controles que ya existen en el modelo (ver auditMediation en
+// routes/mediations.js).
+const LEGAL_TOOLS = [
+  { id: 'auditor', label: 'Auditor de expediente', desc: 'Revisa qué datos están completos, pendientes o inconsistentes en un expediente.', icon: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>', available: true },
+  { id: 'actas', label: 'Generador de actas', desc: 'Actas de apertura, audiencia y cierre a partir de los datos del expediente.', icon: '<path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/>', available: false },
+  { id: 'honorarios', label: 'Calculadora de honorarios', desc: 'Estimación de honorarios por jurisdicción, con fuente normativa citada.', icon: '<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5h4.5a2 2 0 1 1 0 4H9"/>', available: false },
+  { id: 'acuerdos', label: 'Constructor de acuerdos', desc: 'Armá la estructura de un acuerdo: obligaciones, cuotas, vencimientos.', icon: '<path d="M8 12h8M8 16h5"/><rect x="4" y="4" width="16" height="16" rx="2"/>', available: false },
+  { id: 'notificaciones', label: 'Generador de notificaciones', desc: 'Plantillas de citación, reprogramación y otros avisos del expediente.', icon: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>', available: false },
+  { id: 'vencimientos', label: 'Control de vencimientos', desc: 'Panel de vencimientos de todos tus expedientes, agrupados por urgencia.', icon: '<rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4M8 14h.01M12 14h.01M16 14h.01"/>', available: false },
+  { id: 'propuestas', label: 'Calculadora de propuestas', desc: 'Comparación de propuestas de acuerdo — nunca cuál es "mejor".', icon: '<path d="M4 20V10M12 20V4M20 20v-7"/>', available: false },
+  { id: 'cumplimiento', label: 'Control de cumplimiento', desc: 'Seguimiento cuota por cuota de los acuerdos ya celebrados.', icon: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>', available: false },
+  { id: 'normativa', label: 'Biblioteca normativa', desc: 'Referencias a normativa oficial por jurisdicción, con fuente y fecha.', icon: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/>', available: false },
+  { id: 'asistente', label: 'Asistente jurídico', desc: 'Responde solo con datos del expediente — nunca inventa normativa.', icon: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3 2.4c-.9.3-1.5 1-1.5 1.9"/><path d="M12 17h.01"/>', available: false },
+  { id: 'connect', label: 'Puente Connect', desc: 'Carga asistida a SIGIM / MEDIARE, con confirmación del mediador en cada paso.', icon: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>', available: false },
+];
+function renderLegalTools(){
+  const main = document.getElementById('main');
+  main.innerHTML = `
+    <h1>Herramientas legales</h1>
+    <p style="color:var(--text-dim); font-size:15px; margin-bottom:20px;">Herramientas de trabajo para mediadores — se van a ir sumando por etapas.</p>
+    <div class="legal-tools-grid">
+      ${LEGAL_TOOLS.map(t => `
+        <div class="legal-tool-card ${t.available ? '' : 'disabled'}" ${t.available ? `onclick="openLegalTool('${t.id}')"` : ''}>
+          <span class="legal-tool-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${t.icon}</svg></span>
+          <div class="legal-tool-body">
+            <div class="legal-tool-title">${escapeHtml(t.label)}${t.available ? '' : ' <span class="legal-tool-soon">Próximamente</span>'}</div>
+            <div class="legal-tool-desc">${escapeHtml(t.desc)}</div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+function openLegalTool(toolId){
+  if(toolId === 'auditor') return goTo('legalAuditor', currentMediationId || null);
+}
+
+const AUDIT_STATUS_META = {
+  ok: { label: 'OK', cls: 'st-green' },
+  pendiente: { label: 'Pendiente', cls: 'st-blue' },
+  inconsistencia: { label: 'Inconsistencia', cls: 'st-danger' },
+  no_aplica: { label: 'No aplica', cls: 'st-neutral' },
+};
+async function renderLegalAuditor(mediationId){
+  const main = document.getElementById('main');
+  if(!mediationId){
+    main.innerHTML = `<p class="empty-hint">Cargando…</p>`;
+    let list;
+    try{ list = await api('/api/mediations'); }
+    catch(e){ main.innerHTML = `<p class="empty-hint">No se pudieron cargar tus mediaciones.</p>`; return; }
+    main.innerHTML = `
+      <a href="#" onclick="event.preventDefault(); goTo('legalTools');" style="font-size:13px; font-weight:600;">← Herramientas legales</a>
+      <h1 style="margin-top:10px;">Auditor de expediente</h1>
+      <p style="color:var(--text-dim); font-size:15px; margin-bottom:20px;">Elegí un expediente para auditar.</p>
+      ${list.length ? `<div class="card">${list.map(m => `
+        <div class="alert-row" onclick="goTo('legalAuditor','${m.id}')">
+          <div><div style="font-weight:600; font-size:13.5px;">${escapeHtml(m.code)}</div><div class="code">${escapeHtml(m.object || 'Sin carátula')}</div></div>
+          <span class="status-badge ${STATUS_BADGE_CLASS[m.status]||'st-neutral'}">${escapeHtml(STATUS_LABELS[m.status]||m.status)}</span>
+        </div>
+      `).join('')}</div>` : `<p class="empty-hint">Todavía no tenés mediaciones.</p>`}
+    `;
+    return;
+  }
+  main.innerHTML = `<p class="empty-hint">Cargando…</p>`;
+  let mediation, auditData;
+  try{
+    [mediation, auditData] = await Promise.all([
+      api('/api/mediations/' + mediationId),
+      api('/api/mediations/' + mediationId + '/audit'),
+    ]);
+  }catch(e){ main.innerHTML = `<p class="empty-hint">No se pudo cargar la auditoría de este expediente.</p>`; return; }
+  const { checks, counts } = auditData;
+  main.innerHTML = `
+    <a href="#" onclick="event.preventDefault(); goTo('legalAuditor');" style="font-size:13px; font-weight:600;">← Elegir otro expediente</a>
+    <h1 style="margin-top:10px;">Auditor de expediente</h1>
+    <p style="color:var(--text-dim); font-size:15px; margin-bottom:6px;">${escapeHtml(mediation.code)} — ${escapeHtml(mediation.object || 'Sin carátula')}</p>
+    <p style="color:var(--text-dim); font-size:13px; margin-bottom:20px;">${counts.ok} control(es) OK · ${counts.pendiente} pendiente(s) · ${counts.inconsistencia} inconsistencia(s)</p>
+    <div class="card">
+      ${checks.map(c => `
+        <div class="audit-check-row">
+          <span class="status-badge ${AUDIT_STATUS_META[c.status].cls}">${AUDIT_STATUS_META[c.status].label}</span>
+          <div class="audit-check-body">
+            <div class="audit-check-label">${escapeHtml(c.label)}</div>
+            ${c.detail ? `<div class="audit-check-detail">${escapeHtml(c.detail)}</div>` : ''}
+          </div>
+          ${c.sectionAnchor ? `<button class="ghost" style="flex-shrink:0;" onclick="openMediationSection('${mediationId}','${c.sectionAnchor.replace('section-','')}')">Ir al dato</button>` : ''}
+        </div>
+      `).join('')}
     </div>
   `;
 }
