@@ -114,6 +114,7 @@ function toggleTopbarSearch(){
   if(wrap.classList.contains('search-open')){ closeTopbarSearch(); return; }
   closeTopbarBell();
   wrap.classList.add('search-open');
+  document.querySelector('.topbar')?.classList.add('topbar-search-active');
   const backdrop = document.getElementById('topbar-search-backdrop');
   if(backdrop) backdrop.hidden = false;
   setTimeout(() => document.getElementById('topbar-search-input')?.focus(), 50);
@@ -121,6 +122,7 @@ function toggleTopbarSearch(){
 function closeTopbarSearch(){
   const wrap = document.querySelector('.topbar-search-wrap');
   if(wrap) wrap.classList.remove('search-open');
+  document.querySelector('.topbar')?.classList.remove('topbar-search-active');
   const backdrop = document.getElementById('topbar-search-backdrop');
   if(backdrop) backdrop.hidden = true;
   const results = document.getElementById('topbar-search-results');

@@ -93,20 +93,22 @@
   /* comunicaciones: lista + chat pasan a ancho completo, apilados */
   .mediador-app .comms-layout{ flex-direction: column; }
 
-  /* Bloque 38 — buscador de la topbar colapsado a ícono en mobile; al
-     tocarlo se abre como overlay fijo arriba de la página (ver
-     toggleTopbarSearch en mediador.js), con el backdrop oscureciendo
-     el resto. */
+  /* Bloque 38/39-fix — buscador de la topbar colapsado a ícono en mobile.
+     Al tocarlo, en vez de un overlay `position:fixed` que tapaba TODA la
+     topbar (incluido el botón de hamburguesa, que quedaba invisible
+     debajo — bug reportado), el buscador crece DENTRO de la topbar
+     (flex:1) como cualquier otro ítem del row: la hamburguesa y la
+     campana siguen siendo hermanos visibles en el mismo flex, nunca
+     tapados. El logo del medio se oculta mientras se busca porque no
+     entra el espacio, no porque algo lo cubra. */
   .mediador-app .topbar-search-icon-btn{ display: inline-flex; }
   .mediador-app .topbar-search-wrap{ flex: 0 0 auto; max-width: none; }
   .mediador-app .topbar-search{ display: none; }
-  .mediador-app .topbar-search-wrap.search-open .topbar-search{
-    display: flex; position: fixed; top: 10px; left: 12px; right: 12px; z-index: 26;
-  }
-  .mediador-app .topbar-search-wrap.search-open .topbar-search-results{
-    position: fixed; top: 62px; left: 12px; right: 12px;
-  }
-  .mediador-app .topbar-bell-panel{ position: fixed; top: 58px; left: 12px; right: 12px; width: auto; }
+  .mediador-app .topbar-search-wrap.search-open{ flex: 1 1 auto; min-width: 0; }
+  .mediador-app .topbar-search-wrap.search-open .topbar-search{ display: flex; width: 100%; }
+  .mediador-app .topbar.topbar-search-active .topbar-logo-mobile{ display: none; }
+  .mediador-app .topbar.topbar-search-active .topbar-search-icon-btn{ display: none; }
+  .mediador-app .topbar-bell-panel{ max-width: calc(100vw - 24px); }
 }
 
 @media (min-width: 768px) and (max-width: 1023px){

@@ -93,7 +93,11 @@
 .mediador-app .topbar-search-result .code{ font-size: 12px; font-weight: var(--font-weight-semibold); color: var(--color-text-secondary); }
 .mediador-app .topbar-search-result .obj{ font-size: 13.5px; font-weight: var(--font-weight-medium); margin-top: 1px; }
 .mediador-app .topbar-search-empty{ padding: 14px; font-size: 13px; color: var(--color-text-muted); text-align: center; }
-.mediador-app .topbar-search-backdrop{ position: fixed; inset: 0; background: rgba(15,21,23,.4); z-index: 24; }
+/* top:64px (altura de la topbar), nunca inset:0 — así el backdrop oscurece
+   la página de abajo pero nunca pasa por encima de la topbar (hamburguesa,
+   buscador, campana), que tiene que seguir siendo clickeable mientras el
+   buscador de mobile está abierto. */
+.mediador-app .topbar-search-backdrop{ position: fixed; top: 64px; left: 0; right: 0; bottom: 0; background: rgba(15,21,23,.4); z-index: 24; }
 
 .mediador-app .topbar-actions{ display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; margin-left: auto; position: relative; }
 .mediador-app .topbar-bell{ position: relative; width: 40px; height: 40px; border: none; background: none; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text-secondary); }
