@@ -317,6 +317,19 @@ function openMediationSection(mediationId, sectionSuffix){
   });
 }
 
+// Reduce clicks: cuando ya sabemos CUÁL conversación (viene del Dashboard
+// o de la bandeja global, que ya traen type/participantId de
+// buildCommunicationsInbox), abrimos esa conversación puntual directo en
+// vez de aterrizar en la lista y obligar a un segundo click para
+// encontrarla de nuevo. Mismo patrón que openMediationSection, un paso
+// menos: reusa openConversation, que ya existía.
+function openMediationConversation(mediationId, type, participantId){
+  Promise.resolve(goTo('detail', mediationId)).then(() => {
+    document.getElementById('section-comunicaciones')?.scrollIntoView({ behavior:'smooth', block:'start' });
+    openConversation(mediationId, type, participantId || null, null);
+  });
+}
+
 const STATUS_LABELS = {
   borrador:'Borrador', iniciada:'Iniciada', contactando_partes:'Contactando partes',
   notificaciones:'Notificaciones', audiencia_programada:'Audiencia programada',
@@ -579,13 +592,57 @@ function showToast(message, kind){
   }, 3600);
 }
 
+// Modal genérico con botón de confirmar/cancelar — usa .modal-overlay/
+// .modal/.modal-header/.modal-body/.modal-footer, que ya existían en
+// components.css pero nunca se habían instanciado desde JS (el único
+// diálogo real del producto era el confirm()/prompt() nativo del
+// navegador). Pensado para reemplazar los casos donde confirm() se
+// estaba usando para algo más que "sí/no" — mostrar un mensaje con
+// formato y una acción con su propia etiqueta, en vez de dos botones
+// genéricos "Aceptar/Cancelar" de un cuadro de diálogo del sistema
+// operativo que no se puede estilar ni traducir.
+function showConfirmModal({ title, bodyHtml, confirmLabel = 'Confirmar', cancelLabel = 'Cancelar', onConfirm }){
+  let overlay = document.getElementById('confirm-modal-overlay');
+  if(overlay) overlay.remove();
+  overlay = document.createElement('div');
+  overlay.id = 'confirm-modal-overlay';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-header"><h3>${escapeHtml(title)}</h3><button class="modal-close" aria-label="Cerrar">×</button></div>
+      <div class="modal-body">${bodyHtml}</div>
+      <div class="modal-footer">
+        <button class="ghost" id="confirm-modal-cancel">${escapeHtml(cancelLabel)}</button>
+        <button class="primary" id="confirm-modal-confirm">${escapeHtml(confirmLabel)}</button>
+      </div>
+    </div>
+  `;
+  // se cuelga de #app (clase .mediador-app), no de document.body: el CSS
+  // de .modal-overlay (components.css) es .mediador-app .modal-overlay —
+  // un descendiente real, no compuesto — así que colgarlo de body directo
+  // lo deja sin ninguna de esas reglas (ni position:fixed ni el centrado).
+  (document.getElementById('app') || document.body).appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', (ev) => { if(ev.target === overlay) close(); });
+  overlay.querySelector('.modal-close').onclick = close;
+  overlay.querySelector('#confirm-modal-cancel').onclick = close;
+  overlay.querySelector('#confirm-modal-confirm').onclick = () => { close(); if(onConfirm) onConfirm(); };
+  requestAnimationFrame(() => requestAnimationFrame(() => overlay.classList.add('show')));
+}
+
 // Bloque 29 §17 — paywall contextual: nunca una pantalla agresiva que
 // bloquea todo, solo un mensaje claro en el punto exacto donde la persona
 // intentó usar algo que su plan no incluye, con una salida directa a Mi
 // Plan. Si el error no es de este tipo, cae al toast de siempre.
 function showPaywallOrError(e, fallbackMessage){
   if(e && e.code === 'PLAN_LIMIT_REACHED'){
-    if(confirm(`${e.upgradeMessage || e.error}\n\n¿Ver los planes disponibles?`)) goTo('billing');
+    showConfirmModal({
+      title: 'Límite de tu plan',
+      bodyHtml: `<p style="margin:0; font-size:14px; color:var(--text-dim);">${escapeHtml(e.upgradeMessage || e.error)}</p>`,
+      confirmLabel: 'Ver planes',
+      cancelLabel: 'Ahora no',
+      onConfirm: () => goTo('billing'),
+    });
     return;
   }
   showToast((e && e.error) || fallbackMessage, 'danger');
@@ -649,6 +706,7 @@ function goTo(screen, id){
 // si mañana se agrega otra pantalla que también necesite esta lista
 // (ej. un widget dentro del expediente, que usa el mismo shape).
 let currentAttentionItems = [];
+let currentDashboardTaskItems = []; // widget "Tareas y vencimientos" del dashboard — ver completeDashboardTaskItem
 
 const ATTENTION_PRIORITY_LABELS = { vencido: 'Vencido', critico: 'Crítico', proximo: 'Próximo', pendiente: 'Pendiente' };
 const ATTENTION_PRIORITY_BADGE_CLASS = { vencido: 'danger', critico: 'danger', proximo: 'warn', pendiente: 'calm' };
@@ -792,13 +850,32 @@ async function handleAttentionAction(idx, action){
   if(sectionId) setTimeout(() => document.getElementById(sectionId)?.scrollIntoView({ behavior:'smooth' }), 150);
 }
 
+// Reduce clicks: completar una tarea/compromiso desde el widget "Tareas y
+// vencimientos" del dashboard sin navegar — mismos dos endpoints que ya
+// usa handleAttentionAction (completarTarea/marcarCompletado), un solo
+// click en vez de "Ver todas" → buscar el ítem → cambiar el estado.
+async function completeDashboardTaskItem(idx){
+  const it = currentDashboardTaskItems[idx];
+  if(!it) return;
+  try{
+    if(it.kind === 'tarea'){
+      await api(`/api/mediations/${it.mediationId}/tasks/${it.id}`, { method:'PATCH', body: JSON.stringify({ status:'completada' }) });
+      showToast('Tarea completada.', 'success');
+    } else {
+      await api(`/api/mediations/${it.mediationId}/commitments/${it.id}`, { method:'PATCH', body: JSON.stringify({ status:'cumplido' }) });
+      showToast('Compromiso marcado como cumplido.', 'success');
+    }
+    renderDashboard();
+  }catch(e){ showToast(e.error || 'No se pudo actualizar.', 'danger'); }
+}
+
 async function renderDashboard(){
   const main = document.getElementById('main');
   main.className = 'page-content wide';
   main.innerHTML = `<p class="empty-hint">Cargando…</p>`;
   let d;
   try{ d = await api('/api/mediations/dashboard'); }
-  catch(e){ main.innerHTML = `<p class="empty-hint">No se pudo cargar el dashboard.</p>`; return; }
+  catch(e){ main.innerHTML = `<p class="empty-hint">No se pudo cargar el dashboard.</p><button class="ghost" onclick="renderDashboard()">Reintentar</button>`; return; }
 
   currentAttentionItems = d.centroAtencion || [];
   updateCommsBadge(d.comunicacionesPendientes);
@@ -870,7 +947,7 @@ async function renderDashboard(){
       <section class="dash-section dash-audiencias">
         <div class="dash-section-head"><h2>Próximas audiencias</h2><a href="#" onclick="event.preventDefault(); goTo('agenda');">Ver agenda</a></div>
         ${d.proximasAudiencias.length ? d.proximasAudiencias.slice(0,3).map(h => { const db_ = hearingDateBox(h.date); return `
-          <div class="hearing-row" onclick="goTo('detail','${h.mediationId}')" style="cursor:pointer;">
+          <div class="hearing-row" onclick="openMediationSection('${h.mediationId}','audiencias')" style="cursor:pointer;">
             <div class="hearing-date-box"><span class="d">${db_.day}</span><span class="m">${db_.month}</span></div>
             <div class="hearing-body">
               <div class="who">${escapeHtml(h.partyNames.join(' / ') || 'Sin partes cargadas')}</div>
@@ -918,10 +995,10 @@ async function renderDashboard(){
           ${(() => {
             const segments = [
               { value: d.counts.activas, color: 'var(--calm)', label: 'En curso' },
-              { value: d.porResultado.acuerdo_total||0, color: '#20A36A', label: 'Acuerdo total' },
-              { value: d.porResultado.acuerdo_parcial||0, color: '#4F8EDB', label: 'Acuerdo parcial' },
-              { value: d.porResultado.sin_acuerdo||0, color: '#8A989A', label: 'Sin acuerdo' },
-              { value: (d.porResultado.incomparecencia||0)+(d.porResultado.desistimiento||0)+(d.porResultado.otro||0), color: '#C9D3D4', label: 'Otros cierres' },
+              { value: d.porResultado.acuerdo_total||0, color: 'var(--color-success)', label: 'Acuerdo total' },
+              { value: d.porResultado.acuerdo_parcial||0, color: 'var(--color-info)', label: 'Acuerdo parcial' },
+              { value: d.porResultado.sin_acuerdo||0, color: 'var(--color-text-muted)', label: 'Sin acuerdo' },
+              { value: (d.porResultado.incomparecencia||0)+(d.porResultado.desistimiento||0)+(d.porResultado.otro||0), color: 'var(--color-border)', label: 'Otros cierres' },
             ];
             const ring = buildRingSvg(segments);
             if(!ring) return `<div class="dash-empty"><p>Todavía no hay datos para mostrar.</p></div>`;
@@ -937,7 +1014,7 @@ async function renderDashboard(){
         <section class="dash-section dash-comunicaciones">
           <div class="dash-section-head"><h2>Comunicaciones</h2>${d.comunicacionesPendientes ? `<span class="status-badge st-calm">${d.comunicacionesPendientes} sin leer</span>` : ''}</div>
           ${d.comunicacionesRecientes.length ? d.comunicacionesRecientes.map(c => `
-            <a class="comm-item" href="#" onclick="event.preventDefault(); openMediationSection('${c.mediationId}','comunicaciones');">
+            <a class="comm-item" href="#" onclick="event.preventDefault(); openMediationConversation('${c.mediationId}','${c.type}',${c.participantId ? `'${c.participantId}'` : 'null'});">
               <span class="comm-avatar">${escapeHtml((c.participantName||'?').split(' ').map(p=>p[0]).slice(0,2).join('').toUpperCase())}</span>
               <div class="comm-body">
                 <div class="row1"><span class="name">${escapeHtml(c.participantName)}</span><span class="when">${fmtRelativeTime(c.lastMessage.createdAt)}</span></div>
@@ -950,17 +1027,25 @@ async function renderDashboard(){
           <div class="dash-section-head"><h2>Tareas y vencimientos</h2><a href="#" onclick="event.preventDefault(); goTo('commitments');">Ver todas</a></div>
           ${(() => {
             const vencidos = [
-              ...d.necesitanAtencion.tareasVencidas.map(t => ({ title: t.title, sub: t.mediationCode, badge: 'Vencido', danger: true })),
-              ...d.necesitanAtencion.compromisosVencidos.map(c => ({ title: c.description, sub: `Compromiso de ${c.partyName||'—'}`, badge: 'Vencido', danger: true })),
+              ...d.necesitanAtencion.tareasVencidas.map(t => ({ kind:'tarea', id:t.id, mediationId:t.mediationId, title: t.title, sub: t.mediationCode, badge: 'Vencido', danger: true })),
+              ...d.necesitanAtencion.compromisosVencidos.map(c => ({ kind:'compromiso', id:c.id, mediationId:c.mediationId, title: c.description, sub: `Compromiso de ${c.partyName||'—'}`, badge: 'Vencido', danger: true })),
             ];
             const proximos = [
-              ...d.vencenProximamente.tareas.map(t => ({ title: t.title, sub: t.mediationCode, badge: fmtDate(t.dueDate), danger: false })),
-              ...d.vencenProximamente.compromisos.map(c => ({ title: c.description, sub: `Compromiso de ${c.partyName||'—'}`, badge: fmtDate(c.dueDate), danger: false })),
+              ...d.vencenProximamente.tareas.map(t => ({ kind:'tarea', id:t.id, mediationId:t.mediationId, title: t.title, sub: t.mediationCode, badge: fmtDate(t.dueDate), danger: false })),
+              ...d.vencenProximamente.compromisos.map(c => ({ kind:'compromiso', id:c.id, mediationId:c.mediationId, title: c.description, sub: `Compromiso de ${c.partyName||'—'}`, badge: fmtDate(c.dueDate), danger: false })),
             ];
             const items = [...vencidos, ...proximos].slice(0, 6);
             if(!items.length) return `<div class="dash-empty"><p>No tenés tareas ni compromisos vencidos o por vencer.</p></div>`;
-            return items.map(it => `
-              <div class="task-item">
+            // Reduce clicks: un solo click marca la tarea/compromiso como
+            // completado sin salir del dashboard — mismo patrón ya usado
+            // por "Marcar completado" en ¿Qué requiere tu atención? (ver
+            // handleAttentionAction), reutilizado acá en vez de forzar
+            // pasar por "Ver todas" para lo mismo. currentDashboardTaskItems
+            // se asigna acá mismo (no en el HTML) para que el click handler
+            // pueda resolver id/mediationId/kind sin otro fetch.
+            currentDashboardTaskItems = items;
+            return items.map((it, idx) => `
+              <div class="task-item task-item-actionable" onclick="completeDashboardTaskItem(${idx})">
                 <div><div class="title">${escapeHtml(it.title)}</div><div class="sub">${escapeHtml(it.sub||'')}</div></div>
                 <span class="status-badge ${it.danger ? 'st-danger' : 'st-neutral'}">${escapeHtml(it.badge)}</span>
               </div>
@@ -980,17 +1065,6 @@ async function renderDashboard(){
       </div>
 
       <div class="dash-row-final">
-        ${d.puenteConnectEnabled ? `
-        <section class="connect-card">
-          <div class="connect-card-head">
-            <span class="connect-icon"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></span>
-            <h2>Puente Connect</h2>
-            <span class="connect-soon-pill">Próximamente</span>
-          </div>
-          <p>Vas a poder pasar los datos de tus mediaciones a los formularios del portal oficial sin volver a tipearlos.</p>
-          <p class="small">Al portal oficial vas a seguir entrando vos, con tu propia identidad.</p>
-        </section>
-        ` : ''}
         <section class="dash-section">
           <h2 style="margin:0 0 4px; font-size:17px;">Qué pasó</h2>
           ${d.actividadReciente.length ? d.actividadReciente.slice(0,4).map(e => `
@@ -1426,15 +1500,7 @@ async function renderStats(){
 
   main.innerHTML = `
     <h1>Estadísticas</h1>
-    <p style="color:var(--text-dim); font-size:13px; margin-bottom:18px;">Sobre todas tus mediaciones.</p>
-
-    <div class="card">
-      <div class="stat-row">
-        <div><div class="stat">${s.counts.total}</div><div class="stat-label">total</div></div>
-        <div><div class="stat">${s.counts.activas}</div><div class="stat-label">activas</div></div>
-        <div><div class="stat">${s.counts.cerradas}</div><div class="stat-label">cerradas</div></div>
-      </div>
-    </div>
+    <p style="color:var(--text-dim); font-size:13px; margin-bottom:18px;">Sobre todas tus mediaciones. Los totales generales (activas, cerradas) ya están en <a href="#" onclick="event.preventDefault(); goTo('dashboard');">Inicio</a> — acá solo lo que no está ahí.</p>
 
     <div class="card">
       <h2>Tasa de acuerdo</h2>
@@ -1883,7 +1949,7 @@ async function renderCommitmentsScreen(){
           <select onchange="changeCommitmentStatusGlobal('${c.mediationId}','${c.id}',this.value)" style="width:auto; margin:0;">
             ${Object.keys(COMMITMENT_STATUS_LABELS).map(s => `<option value="${s}" ${s===c.status?'selected':''}>${COMMITMENT_STATUS_LABELS[s]}</option>`).join('')}
           </select>
-          <a href="#" onclick="event.preventDefault(); goTo('detail','${c.mediationId}');" style="color:var(--calm); font-size:12.5px;">Ver expediente →</a>
+          <a href="#" onclick="event.preventDefault(); goTo('detail','${c.mediationId}');" style="color:var(--calm); font-size:12.5px;">Ver mediación →</a>
         </div>
       </div>
     `).join('') : `<p class="empty-hint">No hay compromisos para este filtro.</p>`}
@@ -2007,7 +2073,7 @@ async function renderComunicaciones(q){
     </div>
     <div class="card">
       ${items.length ? items.map(c => `
-        <div class="alert-row" onclick="openMediationSection('${c.mediationId}','comunicaciones')" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <div class="alert-row" onclick="openMediationConversation('${c.mediationId}','${c.type}',${c.participantId ? `'${c.participantId}'` : 'null'})" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
           <div style="min-width:0;">
             <div style="font-weight:600; font-size:13.5px;">${escapeHtml(c.mediationCode)} — ${escapeHtml(c.participantName)}</div>
             <div class="code" style="margin-top:0;">${escapeHtml(c.mediationObject)}</div>
@@ -2978,7 +3044,7 @@ async function renderDetail(id){
       api(`/api/mediations/${id}/communications`),
       api(`/api/mediations/${id}/legal-tools/plazos`),
     ]);
-  }catch(e){ main.innerHTML = `<p class="empty-hint">${escapeHtml(e.error || 'No se pudo cargar la mediación.')}</p>`; return; }
+  }catch(e){ main.innerHTML = `<p class="empty-hint">${escapeHtml(e.error || 'No se pudo cargar la mediación.')}</p><button class="ghost" onclick="renderDetail('${id}')">Reintentar</button>`; return; }
   try{ myStudio = await api('/api/studios/me'); }catch(e){ myStudio = null; }
   currentParties = parties;
   currentDocuments = documents;
@@ -3054,6 +3120,7 @@ async function renderDetail(id){
     </div>
 
     <nav class="detail-subnav">
+      <span class="detail-subnav-code" title="${escapeHtml(m.object)}">${escapeHtml(m.code)}</span>
       <a href="#section-partes">Partes</a>
       <a href="#section-abogados">Abogados</a>
       <a href="#section-audiencias">Audiencias</a>

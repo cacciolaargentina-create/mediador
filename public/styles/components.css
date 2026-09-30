@@ -192,13 +192,28 @@
 .mediador-app .tab-link:hover{ color: var(--color-text); }
 .mediador-app .tab-link.active{ color: var(--color-brand-dark); border-bottom-color: var(--color-brand); font-weight: var(--font-weight-semibold); }
 
-/* subnav del expediente — usa el mismo lenguaje visual que .tabs-bar */
+/* subnav del expediente — usa el mismo lenguaje visual que .tabs-bar.
+   top:64px (no 0): la topbar (layout.css) ya es sticky a top:0 con
+   z-index:20 y 64px de alto — con top:0 acá, el subnav quedaba pegado
+   DEBAJO de la topbar al scrollear (mismo top, menor z-index), invisible
+   del todo. Con el offset correcto queda siempre visible justo debajo,
+   que es lo que mantiene a la vista en qué sección del expediente estás
+   sin tener que volver arriba. */
 .mediador-app .detail-subnav{
   display: flex; gap: var(--space-5); overflow-x: auto; padding: 0 2px var(--space-3);
-  margin-bottom: var(--space-2); position: sticky; top: 0; z-index: 12; background: var(--color-bg);
+  margin-bottom: var(--space-2); position: sticky; top: 64px; z-index: 12; background: var(--color-bg);
   border-bottom: 1px solid var(--color-border); -ms-overflow-style: none; scrollbar-width: none;
 }
 .mediador-app .detail-subnav::-webkit-scrollbar{ display: none; }
+/* código del expediente, fijo a la izquierda del subnav sticky — para no
+   perder de vista EN QUÉ expediente estás al scrollear varias pantallas
+   hacia abajo (Compromisos, Timeline, Administración quedan lejos del
+   encabezado que sí lo mostraba). */
+.mediador-app .detail-subnav-code{
+  flex-shrink: 0; font-family: var(--font-mono); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary); padding: var(--space-3) var(--space-3) var(--space-3) 2px;
+  margin-right: var(--space-2); border-right: 1px solid var(--color-border); white-space: nowrap;
+}
 .mediador-app .detail-subnav a{
   flex-shrink: 0; font-size: var(--font-size-md); font-weight: var(--font-weight-medium); color: var(--color-text-secondary);
   text-decoration: none; white-space: nowrap; padding: var(--space-3) 2px; border-bottom: 2px solid transparent; margin-bottom: -1px;

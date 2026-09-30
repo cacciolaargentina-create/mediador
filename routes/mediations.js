@@ -1152,15 +1152,17 @@ module.exports = function (io, presence) {
         if (!last) continue;
         let type = 'interno';
         let participantName = 'Equipo interno';
-        if (ch.partyId) { type = 'parte'; participantName = partyDisplayName(db, ch.partyId) || 'Parte'; }
+        let participantId = null;
+        if (ch.partyId) { type = 'parte'; participantName = partyDisplayName(db, ch.partyId) || 'Parte'; participantId = ch.partyId; }
         else if (ch.lawyerId) {
           type = 'abogado';
           const lawyer = db.lawyers.find((l) => l.id === ch.lawyerId);
           participantName = lawyer ? lawyer.name : 'Abogado';
+          participantId = ch.lawyerId;
         }
         items.push({
           mediationId: m.id, mediationCode: m.code, mediationObject: m.object,
-          channelCode: ch.code, type, participantName,
+          channelCode: ch.code, type, participantId, participantName,
           lastMessage: last, unreadCount: unreadCountFor(db, ch.id, user.id),
         });
       }
