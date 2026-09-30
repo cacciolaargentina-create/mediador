@@ -2,7 +2,7 @@
 
 Paso obligatorio previo a programar Puente Connect (ver spec del bloque).
 Auditoría manual real contra `https://mediacion.jus.gob.ar`, con el usuario
-logueado (Basilio Martin Seward, DNI 31102903) el 2026-09-29. Cubre
+logueado (usuario de prueba) el 2026-09-29. Cubre
 **Capítulo 1 del manual oficial** (ingreso del ciudadano) — el Capítulo 2
 (Portal Mediador / MEPRE) queda pendiente, ver "Qué falta" al final.
 
