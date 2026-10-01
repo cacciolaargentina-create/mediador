@@ -1106,13 +1106,26 @@ const LEGAL_TOOLS = [
   { id: 'asistente', label: 'Asistente jurídico', desc: 'Responde solo con datos del expediente — nunca inventa normativa.', icon: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3 2.4c-.9.3-1.5 1-1.5 1.9"/><path d="M12 17h.01"/>', available: false },
   { id: 'connect', label: 'Puente Connect', desc: 'Carga asistida a SIGIM / MEDIARE, con confirmación del mediador en cada paso.', icon: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>', available: false },
 ];
+// Limpieza post-auditoría (2026-09-30, ver docs/AUDITORIA_CLASIFICACION_PRODUCTO.md):
+// un mediador evaluando si paga no tiene que ver una grilla donde la
+// mayoría son promesas. Se ocultan acá, a la hora de RENDERIZAR — LEGAL_TOOLS
+// en sí queda intacto (ver arriba), así que reactivar una tarjeta es
+// sacarla de este filtro, nunca hay que reescribir nada. 'vencimientos'
+// se saca además porque duplicaba el mismo dato que ya muestran el
+// dashboard y la pantalla global de Compromisos (ver informe de la
+// limpieza) — su pantalla y ruta siguen andando igual, solo se retira el
+// acceso desde acá.
+const LEGAL_TOOLS_HIDDEN_FROM_GRID = new Set(['vencimientos']);
+function visibleLegalTools(){
+  return LEGAL_TOOLS.filter(t => t.available && !LEGAL_TOOLS_HIDDEN_FROM_GRID.has(t.id));
+}
 function renderLegalTools(){
   const main = document.getElementById('main');
   main.innerHTML = `
     <h1>Herramientas legales</h1>
-    <p style="color:var(--text-dim); font-size:15px; margin-bottom:20px;">Herramientas de trabajo para mediadores — se van a ir sumando por etapas.</p>
+    <p style="color:var(--text-dim); font-size:15px; margin-bottom:20px;">Herramientas de trabajo para mediadores.</p>
     <div class="legal-tools-grid">
-      ${LEGAL_TOOLS.map(t => `
+      ${visibleLegalTools().map(t => `
         <div class="legal-tool-card ${t.available ? '' : 'disabled'}" ${t.available ? `onclick="openLegalTool('${t.id}')"` : ''}>
           <span class="legal-tool-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${t.icon}</svg></span>
           <div class="legal-tool-body">
