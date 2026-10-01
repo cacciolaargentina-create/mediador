@@ -1,0 +1,37 @@
+# Mediador — robots.txt
+# Coherente con docs/AUDITORIA_SEO.md (Tanda 1). Esto es una barrera de
+# protocolo, no la única — las páginas privadas/por token de abajo también
+# llevan <meta name="robots" content="noindex, nofollow"> y el header HTTP
+# X-Robots-Tag (ver server.js), que valen más que esto frente a un crawler
+# que no respete robots.txt.
+
+User-agent: *
+
+# páginas privadas o accesibles solo por token no adivinable — nunca contenido
+# de marketing, nunca deberían aparecer en un buscador
+Disallow: /portal.html
+Disallow: /lawyer-portal.html
+Disallow: /studio-invitation.html
+Disallow: /admin.html
+Disallow: /admin-mediador.html
+Disallow: /radar.html
+Disallow: /chat.html
+
+# marca descontinuada (Puente Digital) — se unificó todo bajo Mediador
+Disallow: /legal-puente.html
+Disallow: /privacidad-puente.html
+Disallow: /terminos-puente.html
+
+# nunca rutas de API, auth ni webhooks — no son contenido, son endpoints
+Disallow: /api/
+Disallow: /auth/
+Disallow: /webhook/
+Disallow: /verificar/
+
+# páginas públicas de Mediador — explícitamente permitidas
+Allow: /$
+Allow: /legal.html
+Allow: /privacidad.html
+Allow: /terminos.html
+
+Sitemap: https://puentedigital.app/sitemap.xml

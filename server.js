@@ -82,6 +82,25 @@ app.use(cors({ origin: process.env.FRONTEND_URL || false, credentials: true }));
 // guarda el body crudo además de parsearlo — routes/whatsapp.js lo necesita
 // para verificar la firma HMAC del webhook antes de confiar en el payload.
 app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } }));
+
+// SEO/privacidad (auditoría docs/AUDITORIA_SEO.md, Tanda 1) — defensa en
+// profundidad para páginas privadas o accesibles por token: el <meta
+// name="robots"> de cada HTML no alcanza solo, porque no cubre un crawler
+// que no ejecute el parseo de <head> de la forma esperada ni ningún otro
+// tipo de contenido que se sirva en esa misma ruta en el futuro. El header
+// HTTP corre ACÁ, antes de express.static, para cualquier request a estas
+// rutas sin importar qué termine sirviendo el handler de abajo.
+const NOINDEX_STATIC_PATHS = new Set([
+  '/portal.html', '/lawyer-portal.html', '/studio-invitation.html',
+  '/admin.html', '/chat.html',
+  '/legal-puente.html', '/privacidad-puente.html', '/terminos-puente.html',
+  // ya tenían <meta name="robots"> propio — el header es refuerzo, no reemplazo
+  '/admin-mediador.html', '/radar.html',
+]);
+app.use((req, res, next) => {
+  if (NOINDEX_STATIC_PATHS.has(req.path)) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 // sin esto, un despliegue sin SESSION_SECRET en el .env firmaría las
