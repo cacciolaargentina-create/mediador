@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Recursos para mediadores — Mediador</title>
+<meta name="description" content="Guías y referencias para mediadores en Argentina: mediación prejudicial, qué es SIGIM, honorarios del mediador, y las normativas de CABA y la Provincia de Buenos Aires.">
+<link rel="canonical" href="https://puentedigital.app/recursos.html">
+<!-- Tanda 3 (docs/AUDITORIA_SEO.md) — pendiente de aprobación de los
+     textos. Ver docs/screenshots/seo-tanda3/CONTENIDO_PARA_REVISAR.md
+     para cómo activar esta página (sacar el noindex de acá y del
+     server.js, sumarla al sitemap). -->
+<meta name="robots" content="noindex, nofollow">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Mediador">
+<meta property="og:title" content="Recursos para mediadores — Mediador">
+<meta property="og:description" content="Guías y referencias para mediadores en Argentina: mediación prejudicial, SIGIM, honorarios y normativa por jurisdicción.">
+<meta property="og:url" content="https://puentedigital.app/recursos.html">
+<meta property="og:locale" content="es_AR">
+<meta name="twitter:card" content="summary">
+<link rel="icon" type="image/svg+xml" href="/mediador-icon.svg">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles/tokens.css">
+<link rel="stylesheet" href="/styles/base.css">
+<link rel="stylesheet" href="/styles/components.css">
+<link rel="stylesheet" href="/styles/layout.css">
+<link rel="stylesheet" href="/styles/responsive.css">
+<style>
+  .legal-header{ position:sticky; top:0; z-index:20; background:var(--color-surface); border-bottom:1px solid var(--color-border-light); }
+  .legal-header-inner{ max-width:900px; margin:0 auto; padding:16px 20px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+  .legal-wrap{ max-width:900px; margin:0 auto; padding:40px 20px 24px; }
+  .legal-wrap h1{ margin-bottom:6px; }
+  .legal-wrap > p.lead{ color:var(--color-text-secondary); font-size:16px; line-height:1.6; max-width:640px; margin-bottom:32px; }
+  .recursos-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:16px; margin-bottom:32px; }
+  .recurso-card{ display:block; text-decoration:none; border:1px solid var(--color-border); border-radius:var(--radius-md); padding:18px; background:var(--color-surface); transition:border-color .15s; }
+  .recurso-card:hover{ border-color:var(--color-brand); }
+  .recurso-card .tag{ font-family:var(--font-mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--color-brand-dark); margin-bottom:6px; }
+  .recurso-card h2{ font-size:16px; margin:0 0 6px; color:var(--color-text); }
+  .recurso-card p{ font-size:13.5px; color:var(--color-text-secondary); margin:0; line-height:1.5; }
+  .legal-callout{ background:var(--color-brand-soft); border:1px solid var(--color-brand); border-radius:var(--radius-md); padding:16px 18px; margin:20px 0; }
+  .legal-callout .lab{ font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--color-brand-dark); margin-bottom:6px; font-weight:700; }
+  .legal-callout p{ margin-bottom:0; color:var(--color-text); }
+  .legal-footer{ border-top:1px solid var(--color-border-light); padding:24px 20px 20px; margin-top:32px; }
+  .legal-footer-inner{ max-width:900px; margin:0 auto; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:14px; }
+  .legal-footer-links{ display:flex; flex-wrap:wrap; gap:20px; }
+  .legal-footer-links a{ font-size:13px; color:var(--color-text-secondary); text-decoration:none; }
+  .legal-footer-links a:hover{ color:var(--color-text); }
+  .legal-disclaimer{ max-width:900px; margin:16px auto 0; font-size:11px; color:var(--color-text-muted); line-height:1.5; padding:0 20px 20px; }
+</style>
+</head>
+<body>
+<div class="mediador-app">
+
+  <header class="legal-header">
+    <div class="legal-header-inner">
+      <a href="/" class="mediador-logo on-light"><img class="mediador-logo-mark" style="width:26px; height:26px;" src="/mediador-icon.svg" alt=""><span class="mediador-logo-text" style="font-size:16px;">Mediador</span></a>
+      <a href="/auth/google?next=/" class="btn btn-primary btn-sm" style="text-decoration:none;">Ingresar</a>
+    </div>
+  </header>
+
+  <div class="legal-wrap">
+    <h1>Recursos para mediadores</h1>
+    <p class="lead">Guías de referencia sobre mediación prejudicial en Argentina — qué dice la normativa, qué sistemas existen y cómo se calculan los honorarios. Pensadas para mediadores y estudios jurídicos, no para reemplazar el asesoramiento legal sobre un caso puntual.</p>
+
+    <div class="recursos-grid">
+      <a class="recurso-card" href="/recursos/mediacion-prejudicial.html">
+        <div class="tag">Normativa nacional</div>
+        <h2>Mediación prejudicial obligatoria: cómo funciona</h2>
+        <p>Qué dice la Ley 26.589, cuándo es obligatoria, los plazos principales y qué pasa si no se cumplen.</p>
+      </a>
+      <a class="recurso-card" href="/recursos/que-es-sigim.html">
+        <div class="tag">Sistemas oficiales</div>
+        <h2>¿Qué es el Portal de Mediación (SIGIM)?</h2>
+        <p>Qué es, para qué sirve y en qué se diferencia de una herramienta de gestión como Mediador.</p>
+      </a>
+      <a class="recurso-card" href="/recursos/honorarios-del-mediador.html">
+        <div class="tag">Normativa nacional</div>
+        <h2>Cómo se calculan los honorarios del mediador</h2>
+        <p>La escala oficial, la unidad de medida y los tramos — con la fuente normativa de cada número.</p>
+      </a>
+      <a class="recurso-card" href="/recursos/mediacion-caba.html">
+        <div class="tag">CABA</div>
+        <h2>Mediación en CABA: qué ley aplica</h2>
+        <p>Por qué la mediación civil y comercial en la Ciudad de Buenos Aires sigue el régimen nacional.</p>
+      </a>
+      <a class="recurso-card" href="/recursos/mediacion-pba.html">
+        <div class="tag">Provincia de Buenos Aires</div>
+        <h2>Mediación en la Provincia de Buenos Aires</h2>
+        <p>La Ley 13.951, el sistema MEDIARE y en qué se diferencia del régimen nacional.</p>
+      </a>
+    </div>
+
+    <div class="legal-callout">
+      <div class="lab">Sobre estas guías</div>
+      <p>Son material de referencia general, no asesoramiento legal sobre un caso particular. Mediador no es SIGIM, MEDIARE ni ningún sistema oficial de mediación — es una herramienta de gestión para el trabajo diario del mediador. Cada guía cita su fuente oficial y la fecha en que se verificó.</p>
+    </div>
+  </div>
+
+  <footer class="legal-footer">
+    <div class="legal-footer-inner">
+      <div class="mediador-logo on-light"><img class="mediador-logo-mark" style="width:22px; height:22px;" src="/mediador-icon.svg" alt=""><span class="mediador-logo-text" style="font-size:14px;">Mediador</span></div>
+      <div class="legal-footer-links">
+        <a href="/">Inicio</a>
+        <a href="/terminos.html">Términos y condiciones</a>
+        <a href="/privacidad.html">Privacidad</a>
+        <a href="/legal.html">Aviso legal</a>
+      </div>
+    </div>
+  </footer>
+  <p class="legal-disclaimer">Mediador es una herramienta de gestión para mediadores y estudios jurídicos. No reemplaza a SIGIM, MEDIARE ni a ningún sistema oficial de mediación, y no brinda asesoramiento legal.</p>
+
+</div>
+</body>
+</html>
