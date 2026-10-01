@@ -542,6 +542,28 @@ module.exports = function () {
     });
   });
 
+  // Cambiar el precio de un plan (ensureBillingPlansSeeded solo siembra la
+  // primera vez — una base que ya tiene los planes creados no se entera de
+  // un cambio en el default del código, así que esto es lo que de verdad
+  // actualiza un precio existente). Nunca toca cuentas ya suscriptas: lo
+  // que Mercado Pago ya acordó con un suscriptor existente (su
+  // auto_recurring, fijado al crear la suscripción) sigue como estaba —
+  // esto solo cambia lo que se le va a cobrar a alguien que se suscriba de
+  // acá en más.
+  router.patch('/billing/plans/:code', async (req, res) => {
+    const db = getDB();
+    const plan = db.billingPlans.find((p) => p.code === req.params.code);
+    if (!plan) return res.status(404).json({ error: 'Plan no encontrado' });
+    const price = Number(req.body?.price);
+    if (!Number.isFinite(price) || price < 0) return res.status(400).json({ error: 'Falta un price válido' });
+    const previousPrice = plan.price;
+    plan.price = price;
+    plan.updatedAt = Date.now();
+    logAudit(db, { actorId: req.user.id, action: 'admin_billing_plan_price_changed', meta: { code: plan.code, previousPrice, price } });
+    await commit();
+    res.json({ code: plan.code, name: plan.name, price: plan.price, currency: plan.currency, interval: plan.interval });
+  });
+
   router.get('/billing/payments', (req, res) => {
     const db = getDB();
     let list = [...db.billingPayments];

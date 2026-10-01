@@ -109,7 +109,7 @@ function makeMediation(db, mediatorUserId, closedAt = null) {
   // preapproval_plan_id (eso es lo que exige el modelo "CON plan
   // asociado", que fue justo el que se descartó).
   const call1 = createSubscriptionArgs[0];
-  check('createSubscription manda auto_recurring inline con los datos del plan', call1.price === 15000 && call1.currency === 'ARS' && call1.interval === 'month', JSON.stringify(call1));
+  check('createSubscription manda auto_recurring inline con los datos del plan', call1.price === 30000 && call1.currency === 'ARS' && call1.interval === 'month', JSON.stringify(call1));
   check('createSubscription NUNCA manda card_token_id', !('card_token_id' in call1) && !('cardTokenId' in call1));
   check('createSubscription NUNCA manda preapproval_plan_id / preapprovalPlanId', !('preapproval_plan_id' in call1) && !('preapprovalPlanId' in call1));
   check('mercadoPago.createPlan ya no existe (se sacó del módulo, no solo se dejó de llamar)', mercadoPago.createPlan === undefined);
@@ -120,7 +120,7 @@ function makeMediation(db, mediatorUserId, closedAt = null) {
   const proUser2 = makeUser(db);
   await billingService.startSubscription(db, proUser2, 'PROFESIONAL');
   check('createSubscription se llama una vez por cada suscripción nueva', createSubscriptionCalls === 2);
-  check('la segunda llamada también arma su auto_recurring propio (no depende de un plan cacheado)', createSubscriptionArgs[1].price === 15000);
+  check('la segunda llamada también arma su auto_recurring propio (no depende de un plan cacheado)', createSubscriptionArgs[1].price === 30000);
 
   // ==== 3. subscription authorized (sync) ====
   const subId1 = sub1.account.providerSubscriptionId;

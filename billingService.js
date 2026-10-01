@@ -230,8 +230,8 @@ function ensureBillingPlansSeeded(db) {
   const now = Date.now();
   const DEFAULTS = [
     { code: 'FREE', name: 'Gratuito', description: 'Para empezar — hasta 3 mediaciones activas.', price: 0 },
-    { code: 'PROFESIONAL', name: 'Profesional', description: 'Mediaciones ilimitadas, agenda avanzada, videoconferencias.', price: Number(process.env.BILLING_PRICE_PROFESIONAL) || 15000 },
-    { code: 'ESTUDIO', name: 'Estudio', description: 'Todo lo de Profesional, para equipos sin límite de miembros.', price: Number(process.env.BILLING_PRICE_ESTUDIO) || 35000 },
+    { code: 'PROFESIONAL', name: 'Profesional', description: 'Mediaciones ilimitadas, agenda avanzada, videoconferencias.', price: Number(process.env.BILLING_PRICE_PROFESIONAL) || 30000 },
+    { code: 'ESTUDIO', name: 'Estudio', description: 'Todo lo de Profesional, para equipos sin límite de miembros.', price: Number(process.env.BILLING_PRICE_ESTUDIO) || 50000 },
   ];
   let created = 0;
   for (const d of DEFAULTS) {
