@@ -28,17 +28,12 @@ Disallow: /auth/
 Disallow: /webhook/
 Disallow: /verificar/
 
-# Tanda 3 — TEMPORAL: contenido en borrador, todavía no aprobado (no es un
-# tema de privacidad como lo de arriba). Sacar estas 6 líneas es UNO de los
-# pasos para activar /recursos — ver
-# docs/screenshots/seo-tanda3/CONTENIDO_PARA_REVISAR.md
-Disallow: /recursos.html
-Disallow: /recursos/
-
 # páginas públicas de Mediador — explícitamente permitidas
 Allow: /$
 Allow: /legal.html
 Allow: /privacidad.html
 Allow: /terminos.html
+Allow: /recursos.html
+Allow: /recursos/
 
 Sitemap: https://puentedigital.app/sitemap.xml

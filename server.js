@@ -97,14 +97,6 @@ const NOINDEX_STATIC_PATHS = new Set([
   '/legal-puente.html', '/privacidad-puente.html', '/terminos-puente.html',
   // ya tenían <meta name="robots"> propio — el header es refuerzo, no reemplazo
   '/admin-mediador.html', '/radar.html',
-  // Tanda 3 — TEMPORAL, no por privacidad sino porque el contenido todavía
-  // no está aprobado. Sacar estas 6 líneas de acá es UNO de los pasos para
-  // activar /recursos — ver docs/screenshots/seo-tanda3/CONTENIDO_PARA_REVISAR.md
-  // (ahí está la lista completa de los 3 lugares a tocar, juntos).
-  '/recursos.html',
-  '/recursos/mediacion-prejudicial.html', '/recursos/que-es-sigim.html',
-  '/recursos/honorarios-del-mediador.html', '/recursos/mediacion-caba.html',
-  '/recursos/mediacion-pba.html',
 ]);
 app.use((req, res, next) => {
   if (NOINDEX_STATIC_PATHS.has(req.path)) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
