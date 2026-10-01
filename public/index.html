@@ -3,8 +3,35 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mediador</title>
+<title>Mediador — Software de gestión de mediaciones para mediadores en Argentina</title>
+<meta name="description" content="Mediador: software de gestión de mediaciones para mediadores y estudios jurídicos en Argentina. Expedientes, agenda de audiencias, documentos y comunicación con las partes en un solo lugar. Empezá gratis.">
+<link rel="canonical" href="https://puentedigital.app/">
+
+<!-- Open Graph / Twitter — pensado para WhatsApp, que es el canal de
+     difusión más probable de este producto (un mediador recomendándoselo
+     a otro). og:image usa una imagen real ya existente en el sitio (el
+     fondo del hero) con su URL absoluta y dimensiones reales — nada
+     generado para esta tarjeta. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Mediador">
+<meta property="og:title" content="Mediador — Software de gestión de mediaciones para mediadores en Argentina">
+<meta property="og:description" content="Expedientes, agenda de audiencias, documentos y comunicación con las partes en un solo lugar. Empezá gratis, sin tarjeta.">
+<meta property="og:url" content="https://puentedigital.app/">
+<meta property="og:image" content="https://puentedigital.app/images/bridge.jpeg">
+<meta property="og:image:width" content="1598">
+<meta property="og:image:height" content="984">
+<meta property="og:locale" content="es_AR">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Mediador — Software de gestión de mediaciones para mediadores en Argentina">
+<meta name="twitter:description" content="Expedientes, agenda de audiencias, documentos y comunicación con las partes en un solo lugar. Empezá gratis, sin tarjeta.">
+<meta name="twitter:image" content="https://puentedigital.app/images/bridge.jpeg">
+
 <link rel="icon" type="image/svg+xml" href="/mediador-icon.svg">
+<link rel="icon" href="/icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0F1517">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles/tokens.css">
@@ -17,13 +44,53 @@
      compartido (variantes de layout de un solo uso). */
   .propose-slot-row{ display:flex; gap:6px; margin-bottom:6px; }
 </style>
+
+<!-- Schema.org — solo datos verificados contra el código real (planes en
+     entitlements.js/billingService.js), nada inventado: sin rating, sin
+     reviewCount, sin dato que no podamos respaldar. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Mediador",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "Web",
+  "url": "https://puentedigital.app/",
+  "description": "Software de gestión de mediaciones para mediadores y estudios jurídicos en Argentina: expedientes, agenda de audiencias, documentos y comunicación con las partes.",
+  "inLanguage": "es-AR",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "ARS",
+    "description": "Plan gratuito, hasta 3 mediaciones activas"
+  }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "Mediador",
+  "url": "https://puentedigital.app/",
+  "logo": "https://puentedigital.app/icons/icon-512.png",
+  "email": "soporte@puentedigital.app"
+}
+</script>
 </head>
 <body>
 
-<div id="login-gate" class="mediador-app" style="display:none;">
+<!-- Visible por defecto (sin display:none): esto es lo que tiene que ver
+     cualquiera que no ejecute JS — un crawler, un scraper de vista previa
+     de WhatsApp, o la primera pintura del navegador antes de que corra
+     ningún script. GET / (server.js) decide del lado del servidor si hay
+     que ocultar esto y mostrar #app en su lugar — nunca al revés, y nunca
+     esperando un fetch async, para que quien ya tiene sesión no vea un
+     parpadeo de la landing. boot() (mediador.js) solo confirma/corrige
+     ese estado inicial, no lo decide desde cero. -->
+<div id="login-gate" class="mediador-app">
 
   <header class="landing-header">
-    <img class="landing-header-bg" src="/images/bridge.jpeg" alt="">
+    <img class="landing-header-bg" src="/images/bridge.jpeg" alt="" width="1598" height="984" fetchpriority="high">
     <div class="landing-header-scrim"></div>
     <div class="landing-header-inner landing-container">
       <nav class="landing-nav">
@@ -330,7 +397,7 @@
   <div class="onboarding-card" id="onboarding-card"></div>
 </div>
 
-<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-<script src="/mediador.js"></script>
+<!--SOCKET_IO_SCRIPT-->
+<script src="/mediador.js" defer></script>
 </body>
 </html>

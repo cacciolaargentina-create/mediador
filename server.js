@@ -8,6 +8,7 @@ const helmet = require('helmet');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const fs = require('fs');
 
 const authRoutes = require('./routes/auth');
 const { getDB, resolveGuest, commit } = require('./db');
@@ -101,7 +102,12 @@ app.use((req, res, next) => {
   if (NOINDEX_STATIC_PATHS.has(req.path)) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   next();
 });
-app.use(express.static(path.join(__dirname, 'public')));
+// index:false — GET / ya no lo resuelve express.static solo sirviendo
+// index.html: lo maneja el handler de más abajo (SEO Tanda 2), que decide
+// según la sesión qué mostrar ANTES de mandar el HTML. El resto de los
+// archivos (CSS, JS, imágenes, las demás páginas por su nombre exacto)
+// se sigue sirviendo acá exactamente igual que antes.
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 // sin esto, un despliegue sin SESSION_SECRET en el .env firmaría las
 // cookies de sesión con un string fijo que queda visible en el código
@@ -139,6 +145,44 @@ app.use((req, res, next) => {
     }
   }
   next();
+});
+
+// SEO Tanda 2 (docs/AUDITORIA_SEO.md) — el contenido de la landing vive
+// visible por defecto en public/index.html, nunca detrás de un fetch
+// async: así cualquier crawler que no ejecute JS (o el scraper de vista
+// previa de WhatsApp) ve el HTML real de marketing. Esto corre DESPUÉS de
+// resolver la sesión (arriba) para poder decidir, del lado del servidor y
+// antes de mandar un solo byte, si hay que mostrar el expediente logueado
+// en su lugar — nunca al revés esperando un fetch. Así quien ya tiene
+// sesión no ve un parpadeo de la landing: la decisión ya viene tomada en
+// el HTML que le llega. boot() (mediador.js) solo confirma ese estado
+// inicial, no lo decide desde cero.
+const INDEX_HTML_PATH = path.join(__dirname, 'public', 'index.html');
+let indexHtmlCache = null;
+function getIndexHtmlTemplate() {
+  // en producción se lee una sola vez y se cachea en memoria (el archivo
+  // no cambia en caliente); fuera de producción se relee en cada pedido
+  // para no tener que reiniciar el server al tocar el HTML de la landing.
+  if (!indexHtmlCache || process.env.NODE_ENV !== 'production') {
+    indexHtmlCache = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
+  }
+  return indexHtmlCache;
+}
+app.get('/', (req, res) => {
+  let html = getIndexHtmlTemplate();
+  if (req.user) {
+    // logueado: el expediente se muestra directo, nunca la landing — y
+    // acá sí hace falta socket.io (chat en tiempo real), se agrega solo
+    // en este caso para no cargarlo de arriba en la landing pública.
+    html = html
+      .replace('<!--SOCKET_IO_SCRIPT-->', '<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>')
+      .replace('<div id="login-gate" class="mediador-app">', '<div id="login-gate" class="mediador-app" style="display:none;">')
+      .replace('<div id="app" class="mediador-app shell" style="display:none;">', '<div id="app" class="mediador-app shell">');
+  } else {
+    html = html.replace('<!--SOCKET_IO_SCRIPT-->', '');
+  }
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  res.send(html);
 });
 
 // comparte la sesión de Express con las conexiones de socket.io,

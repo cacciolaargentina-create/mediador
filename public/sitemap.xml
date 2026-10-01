@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Mediador — sitemap.xml. Solo páginas públicas reales (ver
+     docs/AUDITORIA_SEO.md) — nada de páginas privadas, por token, de
+     marca descontinuada ni rutas de API. Se actualiza a mano por ahora;
+     si se agrega /recursos (Tanda 3) hay que sumar sus páginas acá. -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://puentedigital.app/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://puentedigital.app/legal.html</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://puentedigital.app/privacidad.html</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://puentedigital.app/terminos.html</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+</urlset>
