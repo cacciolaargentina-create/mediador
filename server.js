@@ -97,6 +97,11 @@ const NOINDEX_STATIC_PATHS = new Set([
   '/legal-puente.html', '/privacidad-puente.html', '/terminos-puente.html',
   // ya tenían <meta name="robots"> propio — el header es refuerzo, no reemplazo
   '/admin-mediador.html', '/radar.html',
+  // SEO Tanda 4 — comparación con medi.ar, TEMPORAL hasta aprobación del
+  // texto. Sacar de este Set, sacar el <meta robots> del HTML y sacar el
+  // Disallow de robots.txt para activarla (no hace falta tocar sitemap.xml
+  // hasta ese momento, ahí hay que sumarla).
+  '/mediador-vs-medi-ar.html',
 ]);
 app.use((req, res, next) => {
   if (NOINDEX_STATIC_PATHS.has(req.path)) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
