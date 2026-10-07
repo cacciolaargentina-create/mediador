@@ -36,6 +36,7 @@
 <meta name="theme-color" content="#0F1517">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles/tokens.css">
 <link rel="stylesheet" href="/styles/base.css">
@@ -119,6 +120,7 @@
     </div>
   </nav>
 
+  <main>
   <header class="lp-hero">
     <div class="lp-container">
       <span class="lp-eyebrow">Gestión de mediaciones</span>
@@ -140,7 +142,10 @@
           <span class="lp-frame-dot"></span><span class="lp-frame-dot"></span><span class="lp-frame-dot"></span>
         </div>
         <div class="lp-frame-crop is-hero">
-          <img src="/images/landing/shot-detail.png" width="1600" height="1000" alt="Pantalla real de Mediador mostrando una mediación en curso: código y estado, próxima acción, partes, abogados y las pestañas de audiencias, documentos, comunicaciones, tareas, compromisos y plazos." loading="eager" fetchpriority="high">
+          <picture>
+            <source srcset="/images/landing/shot-detail.webp" type="image/webp">
+            <img src="/images/landing/shot-detail.png" width="1600" height="1000" alt="Pantalla real de Mediador mostrando una mediación en curso: código y estado, próxima acción, partes, abogados y las pestañas de audiencias, documentos, comunicaciones, tareas, compromisos y plazos." loading="eager" fetchpriority="high">
+          </picture>
         </div>
       </div>
     </div>
@@ -197,19 +202,19 @@
       </div>
       <div class="lp-shot-grid">
         <div class="lp-shot-card">
-          <div class="lp-frame-crop"><img src="/images/landing/shot-dashboard-sm.png" width="1200" height="750" alt="Dashboard real de Mediador: mediaciones activas, audiencias próximas, qué requiere atención y estado general de las mediaciones." loading="lazy"></div>
+          <div class="lp-frame-crop"><picture><source srcset="/images/landing/shot-dashboard-sm.webp" type="image/webp"><img src="/images/landing/shot-dashboard-sm.png" width="1200" height="750" alt="Dashboard real de Mediador: mediaciones activas, audiencias próximas, qué requiere atención y estado general de las mediaciones." loading="lazy"></picture></div>
           <div class="lp-shot-caption">Dashboard</div>
         </div>
         <div class="lp-shot-card">
-          <div class="lp-frame-crop"><img src="/images/landing/shot-detail-sm.png" width="1200" height="750" alt="Detalle de una mediación en Mediador con sus partes, abogados y próxima acción." loading="lazy"></div>
+          <div class="lp-frame-crop"><picture><source srcset="/images/landing/shot-detail-sm.webp" type="image/webp"><img src="/images/landing/shot-detail-sm.png" width="1200" height="750" alt="Detalle de una mediación en Mediador con sus partes, abogados y próxima acción." loading="lazy"></picture></div>
           <div class="lp-shot-caption">Detalle de mediación</div>
         </div>
         <div class="lp-shot-card">
-          <div class="lp-frame-crop"><img src="/images/landing/shot-tareas-sm.png" width="1200" height="750" alt="Tareas, compromisos y cómputo de plazos de una mediación en Mediador." loading="lazy"></div>
+          <div class="lp-frame-crop"><picture><source srcset="/images/landing/shot-tareas-sm.webp" type="image/webp"><img src="/images/landing/shot-tareas-sm.png" width="1200" height="750" alt="Tareas, compromisos y cómputo de plazos de una mediación en Mediador." loading="lazy"></picture></div>
           <div class="lp-shot-caption">Tareas, compromisos y plazos</div>
         </div>
         <div class="lp-shot-card">
-          <div class="lp-frame-crop"><img src="/images/landing/shot-comms-sm.png" width="1200" height="750" alt="Bandeja de comunicaciones de Mediador con las conversaciones de cada mediación." loading="lazy"></div>
+          <div class="lp-frame-crop"><picture><source srcset="/images/landing/shot-comms-sm.webp" type="image/webp"><img src="/images/landing/shot-comms-sm.png" width="1200" height="750" alt="Bandeja de comunicaciones de Mediador con las conversaciones de cada mediación." loading="lazy"></picture></div>
           <div class="lp-shot-caption">Comunicaciones</div>
         </div>
       </div>
@@ -275,7 +280,7 @@
         </div>
         <div class="lp-evidence-stack">
           <div class="lp-shot-card">
-            <div class="lp-frame-crop"><img src="/images/landing/shot-timeline-sm.png" width="1200" height="750" alt="Timeline real de una mediación en Mediador, con cada cambio registrado con fecha y hora." loading="lazy"></div>
+            <div class="lp-frame-crop"><picture><source srcset="/images/landing/shot-timeline-sm.webp" type="image/webp"><img src="/images/landing/shot-timeline-sm.png" width="1200" height="750" alt="Timeline real de una mediación en Mediador, con cada cambio registrado con fecha y hora." loading="lazy"></picture></div>
           </div>
         </div>
       </div>
@@ -309,6 +314,7 @@
       </div>
     </div>
   </section>
+  </main>
 
   <footer class="lp-footer">
     <div class="lp-container lp-footer-inner">

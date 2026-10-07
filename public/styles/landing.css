@@ -189,7 +189,7 @@
 .lp-footer-links{ display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-6); }
 .lp-footer-links a{ font-size: var(--font-size-sm); color: var(--lp-text-dim); text-decoration: none; }
 .lp-footer-links a:hover{ color: var(--lp-text); }
-.lp-footer-links span{ font-size: var(--font-size-sm); color: rgba(147,163,162,.6); }
+.lp-footer-links span{ font-size: var(--font-size-sm); color: var(--lp-text-dim); }
 
 /* =======================================================================
    RESPONSIVE
