@@ -191,11 +191,6 @@
 .lp-footer-links a:hover{ color: var(--lp-text); }
 .lp-footer-links span{ font-size: var(--font-size-sm); color: rgba(147,163,162,.6); }
 
-/* ---------- microinteracciones: reveal sutil al entrar en viewport ---------- */
-.lp-reveal{ opacity: 0; transform: translateY(14px); transition: opacity .6s ease, transform .6s ease; }
-.lp-reveal.is-visible{ opacity: 1; transform: translateY(0); }
-@media (prefers-reduced-motion: reduce){ .lp-reveal{ opacity: 1; transform: none; transition: none; } }
-
 /* =======================================================================
    RESPONSIVE
    ======================================================================= */
