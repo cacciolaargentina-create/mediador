@@ -112,7 +112,17 @@ app.use((req, res, next) => {
 // según la sesión qué mostrar ANTES de mandar el HTML. El resto de los
 // archivos (CSS, JS, imágenes, las demás páginas por su nombre exacto)
 // se sigue sirviendo acá exactamente igual que antes.
-app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+// redirect:false — por default, serve-static redirige /carpeta -> /carpeta/
+// cuando existe un directorio real con ese nombre (acá pasa con /recursos,
+// porque public/recursos/ existe). Como ahí adentro no servimos index.html
+// (index:false, arriba), ese redirect terminaba en 404 — un 301 a una
+// página que no existe. Google Search Console lo reportó como "Página con
+// redirección" para /recursos. Nunca enlazamos a rutas de directorio sin
+// archivo (todo nuestro HTML público son archivos .html con nombre
+// explícito, como /recursos.html o /recursos/mediacion-pba.html), así que
+// no hay ninguna razón para que esto redirija — mejor un 404 directo que
+// un 301 que no lleva a ningún lado.
+app.use(express.static(path.join(__dirname, 'public'), { index: false, redirect: false }));
 
 // sin esto, un despliegue sin SESSION_SECRET en el .env firmaría las
 // cookies de sesión con un string fijo que queda visible en el código
