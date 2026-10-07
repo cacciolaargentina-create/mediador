@@ -1,0 +1,58 @@
+name: Deploy a producción
+
+# Deploy automático a puentedigital.app en cada push a main, + botón manual
+# (Actions → Deploy a producción → Run workflow) para redeployar sin pushear.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy por SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_SSH_HOST }}
+          username: ${{ secrets.DEPLOY_SSH_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -e
+
+            # No guardamos la ruta del repo ni el nombre del proceso pm2 como
+            # secret — los descubrimos acá buscando, entre los procesos de
+            # pm2 ya corriendo, el que vive en una carpeta "mediador" o
+            # "puente" (ver package.json: name "puente-digital-backend").
+            # Si el día de mañana cambia el nombre de la carpeta en el
+            # servidor, esto deja de encontrarlo y el job falla con un
+            # mensaje claro, en vez de desplegar al lugar equivocado.
+            DEPLOY_INFO=$(pm2 jlist 2>/dev/null | node -e "
+              const procs = JSON.parse(require('fs').readFileSync(0,'utf8'));
+              const p = procs.find(x => {
+                const cwd = (x.pm2_env && x.pm2_env.pm_cwd || '').toLowerCase();
+                const exec = (x.pm2_env && x.pm2_env.pm_exec_path || '').toLowerCase();
+                return cwd.includes('mediador') || cwd.includes('puente') || exec.includes('mediador') || exec.includes('puente');
+              });
+              if(!p){ console.error('No encontré ningún proceso pm2 en una carpeta mediador/puente. Procesos activos: ' + procs.map(x=>x.name).join(', ')); process.exit(1); }
+              console.log(p.pm2_env.pm_cwd);
+              console.log(p.name);
+            ")
+            APP_DIR=$(echo "$DEPLOY_INFO" | sed -n 1p)
+            APP_NAME=$(echo "$DEPLOY_INFO" | sed -n 2p)
+            echo "Deploy destino: $APP_DIR (proceso pm2: $APP_NAME)"
+
+            cd "$APP_DIR"
+
+            # git reset --hard: la producción tiene que quedar idéntica al
+            # commit de main, no mergeada con nada que se haya tocado a mano
+            # en el servidor. Si alguna vez se edita algo directo ahí sin
+            # commitear, este paso lo descarta — a propósito.
+            git fetch origin main
+            git reset --hard origin/main
+
+            npm ci --omit=dev
+
+            pm2 restart "$APP_NAME"
+            pm2 save
