@@ -11,7 +11,7 @@ const path = require('path');
 const fs = require('fs');
 
 const authRoutes = require('./routes/auth');
-const { getDB, resolveGuest, commit } = require('./db');
+const { getDB, resolveGuest, resolvePortalGuest, commit } = require('./db');
 const { canAccessMediationChannel } = require('./mediationAccess');
 
 // Sin FRONTEND_URL en producción, el CORS de abajo reflejaría cualquier
@@ -284,7 +284,12 @@ io.on('connection', (socket) => {
   if (!identity) {
     const token = socket.handshake.auth && socket.handshake.auth.guestToken;
     if (token) {
-      const resolved = resolveGuest(token);
+      // Bloque 47 — el mismo campo guestToken del handshake ahora también
+      // acepta un portalToken de parte/abogado (resolvePortalGuest), para
+      // que el Portal de Partes/Abogados tenga chat en vivo igual que
+      // coparentalidad. isMemberOfChannel (en join-channel, abajo) sigue
+      // siendo quien de verdad decide a qué canal se puede unir.
+      const resolved = resolveGuest(token) || resolvePortalGuest(token);
       if (resolved) identity = resolved.user;
     }
   }

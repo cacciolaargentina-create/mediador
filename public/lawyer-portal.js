@@ -118,6 +118,28 @@ const EVENT_TYPE_LABELS = {
   await renderList();
 })();
 
+// ================= Bloque 47 — chat en vivo =================
+// Mismo patrón que public/portal.js. Acá un abogado puede estar en varias
+// mediaciones (varios canales) — el socket se conecta UNA sola vez, pero
+// se re-une al canal correspondiente cada vez que entra al detalle de
+// otra mediación (socket.io no tiene problema en unirse dos veces a la
+// misma sala, es idempotente). myMediationId guarda cuál ve ahora, para
+// saber a cuál refrescarle el chat si llega un mensaje.
+let portalSocket = null;
+let myMediationId = null;
+function connectPortalSocket(channelCode, mediationId){
+  myMediationId = mediationId;
+  if(!channelCode || typeof io === 'undefined') return;
+  if(!portalSocket){
+    portalSocket = io({ auth: { guestToken: token } });
+    portalSocket.on('message:new', () => {
+      if(document.getElementById('lawyer-messages-box')) loadLawyerMessages(myMediationId);
+    });
+  }
+  if(portalSocket.connected) portalSocket.emit('join-channel', channelCode);
+  else portalSocket.once('connect', () => portalSocket.emit('join-channel', channelCode));
+}
+
 async function renderList(){
   const main = document.getElementById('main');
   main.innerHTML = `<p class="empty-hint">Cargando…</p>`;
@@ -152,6 +174,7 @@ async function renderDetail(mediationId){
   let data;
   try{ data = await api(`/api/lawyer-portal/${token}/mediations/${mediationId}`); }
   catch(e){ main.innerHTML = `<p class="empty-hint" style="padding:20px;">${escapeHtml(e.error || 'No se pudo cargar la mediación.')}</p>`; return; }
+  connectPortalSocket(data.channelCode, mediationId);
 
   main.innerHTML = `
     <span class="back-link" onclick="renderList()">← Mis mediaciones</span>
@@ -283,6 +306,11 @@ async function loadMessages(mediationId){
 // Bloque 19 — hilo propio del abogado, distinto del de arriba (esa es
 // la conversación de SU representado/a, de solo lectura; esta es la
 // suya, de ida y vuelta).
+// Bloque 47 — hora de cada mensaje (antes no se mostraba ninguna).
+function fmtTime(ms){
+  return ms ? new Date(ms).toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit' }) : '';
+}
+
 async function loadLawyerMessages(mediationId){
   const box = document.getElementById('lawyer-messages-box');
   if(!box) return;
@@ -295,6 +323,7 @@ async function loadLawyerMessages(mediationId){
         ${escapeHtml(m.text)}
         ${m.document ? `<br><a href="/api/lawyer-portal/${token}/mediations/${mediationId}/documents/${m.document.id}/download" style="color:inherit; text-decoration:underline; font-size:11.5px;">📎 ${escapeHtml(m.document.originalFilename)}</a>` : ''}
       </span>
+      <div style="font-size:10.5px; color:var(--text-faint); margin-top:2px;">${fmtTime(m.createdAt)}</div>
     </div>
   `).join('') : `<p class="empty-hint">Todavía no hay mensajes.</p>`;
   box.scrollTop = box.scrollHeight;

@@ -149,12 +149,21 @@ module.exports = function (io) {
       pendiente = `${commitmentPending.description}${commitmentPending.dueDate ? ' — vence ' + commitmentPending.dueDate : ''}`;
     }
 
+    // Bloque 47 — el código del canal propio de esta parte, para que el
+    // cliente se una por socket (join-channel) y tenga el chat en vivo. Si
+    // todavía no existe (el mediador nunca la invitó formalmente, caso
+    // raro ya que el portalToken se genera junto con el canal), queda null
+    // y el chat simplemente no se conecta en vivo — sigue funcionando por
+    // polling como siempre.
+    const thread = db.channels.find((c) => c.mediationId === mediation.id && c.partyId === party.id);
+
     res.json({
       mediationCode: mediation.code, mediationObject: mediation.object, mediationStatus: mediation.status,
       partyName: party.legalName || `${party.firstName || ''} ${party.lastName || ''}`.trim(),
       pendiente,
       allowDocumentUpload: party.allowDocumentUpload !== false,
       hearings, commitments, documents, tasks, mediator: mediatorInfo,
+      channelCode: thread ? thread.code : null,
     });
   });
 

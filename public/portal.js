@@ -108,11 +108,32 @@ const VIDEO_PROVIDER_LABELS = { google_meet:'Google Meet', zoom:'Zoom', teams:'M
   await render();
 })();
 
+// ================= Bloque 47 — chat en vivo =================
+// Mismo patrón que connectCommsSocket() en mediador.js, adaptado a que
+// acá la identidad es el portalToken (no una sesión de Google) — el
+// servidor ya sabe resolverlo (ver resolvePortalGuest en db.js). Se
+// conecta UNA sola vez (guardia portalSocket), no en cada render().
+let portalSocket = null;
+let myChannelCode = null;
+function connectPortalSocket(channelCode){
+  myChannelCode = channelCode || null;
+  if(portalSocket || !myChannelCode || typeof io === 'undefined') return;
+  portalSocket = io({ auth: { guestToken: token } });
+  portalSocket.on('connect', () => portalSocket.emit('join-channel', myChannelCode));
+  portalSocket.on('message:new', () => {
+    // un mensaje nuevo en el canal propio — si el chat está en pantalla
+    // (siempre, acá: render() lo arma una sola vez), se refresca solo esa
+    // parte. No hace falta re-renderizar toda la página.
+    if(document.getElementById('chat-box')) loadChat();
+  });
+}
+
 async function render(){
   const main = document.getElementById('main');
   let data;
   try{ data = await api(`/api/party-portal/${token}`); }
   catch(e){ main.innerHTML = `<p class="empty-hint" style="padding:20px;">${escapeHtml(e.error || 'No se pudo cargar tu mediación.')}</p>`; return; }
+  connectPortalSocket(data.channelCode);
 
   main.innerHTML = `
     <div class="eyebrow">${escapeHtml(data.mediationCode)}</div>
@@ -226,6 +247,11 @@ async function render(){
   loadChat();
 }
 
+// Bloque 47 — hora de cada mensaje (antes no se mostraba ninguna).
+function fmtTime(ms){
+  return ms ? new Date(ms).toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit' }) : '';
+}
+
 async function loadChat(){
   const box = document.getElementById('chat-box');
   if(!box) return;
@@ -238,6 +264,7 @@ async function loadChat(){
         ${escapeHtml(m.text)}
         ${m.document ? `<br><a href="/api/party-portal/${token}/documents/${m.document.id}/download" style="color:inherit; text-decoration:underline; font-size:11.5px;">📎 ${escapeHtml(m.document.originalFilename)}</a>` : ''}
       </span>
+      <div style="font-size:10.5px; color:var(--text-faint); margin-top:2px;">${fmtTime(m.createdAt)}</div>
     </div>
   `).join('') : `<p class="empty-hint">Todavía no hay mensajes.</p>`;
   box.scrollTop = box.scrollHeight;

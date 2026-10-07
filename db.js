@@ -862,6 +862,30 @@ function resolveGuest(token) {
   return user ? { channel, user } : null;
 }
 
+// Bloque 47 — misma idea que resolveGuest(), pero para el token del
+// Portal de Partes/Abogados de Mediador (party.portalToken/
+// lawyer.portalToken) — un sistema de identidad DISTINTO del guestToken
+// de coparentalidad de arriba (channels.guestToken nunca se setea para
+// estos canales, ver routes/mediations.js §invite). Solo resuelve el
+// usuario (el llamador en server.js solo usa .user) — nunca un canal
+// único, porque un abogado puede tener varios (uno por mediación en la
+// que participa); cuál canal se une lo decide el cliente con
+// join-channel, que ya valida membresía real contra isMemberOfChannel.
+function resolvePortalGuest(token) {
+  const db = cache;
+  const party = db.parties.find((p) => p.portalToken === token);
+  if (party && party.linkedUserId) {
+    const user = db.users.find((u) => u.id === party.linkedUserId);
+    if (user) return { user };
+  }
+  const lawyer = db.lawyers.find((l) => l.portalToken === token);
+  if (lawyer && lawyer.linkedUserId) {
+    const user = db.users.find((u) => u.id === lawyer.linkedUserId);
+    if (user) return { user };
+  }
+  return null;
+}
+
 // snapshot completo y consistente de la base a un archivo aparte — usa
 // VACUUM INTO en vez de copiar el .sqlite a mano porque así no hay que
 // lidiar con el WAL/shm (VACUUM INTO arma un único archivo limpio,
@@ -874,4 +898,4 @@ function backupTo(destPath) {
   sqlite.exec(`VACUUM INTO '${destPath.replace(/'/g, "''")}'`);
 }
 
-module.exports = { getDB, commit, resolveGuest, backupTo };
+module.exports = { getDB, commit, resolveGuest, resolvePortalGuest, backupTo };

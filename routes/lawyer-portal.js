@@ -195,10 +195,16 @@ module.exports = function (io) {
     }).sort((a, b) => b.createdAt - a.createdAt)
       .map((e) => ({ id: e.id, type: e.type, title: e.title, description: e.description, createdAt: e.createdAt }));
 
+    // Bloque 47 — código del canal PROPIO del abogado (lawyerId, no el de
+    // la parte que representa) para el chat en vivo — ver el mismo
+    // comentario en routes/party-portal.js.
+    const lawyerThread = db.channels.find((c) => c.mediationId === mediation.id && c.lawyerId === req.lawyer.id);
+
     res.json({
       mediationCode: mediation.code, mediationObject: mediation.object, mediationStatus: mediation.status,
       partyName: partyDisplayName(db, party.id), allowDocumentUpload: party.allowDocumentUpload !== false,
       hearings, commitments, documents, timeline,
+      channelCode: lawyerThread ? lawyerThread.code : null,
     });
   });
 
