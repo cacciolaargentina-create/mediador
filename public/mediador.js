@@ -18,8 +18,20 @@ async function api(path, opts = {}){
   if(!res.ok) throw data;
   return data;
 }
+// Bloque 46 — new Date('2026-10-15') (fecha SIN hora) parsea como
+// medianoche UTC; en un huso detrás de UTC como Argentina,
+// toLocaleDateString() después corre la fecha un día para atrás (19:00
+// del día anterior, hora local). Afecta a toda fecha de audiencia/tarea/
+// compromiso que llega como 'YYYY-MM-DD' puro — se arma el Date en hora
+// LOCAL directo en ese caso, nunca dejando que el string pase por el
+// parseo UTC. Lo que llega como timestamp en ms (createdAt y similares)
+// sigue el camino de siempre, sin cambios.
 function fmtDate(iso){
   if(!iso) return '—';
+  if(typeof iso === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(iso)){
+    const [y, m, d] = iso.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('es-AR');
+  }
   const d = new Date(iso);
   return isNaN(d) ? iso : d.toLocaleDateString('es-AR');
 }
@@ -1486,7 +1498,7 @@ async function calcularHonorarios(){
     <div class="card" style="margin-top:16px;">
       <h2>Fuente normativa</h2>
       <p style="font-size:13.5px; margin:4px 0;">${escapeHtml(r.fuenteNormativa.norma)}</p>
-      <p style="font-size:13px; color:var(--text-dim);"><a href="${escapeHtml(r.fuenteNormativa.urlFuente)}" target="_blank" rel="noopener">${escapeHtml(r.fuenteNormativa.fuente)}</a> · verificado el ${new Date(r.fuenteNormativa.fechaVerificacion).toLocaleDateString('es-AR')}</p>
+      <p style="font-size:13px; color:var(--text-dim);"><a href="${escapeHtml(r.fuenteNormativa.urlFuente)}" target="_blank" rel="noopener">${escapeHtml(r.fuenteNormativa.fuente)}</a> · verificado el ${fmtDate(r.fuenteNormativa.fechaVerificacion)}</p>
     </div>
     <div class="card" style="margin-top:16px; background:var(--color-warning-soft, #FFF6DF);">
       <h2>Advertencias</h2>

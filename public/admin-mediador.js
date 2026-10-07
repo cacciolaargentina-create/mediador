@@ -4,7 +4,19 @@
 // endpoint — esto es solo UX para no mostrar la pantalla a quien no puede
 // usarla igual).
 function escapeHtml(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function fmtDate(v){ if(!v) return '—'; const d = new Date(v); return isNaN(d) ? String(v) : d.toLocaleDateString('es-AR'); }
+// Bloque 46 — esta fmtDate se usa tanto con timestamps en ms (createdAt)
+// como con fechas sin hora 'YYYY-MM-DD' (nextActionDueDate, proximaAudiencia)
+// — las segundas parseaban como medianoche UTC y se corrían un día para
+// atrás en Argentina. Ver el comentario largo en public/mediador.js.
+function fmtDate(v){
+  if(!v) return '—';
+  if(typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)){
+    const [y, m, d] = v.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('es-AR');
+  }
+  const d = new Date(v);
+  return isNaN(d) ? String(v) : d.toLocaleDateString('es-AR');
+}
 function fmtDateTime(ms){ if(!ms) return '—'; return new Date(ms).toLocaleString('es-AR', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'}); }
 function timeAgo(ts){
   if(!ts) return 'nunca';

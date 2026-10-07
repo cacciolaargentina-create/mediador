@@ -5,8 +5,15 @@ const token = new URLSearchParams(location.search).get('token');
 function escapeHtml(s){
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
+// Bloque 46 — ver el mismo comentario largo en public/mediador.js: fecha
+// SIN hora parseada en LOCAL, nunca dejando que pase por el parseo UTC
+// (que en Argentina corre la fecha un día para atrás).
 function fmtDate(iso){
   if(!iso) return '—';
+  if(typeof iso === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(iso)){
+    const [y, m, d] = iso.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('es-AR');
+  }
   const d = new Date(iso);
   return isNaN(d) ? iso : d.toLocaleDateString('es-AR');
 }
