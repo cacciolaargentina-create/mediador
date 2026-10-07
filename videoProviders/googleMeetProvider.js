@@ -194,6 +194,85 @@ async function cancelMeeting(db, { mediatorUserId, hearing }) {
   return { status: 'cancelada' };
 }
 
+// ---------- Bloque 44 — sincronización de CUALQUIER audiencia con Google
+// Calendar, más allá de si Google Meet es el proveedor de video elegido.
+// Reusa la MISMA cuenta/token que createMeeting (mismo scope
+// calendar.events) — conectar "Google Meet" en Configuración ya habilita
+// esto para todas las audiencias del mediador, sean presenciales,
+// telefónicas o con otro proveedor de video. Nunca crea un evento con
+// conferenceData acá (eso es exclusivo de createMeeting/updateMeeting —
+// evita un evento duplicado cuando el proveedor SÍ es google_meet: ver
+// calendarSync.js, que directamente no llama a estas funciones en ese caso). ----------
+
+const MODALITY_LABELS = { presencial: 'Presencial', virtual: 'Virtual', hibrida: 'Híbrida' };
+
+function syncEventBody({ hearing, mediation }) {
+  const range = hearingTimeRange(hearing);
+  if (!range) return null;
+  const lines = [`Mediación ${mediation.code}${mediation.object ? ': ' + mediation.object : ''}`];
+  lines.push(`Modalidad: ${MODALITY_LABELS[hearing.modality] || hearing.modality || 'sin definir'}`);
+  if (hearing.meetingUrl) lines.push(`Enlace: ${hearing.meetingUrl}`);
+  const body = {
+    summary: `Audiencia de mediación — ${mediation.code}`,
+    description: lines.join('\n').slice(0, 1000),
+    start: { dateTime: range.startISO },
+    end: { dateTime: range.endISO },
+  };
+  if (hearing.location) body.location = hearing.location;
+  return body;
+}
+
+async function createSyncEvent(db, { mediatorUserId, hearing, mediation }) {
+  const account = getAccount(db, mediatorUserId);
+  if (!account || account.status !== 'conectado') return null;
+  const body = syncEventBody({ hearing, mediation });
+  if (!body) return null;
+  const token = await ensureValidToken(db, account);
+  const res = await fetch(CALENDAR_EVENTS_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new VideoProviderError(ERROR_CODES.CREATE_FAILED, 'Google Calendar rechazó la sincronización', { cause: data });
+  return { eventId: data.id };
+}
+
+async function updateSyncEvent(db, { mediatorUserId, hearing, mediation }) {
+  if (!hearing.calendarSyncEventId) return createSyncEvent(db, { mediatorUserId, hearing, mediation });
+  const account = getAccount(db, mediatorUserId);
+  if (!account || account.status !== 'conectado') return null;
+  const body = syncEventBody({ hearing, mediation });
+  if (!body) return null;
+  const token = await ensureValidToken(db, account);
+  const res = await fetch(`${CALENDAR_EVENTS_URL}/${encodeURIComponent(hearing.calendarSyncEventId)}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  // el evento desapareció del lado de Google (lo borró el usuario a mano,
+  // por ejemplo) — se recrea en vez de quedar en error permanente.
+  if (res.status === 404 || res.status === 410) return createSyncEvent(db, { mediatorUserId, hearing, mediation });
+  if (!res.ok) throw new VideoProviderError(ERROR_CODES.UPDATE_FAILED, 'Google Calendar rechazó la actualización de la sincronización', { cause: data });
+  return { eventId: data.id };
+}
+
+async function deleteSyncEvent(db, { mediatorUserId, hearing }) {
+  if (!hearing.calendarSyncEventId) return;
+  const account = getAccount(db, mediatorUserId);
+  if (!account || account.status !== 'conectado') return;
+  const token = await ensureValidToken(db, account);
+  const res = await fetch(`${CALENDAR_EVENTS_URL}/${encodeURIComponent(hearing.calendarSyncEventId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok && res.status !== 404 && res.status !== 410) {
+    const data = await res.json().catch(() => ({}));
+    throw new VideoProviderError(ERROR_CODES.CANCEL_FAILED, 'Google Calendar rechazó la eliminación del evento sincronizado', { cause: data });
+  }
+}
+
 async function getStatus(db, mediatorUserId) {
   if (!configured()) return { status: 'no_configurada', accountEmail: null, lastError: null };
   const account = getAccount(db, mediatorUserId);
@@ -216,6 +295,13 @@ module.exports = {
   createMeeting,
   updateMeeting,
   cancelMeeting,
+  // Bloque 44 — usados solo por calendarSync.js (sincronización de
+  // CUALQUIER audiencia, no solo las que usan Google Meet como proveedor
+  // de video) — tampoco forman parte del contrato VideoProvider genérico.
+  getAccount,
+  createSyncEvent,
+  updateSyncEvent,
+  deleteSyncEvent,
   // usados solo por routes/video-providers.js (flujo de conexión OAuth) —
   // no forman parte del contrato VideoProvider genérico.
   configured,

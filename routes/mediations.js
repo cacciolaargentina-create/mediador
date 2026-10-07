@@ -29,6 +29,7 @@ const archiver = require('archiver');
 const { postMessage } = require('../messaging');
 const { serializeMessage } = require('../serializers');
 const { createHearingMeeting, updateHearingMeeting, cancelHearingMeeting, serializeHearingVideo } = require('../videoConferencing');
+const { syncHearingToCalendar, removeHearingFromCalendar } = require('../calendarSync');
 // Bloque 32 — billingPaywallActive() se movió a entitlements.js para que
 // routes/agenda.js y routes/studios.js también la puedan reusar (antes
 // vivía solo acá, duplicarla en cada archivo hubiera sido el mismo error
@@ -1951,6 +1952,11 @@ module.exports = function (io, presence) {
       // archivos, whitelistean sus campos aparte y no llaman a esta
       // función) — esto es para el mediador/equipo únicamente.
       video: serializeHearingVideo(h),
+      // Bloque 44 — true si esta audiencia aparece en el Google Calendar
+      // del mediador: ya sea por un evento de sincronización propio, o
+      // porque el proveedor de video ES google_meet (ese evento de
+      // Calendar ya la representa, ver calendarSync.js).
+      calendarSynced: !!(h.calendarSyncEventId || h.videoProvider === 'google_meet'),
       confirmations: (confirmations || []).map((c) => ({
         id: c.id, partyId: c.partyId, response: c.response, respondedAt: c.respondedAt,
       })),
@@ -2482,6 +2488,7 @@ module.exports = function (io, presence) {
       lastModifiedBy: req.user.id, lastModifiedAt: Date.now(), createdAt: Date.now(),
       videoProvider: null, meetingId: null, hostUrl: null, meetingCreatedAt: null, meetingUpdatedAt: null,
       meetingStatus: null, meetingMetadata: null,
+      calendarSyncEventId: null, calendarSyncStatus: null, calendarSyncUpdatedAt: null,
     };
 
     // Bloque 28 — se crea la reunión ANTES de persistir la audiencia
@@ -2497,6 +2504,14 @@ module.exports = function (io, presence) {
         return res.status(502).json({ error: videoResult.error.message, code: videoResult.error.code });
       }
     }
+
+    // Bloque 44 — sincroniza con Google Calendar si el mediador conectó su
+    // cuenta, sea cual sea la modalidad/proveedor de video (o ninguno). Si
+    // el proveedor ya es google_meet, syncHearingToCalendar se auto-salta
+    // (ese evento de Calendar ya lo creó createHearingMeeting arriba).
+    // Nunca bloquea: si falla o no hay cuenta conectada, la audiencia se
+    // guarda igual.
+    await syncHearingToCalendar(db, { hearing, mediation: req.mediation, actorId: req.user.id });
 
     db.hearings.push(hearing);
 
@@ -2678,6 +2693,11 @@ module.exports = function (io, presence) {
       if (!videoResult.ok) videoError = videoResult.error;
     }
 
+    // Bloque 44 — recién ahora la audiencia tiene una fecha real confirmada
+    // (antes era una entre varias propuestas candidatas) — es el momento
+    // correcto para que aparezca en el Google Calendar del mediador.
+    await syncHearingToCalendar(db, { hearing, mediation: req.mediation, actorId: req.user.id });
+
     logMediationEvent(db, {
       mediationId: req.mediation.id, type: 'HEARING_SCHEDULED', actorId: req.user.id,
       entityType: 'hearing', entityId: hearing.id,
@@ -2753,6 +2773,9 @@ module.exports = function (io, presence) {
       // estado real"), pero el error queda registrado y visible.
       const videoResult = await cancelHearingMeeting(db, { hearing, mediation: req.mediation, actorId: req.user.id });
       if (!videoResult.ok) videoError = videoResult.error;
+      // Bloque 44 — quita la audiencia del Google Calendar del mediador si
+      // estaba sincronizada (nunca bloquea la cancelación en sí).
+      await removeHearingFromCalendar(db, { hearing, mediation: req.mediation, actorId: req.user.id });
       const confirmations = db.hearingConfirmations.filter((c) => c.hearingId === hearing.id);
       const involvedParties = db.parties.filter((p) => confirmations.some((c) => c.partyId === p.id));
       const cancelText = `${req.mediation.code}: se canceló la audiencia del ${fmtDateEs(hearing.date)}${hearing.startTime ? ' ' + hearing.startTime : ''}${note ? '. Motivo: ' + note : ''}.`;
@@ -2997,6 +3020,10 @@ module.exports = function (io, presence) {
       const videoResult = await updateHearingMeeting(db, { hearing, mediation: req.mediation, actorId: req.user.id });
       if (!videoResult.ok) videoError = videoResult.error;
     }
+
+    // Bloque 44 — la fecha/hora cambió: actualiza (o crea, si todavía no
+    // existía) el evento sincronizado en Google Calendar.
+    await syncHearingToCalendar(db, { hearing, mediation: req.mediation, actorId: req.user.id });
 
     const rescheduleEvent = logMediationEvent(db, {
       mediationId: req.mediation.id, type: 'HEARING_RESCHEDULED', actorId: req.user.id,

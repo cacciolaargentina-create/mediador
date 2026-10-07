@@ -2466,6 +2466,7 @@ async function renderVideoSettings(){
           <br><span class="pill ${STATUS_PILL_CLASS[p.status] || 'warn'}">${STATUS_LABELS_VP[p.status] || p.status}</span>
           ${p.accountEmail ? `<span style="color:var(--text-faint); font-size:12px; margin-left:6px;">${escapeHtml(p.accountEmail)}</span>` : ''}
           ${!p.perMediatorAccount ? `<p class="empty-hint" style="margin-top:4px;">Se configura una sola vez para toda la instalación (variables de entorno del servidor).</p>` : ''}
+          ${p.provider === 'google_meet' ? `<p class="empty-hint" style="margin-top:4px;">Conectar esta cuenta también sincroniza TODAS tus audiencias con tu Google Calendar — presenciales, telefónicas o con cualquier proveedor de video, no solo las que usan Google Meet.</p>` : ''}
         </div>
         ${p.perMediatorAccount ? (
           p.status === 'conectado'
@@ -2781,10 +2782,10 @@ function renderPlazosSection(m, parties, documents, plazos){
         <div class="card-highlight" style="margin-top:10px;">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
             <div>
-              <div style="font-size:12px; opacity:.75;">Plazo de la mediación (${deadline.termBusinessDays} días hábiles)</div>
+              <div style="font-size:12px; opacity:.75;">Plazo de la mediación (${deadline.termCalendarDays} días corridos)</div>
               <div style="font-size:19px; font-weight:700;">Vence el ${fmtDate(deadline.deadlineDate)}</div>
             </div>
-            <span class="attn-badge ${deadlineUrgencyClass(deadline.remainingBusinessDays)}">${deadline.remainingBusinessDays < 0 ? `Vencido hace ${Math.abs(deadline.remainingBusinessDays)} día(s) hábil(es)` : `Quedan ${deadline.remainingBusinessDays} día(s) hábil(es)`}</span>
+            <span class="attn-badge ${deadlineUrgencyClass(deadline.remainingCalendarDays)}">${deadline.remainingCalendarDays < 0 ? `Vencido hace ${Math.abs(deadline.remainingCalendarDays)} día(s)` : `Quedan ${deadline.remainingCalendarDays} día(s)`}</span>
           </div>
           <div style="font-size:12px; margin-top:8px; opacity:.85;">
             ${(deadline.explanation || []).map(line => `<div>· ${escapeHtml(line)}</div>`).join('')}
@@ -4039,6 +4040,7 @@ function renderHearingRow(m, h, timelineList){
     <div class="status-history-item">
       <strong>${fmtDate(h.date)}${h.startTime ? ' ' + h.startTime : ''}</strong> —
       ${HEARING_MODALITY_LABELS[h.modality] || h.modality} · <span class="pill ${h.status==='propuesta'?'warn':(h.status==='cancelada'||h.status==='no_realizada')?'danger':'calm'}">${h.status==='propuesta'?'Propuesta':(HEARING_STATUS_LABELS[h.status] || h.status)}</span>
+      ${h.calendarSynced ? `<span class="pill calm" style="margin-left:4px;" title="Esta audiencia aparece en tu Google Calendar">📅 En tu Calendar</span>` : ''}
       ${motivoHtml}
       ${renderHearingVideoCard(m, h)}
       <div style="margin-top:4px;">
