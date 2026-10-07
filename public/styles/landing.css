@@ -96,7 +96,7 @@
 .lp-frame-dot{ width: 9px; height: 9px; border-radius: 50%; background: rgba(244,247,247,.18); }
 .lp-frame-shot{ display: block; width: 100%; height: auto; }
 .lp-frame-crop{ position: relative; width: 100%; overflow: hidden; }
-.lp-frame-crop img{ position: absolute; top: 0; left: 0; width: 100%; display: block; }
+.lp-frame-crop img{ position: absolute; top: 0; left: 0; width: 100%; height: auto; display: block; }
 .lp-frame-crop.is-hero{ aspect-ratio: 1600 / 760; }
 .lp-frame-crop.is-hero img{ width: 100%; }
 
