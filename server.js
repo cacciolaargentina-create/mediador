@@ -172,6 +172,23 @@ app.use((req, res, next) => {
 // sesión no ve un parpadeo de la landing: la decisión ya viene tomada en
 // el HTML que le llega. boot() (mediador.js) solo confirma ese estado
 // inicial, no lo decide desde cero.
+// Bloque 48 — Google Analytics (GA4), SOLO en páginas públicas. El
+// measurement ID no es secreto (siempre queda visible en el HTML de
+// cualquier sitio que lo use), así que no hace falta más que esto — pero
+// GA_MEASUREMENT_ID en el .env permite apagarlo (dejándolo vacío) o
+// cambiarlo sin tocar código. Nunca se agrega a index.html cuando hay
+// sesión (ver GET / abajo), ni a ninguna pantalla del producto en sí ni a
+// los portales de partes/abogados — ahí no hay ni va a haber Analytics:
+// es donde vive información real de mediaciones.
+const GA_MEASUREMENT_ID = process.env.GA_MEASUREMENT_ID || 'G-5JBNEDVQXX';
+const ANALYTICS_SNIPPET = GA_MEASUREMENT_ID ? `<script async src="https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', '${GA_MEASUREMENT_ID}');
+</script>` : '';
+
 const INDEX_HTML_PATH = path.join(__dirname, 'public', 'index.html');
 let indexHtmlCache = null;
 function getIndexHtmlTemplate() {
@@ -189,12 +206,18 @@ app.get('/', (req, res) => {
     // logueado: el expediente se muestra directo, nunca la landing — y
     // acá sí hace falta socket.io (chat en tiempo real), se agrega solo
     // en este caso para no cargarlo de arriba en la landing pública.
+    // ANALYTICS_SCRIPT NUNCA se agrega acá a propósito: Google Analytics
+    // no debe trackear sesiones de trabajo real sobre mediaciones — solo
+    // tráfico de la landing pública (ver el bloque de abajo).
     html = html
       .replace('<!--SOCKET_IO_SCRIPT-->', '<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>')
+      .replace('<!--ANALYTICS_SCRIPT-->', '')
       .replace('<div id="login-gate" class="mediador-app">', '<div id="login-gate" class="mediador-app" style="display:none;">')
       .replace('<div id="app" class="mediador-app shell" style="display:none;">', '<div id="app" class="mediador-app shell">');
   } else {
-    html = html.replace('<!--SOCKET_IO_SCRIPT-->', '');
+    html = html
+      .replace('<!--SOCKET_IO_SCRIPT-->', '')
+      .replace('<!--ANALYTICS_SCRIPT-->', ANALYTICS_SNIPPET);
   }
   res.set('Content-Type', 'text/html; charset=utf-8');
   res.send(html);
