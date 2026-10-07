@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Así ve una parte su mediación — demostración | Mediador</title>
+<meta name="description" content="Una demostración interactiva del portal que ven las partes y sus abogados: audiencias, tareas, compromisos, documentos y chat con el mediador — sin necesidad de invitación.">
+<link rel="canonical" href="https://puentedigital.app/portal-demo.html">
+<!-- Tanda 5 — demo del portal, BORRADOR pendiente de aprobación. Para
+     activar: sacar este noindex, sacar la entrada de NOINDEX_STATIC_PATHS
+     en server.js, sacar el Disallow de robots.txt, sumar a sitemap.xml. -->
+<meta name="robots" content="noindex, nofollow">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Mediador">
+<meta property="og:title" content="Así ve una parte su mediación — demostración">
+<meta property="og:description" content="Portal interactivo de ejemplo: audiencias, tareas, documentos y chat con el mediador, sin necesidad de invitación.">
+<meta property="og:url" content="https://puentedigital.app/portal-demo.html">
+<meta property="og:locale" content="es_AR">
+<meta name="twitter:card" content="summary">
+<link rel="icon" type="image/svg+xml" href="/mediador-icon.svg">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles/tokens.css">
+<link rel="stylesheet" href="/styles/base.css">
+<link rel="stylesheet" href="/styles/components.css">
+<link rel="stylesheet" href="/styles/layout.css">
+<link rel="stylesheet" href="/styles/responsive.css">
+<style>
+  /* Mismo shell visual que el portal real (portal.html) — nunca comparte
+     datos ni endpoints con él, solo el aspecto. */
+  .portal-header{ display:flex; align-items:center; justify-content:space-between; padding:14px 20px; border-bottom:1px solid var(--color-border-light); background:var(--color-surface); }
+  .portal-main{ max-width:600px; margin:0 auto; padding:24px 20px 60px; }
+  .item{ padding:10px 0; border-bottom:1px solid var(--color-border-light); }
+  .item:last-child{ border-bottom:none; }
+  .demo-banner{
+    position:sticky; top:0; z-index:30; background:repeating-linear-gradient(135deg, var(--color-warning-soft), var(--color-warning-soft) 10px, #fff3d6 10px, #fff3d6 20px);
+    border-bottom:2px solid var(--color-warning); padding:10px 16px; text-align:center; font-size:12.5px; font-weight:600; color:#7A5310;
+  }
+  .demo-banner span{ font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.04em; font-size:10.5px; display:block; margin-bottom:2px; }
+  .demo-cta{ background:var(--color-brand-soft); border:1px solid var(--color-brand); border-radius:var(--radius-lg); padding:16px 18px; margin-top:20px; }
+  .demo-cta p{ margin:0; color:var(--color-text); }
+</style>
+</head>
+<body>
+  <div class="mediador-app">
+    <div class="demo-banner">
+      <span>Demostración</span>
+      Estás viendo un caso de ejemplo, no una mediación real — nada de lo que hagas acá se guarda ni se envía a nadie.
+    </div>
+    <header class="portal-header">
+      <div class="mediador-logo on-light">
+        <img class="mediador-logo-mark" src="/mediador-icon.svg" alt="">
+        <span class="mediador-logo-text">Mediador</span>
+      </div>
+      <a href="/" class="btn btn-primary btn-sm" style="text-decoration:none;">Empezar gratis</a>
+    </header>
+    <main class="portal-main" id="main"></main>
+  </div>
+<script>
+// Demo 100% client-side: nada de esto llama a ningún endpoint real ni
+// persiste en ningún lado — es solo estado en memoria para que se sienta
+// interactivo. Ningún dato acá corresponde a una mediación real.
+const demo = {
+  code: 'MED-2026-0001',
+  object: 'Régimen de comunicación y cuidado personal',
+  partyName: 'Martín García',
+  mediatorName: 'Ana Fernández',
+  status: 'En mediación',
+  pendiente: 'Confirmar la audiencia del 18 de octubre',
+  tasks: [
+    { id: 't1', title: 'Acercar certificado de domicilio actualizado', dueDate: '2026-10-15', priority: 'alta', done: false },
+  ],
+  hearing: { id: 'h1', date: '2026-10-18', time: '15:00', modality: 'Virtual · Google Meet', myResponse: null },
+  commitments: [
+    { description: 'Entregar comprobante de ingresos', dueDate: '2026-10-20', status: 'pendiente' },
+  ],
+  documents: [
+    { name: 'Acta de apertura.pdf', size: '184 KB' },
+    { name: 'Propuesta de régimen.pdf', size: '96 KB' },
+  ],
+  messages: [
+    { mine: false, text: 'Hola Martín, te escribo para coordinar la próxima audiencia. ¿Te queda bien el 18/10 a las 15:00?' },
+    { mine: true, text: 'Sí, me queda bien. Gracias por avisarme.' },
+  ],
+};
+
+function escapeHtml(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// new Date('2026-10-15') parsea como medianoche UTC — en un huso horario
+// detrás de UTC (como Argentina) toLocaleDateString() después la corre un
+// día para atrás. Se arma la fecha en horario LOCAL directo, sin pasar
+// por ese parseo UTC.
+function fmtDate(iso){
+  if(!iso) return '—';
+  const [y, m, d] = iso.split('-').map(Number);
+  if(!y || !m || !d) return iso;
+  return new Date(y, m - 1, d).toLocaleDateString('es-AR');
+}
+function toast(msg){
+  let stack = document.getElementById('toast-stack');
+  if(!stack){ stack = document.createElement('div'); stack.id = 'toast-stack'; stack.className = 'toast-stack'; document.body.appendChild(stack); }
+  const el = document.createElement('div');
+  el.className = 'toast toast-success';
+  el.textContent = msg;
+  stack.appendChild(el);
+  requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('show')));
+  setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 250); }, 2800);
+}
+
+function render(){
+  document.getElementById('main').innerHTML = `
+    <div class="eyebrow">${escapeHtml(demo.code)} · caso de ejemplo</div>
+    <h1>${escapeHtml(demo.object)}</h1>
+    <p style="color:var(--text-dim); font-size:13px; margin-bottom:18px;">Hola, ${escapeHtml(demo.partyName)}.</p>
+
+    <div class="card">
+      <div class="eyebrow" style="margin-bottom:2px;">Estado</div>
+      <div style="font-size:14px; font-weight:600; margin-bottom:12px;">${escapeHtml(demo.status)}</div>
+      <div class="eyebrow" style="margin-bottom:2px;">Pendiente</div>
+      <div style="font-size:14px; font-weight:600; color:var(--color-warning);">${escapeHtml(demo.pendiente)}</div>
+      <div class="eyebrow" style="margin-top:12px; margin-bottom:2px;">Tu mediador/a</div>
+      <div style="font-size:14px;">${escapeHtml(demo.mediatorName)}</div>
+    </div>
+
+    <div class="card">
+      <h2>Tareas para vos</h2>
+      ${demo.tasks.map(t => `
+        <div class="item" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+          <div>
+            <strong>${escapeHtml(t.title)}</strong> · vence ${fmtDate(t.dueDate)}
+            <br><span class="pill danger">Alta</span>
+          </div>
+          ${t.done ? `<span class="pill calm">Realizada</span>` : `<button class="primary" onclick="demoCompleteTask('${t.id}')">Marcar realizada</button>`}
+        </div>
+      `).join('')}
+    </div>
+
+    <div class="card">
+      <h2>Audiencias</h2>
+      <div class="item">
+        <strong>${fmtDate(demo.hearing.date)} ${demo.hearing.time}</strong>
+        <br><span style="color:var(--text-faint);">${escapeHtml(demo.hearing.modality)}</span>
+        <div style="margin-top:8px;">
+          ${demo.hearing.myResponse
+            ? `<span class="pill calm">${demo.hearing.myResponse === 'confirma' ? 'Confirmaste' : 'Avisaste que no podés'}</span>`
+            : `
+              <button class="primary" onclick="demoConfirmHearing('confirma')">Confirmo</button>
+              <button class="ghost" onclick="demoConfirmHearing('no_puede')">No puedo</button>
+              <button class="ghost" onclick="toast('En el portal real podés pedir un cambio de horario desde acá.')">Pedir cambio</button>
+            `}
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Tus compromisos</h2>
+      ${demo.commitments.map(c => `
+        <div class="item">
+          ${escapeHtml(c.description)} · vence ${fmtDate(c.dueDate)}
+          <br><span class="pill warn">Pendiente</span>
+        </div>
+      `).join('')}
+    </div>
+
+    <div class="card">
+      <h2>Documentos</h2>
+      ${demo.documents.map(d => `
+        <div class="item" style="display:flex; justify-content:space-between; align-items:center;">
+          <div>${escapeHtml(d.name)}<br><span style="color:var(--text-faint);">${escapeHtml(d.size)}</span></div>
+          <button class="ghost" style="padding:8px 14px;" onclick="toast('En el portal real, acá descargás el documento.')">Descargar</button>
+        </div>
+      `).join('')}
+    </div>
+
+    <div class="card">
+      <h2>Mensajes con tu mediador/a</h2>
+      <div id="chat-box">
+        ${demo.messages.map(m => `
+          <div class="item" style="border-bottom:none; padding:4px 0; ${m.mine ? 'text-align:right;' : ''}">
+            <span style="background:${m.mine ? 'var(--calm-dim)' : 'var(--surface-2)'}; color:${m.mine ? 'var(--calm)' : 'var(--text)'}; padding:6px 10px; border-radius:8px; display:inline-block; font-size:12.5px; max-width:80%;">
+              ${escapeHtml(m.text)}
+            </span>
+          </div>
+        `).join('')}
+      </div>
+      <div style="display:flex; gap:6px; margin-top:8px;">
+        <input id="chat-input" placeholder="Escribí un mensaje…" style="flex:1; margin:0;" onkeydown="if(event.key==='Enter') demoSendMessage();">
+        <button class="primary" onclick="demoSendMessage()">Enviar</button>
+      </div>
+    </div>
+
+    <div class="demo-cta">
+      <p>Esto es lo que ve una parte o un abogado — sin crear cuenta, sin instalar nada. Como mediador, vos armás este caso en minutos.</p>
+      <a class="btn btn-primary btn-sm" href="/auth/google?next=/" style="text-decoration:none; margin-top:10px; display:inline-block;">Empezar gratis</a>
+    </div>
+  `;
+}
+
+function demoCompleteTask(id){
+  const t = demo.tasks.find(t => t.id === id);
+  if(t) t.done = true;
+  render();
+  toast('Tarea marcada como realizada (solo en esta demo).');
+}
+function demoConfirmHearing(response){
+  demo.hearing.myResponse = response;
+  demo.pendiente = null;
+  render();
+  toast('Respuesta registrada (solo en esta demo).');
+}
+function demoSendMessage(){
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if(!text) return;
+  demo.messages.push({ mine: true, text });
+  input.value = '';
+  render();
+  document.getElementById('chat-input').focus();
+}
+
+render();
+</script>
+</body>
+</html>

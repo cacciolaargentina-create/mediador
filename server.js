@@ -102,6 +102,10 @@ const NOINDEX_STATIC_PATHS = new Set([
   // Disallow de robots.txt para activarla (no hace falta tocar sitemap.xml
   // hasta ese momento, ahí hay que sumarla).
   '/mediador-vs-medi-ar.html',
+  // Tanda 5 — demo del portal (datos de ejemplo, 100% client-side, nunca
+  // pega contra el backend real), TEMPORAL hasta aprobación del texto.
+  // Mismo mecanismo de activación que la línea de arriba.
+  '/portal-demo.html',
 ]);
 app.use((req, res, next) => {
   if (NOINDEX_STATIC_PATHS.has(req.path)) res.setHeader('X-Robots-Tag', 'noindex, nofollow');

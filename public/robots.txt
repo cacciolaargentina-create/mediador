@@ -25,6 +25,9 @@ Disallow: /terminos-puente.html
 # SEO Tanda 4 — comparación con medi.ar, TEMPORAL hasta aprobación del texto
 Disallow: /mediador-vs-medi-ar.html
 
+# Tanda 5 — demo del portal, TEMPORAL hasta aprobación del texto
+Disallow: /portal-demo.html
+
 # nunca rutas de API, auth ni webhooks — no son contenido, son endpoints
 Disallow: /api/
 Disallow: /auth/
