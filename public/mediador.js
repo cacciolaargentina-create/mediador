@@ -2961,6 +2961,10 @@ function renderOnboardingWizard(m, parties){
       <input id="party-email" placeholder="nombre@correo.com">
       <label>Teléfono (opcional)</label>
       <input id="party-phone">
+      <label style="display:flex; align-items:center; gap:6px; margin-top:4px;">
+        <input type="checkbox" id="party-invite-now" style="width:auto;" checked>
+        Invitar al portal apenas se guarde
+      </label>
       <button class="primary" style="width:100%; margin-top:10px;" onclick="addParty('${m.id}', () => wizardAdvance('${m.id}', 2))">Guardar y seguir</button>
     `;
   } else if(step === 2){
@@ -2979,6 +2983,10 @@ function renderOnboardingWizard(m, parties){
       <input id="party-email" placeholder="nombre@correo.com">
       <label>Teléfono (opcional)</label>
       <input id="party-phone">
+      <label style="display:flex; align-items:center; gap:6px; margin-top:4px;">
+        <input type="checkbox" id="party-invite-now" style="width:auto;" checked>
+        Invitar al portal apenas se guarde
+      </label>
       <div style="display:flex; gap:8px; margin-top:10px;">
         <button class="ghost" style="flex:1;" onclick="wizardAdvance('${m.id}', 3)">Saltar este paso</button>
         <button class="primary" style="flex:1;" onclick="addParty('${m.id}', () => wizardAdvance('${m.id}', 3))">Guardar y seguir</button>
@@ -2994,6 +3002,12 @@ function renderOnboardingWizard(m, parties){
       <input id="lawyer-name" placeholder="Ej: Dr. Rodríguez">
       <label>Matrícula (opcional)</label>
       <input id="lawyer-enrollment">
+      <label>Teléfono (opcional)</label>
+      <input id="lawyer-phone">
+      <label style="display:flex; align-items:center; gap:6px; margin-top:4px;">
+        <input type="checkbox" id="lawyer-invite-now" style="width:auto;" checked>
+        Invitar al portal apenas se guarde
+      </label>
       <label>Representa a</label>
       <select id="lawyer-party">
         <option value="">— Sin asignar —</option>
@@ -3191,6 +3205,10 @@ async function renderDetail(id){
         <input id="party-email" placeholder="nombre@correo.com">
         <label>Teléfono (opcional)</label>
         <input id="party-phone">
+        <label style="display:flex; align-items:center; gap:6px; margin-top:4px;">
+          <input type="checkbox" id="party-invite-now" style="width:auto;" checked>
+          Invitar al portal apenas se guarde
+        </label>
         <button class="primary" style="width:100%;" onclick="addParty('${m.id}')">Guardar parte</button>
       </div>
     </div>
@@ -3223,6 +3241,12 @@ async function renderDetail(id){
           <option value="">— Sin asignar —</option>
           ${parties.map(p => `<option value="${p.id}">${escapeHtml(partyName(p.id))}</option>`).join('')}
         </select>
+        <label>Teléfono (opcional — para el aviso automático por WhatsApp)</label>
+        <input id="lawyer-phone">
+        <label style="display:flex; align-items:center; gap:6px; margin-top:4px;">
+          <input type="checkbox" id="lawyer-invite-now" style="width:auto;" checked>
+          Invitar al portal apenas se guarde
+        </label>
         <button class="primary" style="width:100%;" onclick="addLawyer('${m.id}')">Guardar abogado</button>
       </div>
     </div>
@@ -3926,14 +3950,39 @@ async function toggleAllowUpload(mediationId, partyId, allow){
   }catch(e){ showToast(e.error || 'No se pudo actualizar el permiso.', 'danger'); renderDetail(mediationId); }
 }
 
+// Bloque 45 — cuando el envío automático por WhatsApp (Graph API) no está
+// configurado o falla, antes esto era "copiá el link y compartíselo vos
+// por donde quieras" — sin más ayuda. Si hay un teléfono cargado, en vez
+// de eso se abre WhatsApp (wa.me) con el mensaje YA escrito, listo para
+// mandar desde el WhatsApp del propio mediador en un click — wa.me no
+// necesita ninguna credencial de la API, solo el teléfono en dígitos.
+function openWhatsAppInviteFallback(phone, text){
+  const digits = (phone || '').replace(/\D/g, '');
+  if(!digits) return false;
+  window.open(`https://wa.me/${digits}?text=${encodeURIComponent(text)}`, '_blank');
+  return true;
+}
+
+// núcleo compartido entre el botón "Invitar al portal" (pestaña Partes,
+// re-renderiza el expediente al final) y el checkbox "Invitar ahora" del
+// wizard de carga guiada (que re-renderiza SU PROPIO paso siguiente — un
+// renderDetail acá adentro pisaría esa navegación). Por eso este helper
+// nunca re-renderiza nada, solo hace la llamada y avisa por toast/wa.me.
+async function sendPartyInvite(mediationId, partyId){
+  const result = await api(`/api/mediations/${mediationId}/parties/${partyId}/invite`, { method:'POST' });
+  const fullUrl = location.origin + result.portalUrl;
+  if(result.notified){
+    copyLinkToClipboard(fullUrl, 'Invitación enviada por WhatsApp. Link también copiado, por si querés reenviarlo.');
+  } else {
+    const opened = openWhatsAppInviteFallback(result.phone, `Te invitaron a seguir la mediación en Mediador. Entrá acá: ${fullUrl}`);
+    copyLinkToClipboard(fullUrl, opened ? 'Se abrió WhatsApp con el mensaje listo para mandar. Link también copiado.' : 'No se pudo avisar automáticamente (sin teléfono cargado) — link copiado, compartíselo vos.');
+  }
+  return result;
+}
+
 async function inviteParty(mediationId, partyId){
   try{
-    const result = await api(`/api/mediations/${mediationId}/parties/${partyId}/invite`, { method:'POST' });
-    const fullUrl = location.origin + result.portalUrl;
-    // Bloque 32 §1 — el server ya intentó avisar por WhatsApp; el link se
-    // sigue copiando siempre (por si lo querés reenviar vos), pero el
-    // mensaje ahora dice si el aviso automático salió o no.
-    copyLinkToClipboard(fullUrl, result.notified ? 'Invitación enviada por WhatsApp. Link también copiado, por si querés reenviarlo.' : 'No se pudo avisar por WhatsApp (sin teléfono cargado o falló el envío) — link copiado, compartíselo vos.');
+    await sendPartyInvite(mediationId, partyId);
     renderDetail(mediationId);
   }catch(e){ showToast(e.error || 'No se pudo generar la invitación.', 'danger'); }
 }
@@ -3946,23 +3995,46 @@ async function addParty(mediationId, afterSave){
   const firstName = document.getElementById('party-first-name').value.trim();
   const lastName = document.getElementById('party-last-name').value.trim();
   if(!firstName){ showToast('Falta el nombre de la parte.', 'danger'); return; }
+  // "Invitar ahora" vive en los tres formularios de alta de parte (pestaña
+  // Partes y los dos pasos del wizard de carga guiada) — si está tildado,
+  // invita apenas se guarda, sea cual sea el formulario usado.
+  const inviteNow = document.getElementById('party-invite-now')?.checked;
   try{
-    await api(`/api/mediations/${mediationId}/parties`, { method:'POST', body: JSON.stringify({
+    const party = await api(`/api/mediations/${mediationId}/parties`, { method:'POST', body: JSON.stringify({
       role: document.getElementById('party-role').value,
       firstName, lastName,
       documentNumber: document.getElementById('party-document').value.trim() || null,
       email: document.getElementById('party-email').value.trim() || null,
       phone: document.getElementById('party-phone').value.trim() || null,
     })});
-    if(afterSave) afterSave(); else renderDetail(mediationId);
+    if(inviteNow){
+      // sendPartyInvite (sin renderDetail propio) para no pisar la
+      // navegación que sigue abajo (afterSave del wizard, o renderDetail
+      // normal) — un fallo acá no debe impedir seguir, la parte YA se
+      // guardó; se avisa aparte y el mediador puede invitar después.
+      try{ await sendPartyInvite(mediationId, party.id); }
+      catch(e){ showToast(e.error || 'La parte se guardó, pero no se pudo invitar todavía — probá de nuevo desde la pestaña Partes.', 'danger'); }
+    }
+    if(afterSave) afterSave();
+    else renderDetail(mediationId);
   }catch(e){ showToast(e.error || 'No se pudo guardar la parte.', 'danger'); }
+}
+
+async function sendLawyerInvite(mediationId, lawyerId){
+  const result = await api(`/api/mediations/${mediationId}/lawyers/${lawyerId}/invite`, { method:'POST' });
+  const fullUrl = location.origin + result.portalUrl;
+  if(result.notified){
+    copyLinkToClipboard(fullUrl, 'Invitación enviada por WhatsApp. Link también copiado, por si querés reenviarlo.');
+  } else {
+    const opened = openWhatsAppInviteFallback(result.phone, `Te invitaron al portal de la mediación en Mediador. Entrá acá: ${fullUrl}`);
+    copyLinkToClipboard(fullUrl, opened ? 'Se abrió WhatsApp con el mensaje listo para mandar. Link también copiado.' : 'No se pudo avisar automáticamente (sin teléfono cargado) — link copiado, compartíselo vos.');
+  }
+  return result;
 }
 
 async function inviteLawyer(mediationId, lawyerId){
   try{
-    const result = await api(`/api/mediations/${mediationId}/lawyers/${lawyerId}/invite`, { method:'POST' });
-    const fullUrl = location.origin + result.portalUrl;
-    copyLinkToClipboard(fullUrl, result.notified ? 'Invitación enviada por WhatsApp. Link también copiado, por si querés reenviarlo.' : 'No se pudo avisar por WhatsApp (sin teléfono cargado o falló el envío) — link copiado, compartíselo vos.');
+    await sendLawyerInvite(mediationId, lawyerId);
     renderDetail(mediationId);
   }catch(e){ showToast(e.error || 'No se pudo generar la invitación.', 'danger'); }
 }
@@ -3970,14 +4042,21 @@ async function inviteLawyer(mediationId, lawyerId){
 async function addLawyer(mediationId, afterSave){
   const name = document.getElementById('lawyer-name').value.trim();
   if(!name){ showToast('Falta el nombre del abogado.', 'danger'); return; }
+  const inviteNow = document.getElementById('lawyer-invite-now')?.checked;
   try{
-    await api(`/api/mediations/${mediationId}/lawyers`, { method:'POST', body: JSON.stringify({
+    const lawyer = await api(`/api/mediations/${mediationId}/lawyers`, { method:'POST', body: JSON.stringify({
       name,
       enrollmentNumber: document.getElementById('lawyer-enrollment').value.trim() || null,
       partyId: document.getElementById('lawyer-party').value || null,
       email: document.getElementById('lawyer-email').value.trim() || null,
+      phone: document.getElementById('lawyer-phone')?.value.trim() || null,
     })});
-    if(afterSave) afterSave(); else renderDetail(mediationId);
+    if(inviteNow){
+      try{ await sendLawyerInvite(mediationId, lawyer.id); }
+      catch(e){ showToast(e.error || 'El abogado se guardó, pero no se pudo invitar todavía — probá de nuevo desde la pestaña Abogados.', 'danger'); }
+    }
+    if(afterSave) afterSave();
+    else renderDetail(mediationId);
   }catch(e){ showToast(e.error || 'No se pudo guardar el abogado.', 'danger'); }
 }
 

@@ -2078,7 +2078,11 @@ module.exports = function (io, presence) {
       : 'No se pudo enviar la invitación automáticamente — compartí el link manualmente.',
       notifyResult.status === 'enviado' ? 'whatsapp' : 'sistema');
     await commit();
-    res.json({ portalToken: party.portalToken, portalUrl, notified: notifyResult.status === 'enviado' });
+    // Bloque 45 — phone viaja en la respuesta para que, cuando el envío
+    // automático por WhatsApp falla (notified:false), el frontend pueda
+    // ofrecer un link wa.me prearmado en vez de "copiá el link y mandalo
+    // vos por donde quieras" — mismo mensaje que se intentó mandar solo.
+    res.json({ portalToken: party.portalToken, portalUrl, notified: notifyResult.status === 'enviado', phone: party.phone || null });
   });
 
   // ---------- comunicaciones con una parte (lado del mediador) ----------
@@ -2201,7 +2205,7 @@ module.exports = function (io, presence) {
       : 'No se pudo enviar la invitación automáticamente — compartí el link manualmente.',
       notifyResult.status === 'enviado' ? 'whatsapp' : 'sistema');
     await commit();
-    res.json({ portalToken: lawyer.portalToken, portalUrl, notified: notifyResult.status === 'enviado' });
+    res.json({ portalToken: lawyer.portalToken, portalUrl, notified: notifyResult.status === 'enviado', phone: lawyer.phone || null });
   });
 
   // ---------- comunicaciones con un abogado (lado del mediador) ----------
