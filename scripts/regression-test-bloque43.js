@@ -93,7 +93,7 @@ function makeMediation(overrides = {}) {
   db.partyNotifications.push({ id: 'n2', mediationId: 'med1', partyId: 'p1', medium: 'carta_documento', status: 'recibida', sentDate: '2026-02-01', receivedDate: '2026-02-03', createdAt: 2 });
   const r5 = computeMediationDeadline(db, mediation);
   check('3e. notificación "recibida" con fecha → el cómputo arranca en la fecha de RECEPCIÓN, no de envío', r5.started === true && r5.computationStart === '2026-02-03');
-  check('3f. deadlineDate = 60 días hábiles desde la recepción', r5.deadlineDate === businessCalendar.addBusinessDays(db, '2026-02-03', 60));
+  check('3f. deadlineDate = 60 días CORRIDOS desde la recepción (art. 20, Ley 26.589 — no son hábiles)', r5.deadlineDate === businessCalendar.addCalendarDays('2026-02-03', 60));
   check('3g. explicación incluye la fecha de origen', r5.explanation.some((l) => l.includes('2026-02-03')));
 
   // múltiples requeridos: rige la ÚLTIMA notificación
@@ -101,7 +101,7 @@ function makeMediation(overrides = {}) {
   db.partyNotifications.push({ id: 'n3', mediationId: 'med1', partyId: 'p2', medium: 'cedula', status: 'recibida', sentDate: '2026-02-05', receivedDate: '2026-02-10', createdAt: 3 });
   const r6 = computeMediationDeadline(db, mediation);
   check('3h. con dos requeridos, rige la notificación MÁS TARDÍA entre ambos', r6.computationStart === '2026-02-10');
-  check('3i. deadlineDate recalculado desde la fecha más tardía', r6.deadlineDate === businessCalendar.addBusinessDays(db, '2026-02-10', 60));
+  check('3i. deadlineDate recalculado desde la fecha más tardía', r6.deadlineDate === businessCalendar.addCalendarDays('2026-02-10', 60));
 
   // una parte sin notificación bloquea el inicio aunque la otra sí tenga
   db.parties.push({ id: 'p3', mediationId: 'med1', role: 'requerido', status: 'activa', firstName: 'Luis', lastName: 'Ruiz' });
@@ -129,7 +129,7 @@ function makeMediation(overrides = {}) {
 
   db.mediationDeadlineExtensions.push({ id: 'e1', mediationId: 'med1', days: 20, reason: 'acuerdo de partes', agreedDate: '2026-04-01', createdAt: 10 });
   const withDaysExt = computeMediationDeadline(db, mediation);
-  check('4a. prórroga en días hábiles corre la fecha límite hacia adelante', withDaysExt.deadlineDate === businessCalendar.addBusinessDays(db, base.deadlineDate, 20));
+  check('4a. prórroga en días corridos corre la fecha límite hacia adelante', withDaysExt.deadlineDate === businessCalendar.addCalendarDays(base.deadlineDate, 20));
 
   db.mediationDeadlineExtensions.length = 0;
   db.mediationDeadlineExtensions.push({ id: 'e2', mediationId: 'med1', newDeadlineDate: '2026-12-31', reason: 'acuerdo con fecha fija', agreedDate: '2026-04-01', createdAt: 10 });

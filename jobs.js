@@ -480,7 +480,7 @@ async function checkHearingsStartingSoon(io) {
 // no manda el mismo aviso una y otra vez mientras el plazo sigue en esa
 // misma franja. Si una prórroga corre la fecha límite más allá de un
 // umbral ya avisado, ese umbral se vuelve a habilitar solo (se compara
-// contra remainingBusinessDays actual, no contra un estado fijo).
+// contra remainingCalendarDays actual, no contra un estado fijo).
 const LEGAL_DEADLINE_REMINDER_THRESHOLDS = [15, 7, 3];
 
 async function checkLegalDeadlineReminders() {
@@ -491,13 +491,13 @@ async function checkLegalDeadlineReminders() {
     if (mediation.closedAt || mediation.status === 'borrador') continue;
     const info = computeMediationDeadline(db, mediation);
     if (!info.calculable || !info.started) continue;
-    const remaining = info.remainingBusinessDays;
+    const remaining = info.remainingCalendarDays;
     const sent = new Set(mediation.legalDeadlineRemindersSent || []);
     for (const threshold of LEGAL_DEADLINE_REMINDER_THRESHOLDS) {
       if (remaining <= threshold && remaining >= 0 && !sent.has(threshold)) {
         await notifyMediator(db, mediation, {
           title: 'Plazo de mediación por vencer',
-          body: `${mediation.code}: quedan ${remaining} día(s) hábil(es) del plazo de ${info.termBusinessDays} días (vence el ${info.deadlineDate}).`,
+          body: `${mediation.code}: quedan ${remaining} día(s) corrido(s) del plazo de ${info.termCalendarDays} días (vence el ${info.deadlineDate}).`,
           url: '/',
         });
         sent.add(threshold);

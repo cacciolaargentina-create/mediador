@@ -306,14 +306,14 @@ function getHearingPreparationDetails(db, mediation, hearing, { confirmations, d
 // CUÁNDO eso amerita un ítem del centro de atención y con qué severidad.
 // Ninguno de estos bloquea nada, son siempre avisos (spec §4.2/§6).
 
-const LEGAL_DEADLINE_WARNING_BUSINESS_DAYS = 15; // a partir de acá empieza a avisar (severidad creciente 15/7/3)
+const LEGAL_DEADLINE_WARNING_CALENDAR_DAYS = 15; // a partir de acá empieza a avisar
 
 function getLegalDeadlineAttentionState(db, mediation) {
   const info = computeMediationDeadline(db, mediation);
   if (!info.calculable || !info.started) return { info, alert: null };
-  const remaining = info.remainingBusinessDays;
+  const remaining = info.remainingCalendarDays;
   if (remaining < 0) return { info, alert: 'vencido' };
-  if (remaining <= LEGAL_DEADLINE_WARNING_BUSINESS_DAYS) return { info, alert: 'proximo' };
+  if (remaining <= LEGAL_DEADLINE_WARNING_CALENDAR_DAYS) return { info, alert: 'proximo' };
   return { info, alert: null };
 }
 
@@ -430,10 +430,10 @@ function buildAttentionItems(db, mediations, { includeInactive = true } = {}) {
 
     const { info: deadlineInfo, alert } = getLegalDeadlineAttentionState(db, m);
     if (alert === 'vencido') {
-      items.push({ type: 'plazoMediacionVencido', mediationId: m.id, mediationCode: m.code, title: 'Plazo de la mediación vencido', detail: `El plazo de ${deadlineInfo.termBusinessDays} días hábiles venció el ${deadlineInfo.deadlineDate} (${Math.abs(deadlineInfo.remainingBusinessDays)} día(s) hábil(es) de más).`, priority: 'vencido', dueDate: deadlineInfo.deadlineDate, refId: m.id, responsible: 'Vos', suggestedActions: ['verPlazos', 'verMediacion'] });
+      items.push({ type: 'plazoMediacionVencido', mediationId: m.id, mediationCode: m.code, title: 'Plazo de la mediación vencido', detail: `El plazo de ${deadlineInfo.termCalendarDays} días corridos venció el ${deadlineInfo.deadlineDate} (${Math.abs(deadlineInfo.remainingCalendarDays)} día(s) corrido(s) de más).`, priority: 'vencido', dueDate: deadlineInfo.deadlineDate, refId: m.id, responsible: 'Vos', suggestedActions: ['verPlazos', 'verMediacion'] });
     } else if (alert === 'proximo') {
-      const remaining = deadlineInfo.remainingBusinessDays;
-      items.push({ type: 'plazoMediacionProximoAVencer', mediationId: m.id, mediationCode: m.code, title: 'Plazo de la mediación por vencer', detail: `Quedan ${remaining} día(s) hábil(es) (vence el ${deadlineInfo.deadlineDate}).`, priority: remaining <= 7 ? 'critico' : 'proximo', dueDate: deadlineInfo.deadlineDate, refId: m.id, responsible: 'Vos', suggestedActions: ['verPlazos', 'verMediacion'] });
+      const remaining = deadlineInfo.remainingCalendarDays;
+      items.push({ type: 'plazoMediacionProximoAVencer', mediationId: m.id, mediationCode: m.code, title: 'Plazo de la mediación por vencer', detail: `Quedan ${remaining} día(s) corrido(s) (vence el ${deadlineInfo.deadlineDate}).`, priority: remaining <= 7 ? 'critico' : 'proximo', dueDate: deadlineInfo.deadlineDate, refId: m.id, responsible: 'Vos', suggestedActions: ['verPlazos', 'verMediacion'] });
     }
 
     for (const p of getRequeridosSinNotificacion(db, m)) {

@@ -79,6 +79,27 @@ function businessDaysBetween(db, aStr, bStr) {
   return count * sign;
 }
 
+// suma `cantidad` días CORRIDOS (calendario) a `fechaStr` — sin mirar
+// feriados ni fines de semana. Existe porque no toda regla de plazo de la
+// Ley 26.589 está en días hábiles (ver jurisdictionRules.js: el plazo de
+// la mediación en sí, art. 20, y la reanudación de la prescripción, art.
+// 18, son en días CORRIDOS — solo el aviso de audiencia, art. 24, es en
+// días hábiles). Mismo principio que el resto del archivo: ningún cómputo
+// de plazo debe sumar/restar días a mano en otro módulo.
+function addCalendarDays(fechaStr, cantidad) {
+  if (!isValidDateStr(fechaStr)) throw new Error(`Fecha inválida: ${fechaStr}`);
+  const date = new Date(strToDate(fechaStr).getTime() + cantidad * 86400000);
+  return dateToStr(date);
+}
+
+// cuenta los días CORRIDOS estrictamente entre `aStr` (exclusivo) y `bStr`
+// (inclusivo). Mismo signo/criterio que businessDaysBetween.
+function calendarDaysBetween(aStr, bStr) {
+  if (!isValidDateStr(aStr) || !isValidDateStr(bStr)) throw new Error('Fechas inválidas');
+  const a = strToDate(aStr), b = strToDate(bStr);
+  return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+
 function yearHasHolidaysLoaded(db, year) {
   return db.legalHolidays.some((h) => h.year === year);
 }
@@ -162,6 +183,6 @@ function seedDefaultHolidays(db) {
 }
 
 module.exports = {
-  addBusinessDays, businessDaysBetween, isBusinessDay, isHoliday, isWeekend,
+  addBusinessDays, businessDaysBetween, addCalendarDays, calendarDaysBetween, isBusinessDay, isHoliday, isWeekend,
   yearHasHolidaysLoaded, seedDefaultHolidays, dateToStr, strToDate, isValidDateStr,
 };

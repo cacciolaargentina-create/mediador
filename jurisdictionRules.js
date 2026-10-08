@@ -14,11 +14,16 @@
 const NACION = {
   code: 'nacion',
   label: 'Nación (Ley 26.589)',
-  // Art. 20, Ley 26.589: el plazo de la mediación es de hasta 60 días
-  // hábiles judiciales, contados desde la última notificación fehaciente
-  // al requerido (o al último de los requeridos, si hay más de uno).
-  // Prorrogable por acuerdo de partes.
-  mediationTermBusinessDays: 60,
+  // Art. 20, Ley 26.589: "El plazo para realizar la mediación será de
+  // hasta sesenta (60) días CORRIDOS" — verificado contra el texto
+  // actualizado de la ley (argentina.gob.ar/normativa/nacional/
+  // ley-26589-166999/actualizacion). El artículo NO dice "hábiles": ese
+  // error estaba en una versión anterior de este archivo (y, por separado,
+  // en un borrador de contenido de marketing que se corrigió al revisarlo
+  // contra la fuente — mismo error, dos lugares distintos). Contado desde
+  // la última notificación fehaciente al requerido (o al último de los
+  // requeridos, si hay más de uno). Prorrogable por acuerdo de partes.
+  mediationTermCalendarDays: 60,
   // Art. 20 in fine: la audiencia debe notificarse con una anticipación no
   // menor a 3 días hábiles.
   hearingNoticeBusinessDays: 3,

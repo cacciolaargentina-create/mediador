@@ -11,7 +11,7 @@
 // ningún sistema paralelo de alertas — automationEngine.js consume estas
 // funciones para sus propios detectores.
 
-const { addBusinessDays, businessDaysBetween, dateToStr } = require('./businessCalendar');
+const { addBusinessDays, businessDaysBetween, addCalendarDays, calendarDaysBetween, dateToStr } = require('./businessCalendar');
 const { getJurisdictionRules } = require('./jurisdictionRules');
 
 function partyDisplayName(p) {
@@ -45,8 +45,9 @@ function lastNotification(notifications) {
   return [...notifications].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).slice(-1)[0];
 }
 
-// ---- 4.1 Plazo de la mediación (60 días hábiles desde la última
-// notificación a los requeridos), con prórrogas y corrección manual ----
+// ---- 4.1 Plazo de la mediación (60 días CORRIDOS desde la última
+// notificación a los requeridos — art. 20, Ley 26.589), con prórrogas y
+// corrección manual ----
 function computeMediationDeadline(db, mediation) {
   const rules = getJurisdictionRules(mediation.jurisdiction);
   if (!rules) {
@@ -75,7 +76,7 @@ function computeMediationDeadline(db, mediation) {
       if (pi.effective.receivedDate > latest.effective.receivedDate) latest = pi;
     }
     startDate = latest.effective.receivedDate;
-    startExplanation = `${rules.mediationTermBusinessDays} días hábiles desde la notificación a ${partyDisplayName(latest.party) || 'la parte requerida'}, recibida el ${latest.effective.receivedDate}${partyInfo.length > 1 ? ' (la más reciente entre todos los requeridos)' : ''}`;
+    startExplanation = `${rules.mediationTermCalendarDays} días corridos desde la notificación a ${partyDisplayName(latest.party) || 'la parte requerida'}, recibida el ${latest.effective.receivedDate}${partyInfo.length > 1 ? ' (la más reciente entre todos los requeridos)' : ''}`;
   }
 
   let deadlineDate = null;
@@ -85,22 +86,22 @@ function computeMediationDeadline(db, mediation) {
     .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
 
   if (startDate) {
-    deadlineDate = addBusinessDays(db, startDate, rules.mediationTermBusinessDays);
+    deadlineDate = addCalendarDays(startDate, rules.mediationTermCalendarDays);
     explanationLines.push(startExplanation);
     for (const ext of extensions) {
       if (ext.newDeadlineDate) {
         deadlineDate = ext.newDeadlineDate;
         explanationLines.push(`Prórroga acordada el ${ext.agreedDate}: nueva fecha límite ${ext.newDeadlineDate}${ext.reason ? ` (${ext.reason})` : ''}`);
       } else if (ext.days) {
-        deadlineDate = addBusinessDays(db, deadlineDate, ext.days);
-        explanationLines.push(`Prórroga acordada el ${ext.agreedDate}: +${ext.days} días hábiles${ext.reason ? ` (${ext.reason})` : ''}`);
+        deadlineDate = addCalendarDays(deadlineDate, ext.days);
+        explanationLines.push(`Prórroga acordada el ${ext.agreedDate}: +${ext.days} días corridos${ext.reason ? ` (${ext.reason})` : ''}`);
       }
     }
   }
 
   const today = todayStr();
-  const elapsedBusinessDays = startDate ? businessDaysBetween(db, startDate, today) : null;
-  const remainingBusinessDays = deadlineDate ? businessDaysBetween(db, today, deadlineDate) : null;
+  const elapsedCalendarDays = startDate ? calendarDaysBetween(startDate, today) : null;
+  const remainingCalendarDays = deadlineDate ? calendarDaysBetween(today, deadlineDate) : null;
 
   return {
     calculable: true,
@@ -118,9 +119,9 @@ function computeMediationDeadline(db, mediation) {
     computationStart: startDate,
     computationStartExplanation: startExplanation,
     computationStartManuallyOverridden: manualOverride,
-    termBusinessDays: rules.mediationTermBusinessDays,
-    elapsedBusinessDays,
-    remainingBusinessDays,
+    termCalendarDays: rules.mediationTermCalendarDays,
+    elapsedCalendarDays,
+    remainingCalendarDays,
     deadlineDate,
     extensions,
     explanation: explanationLines,
