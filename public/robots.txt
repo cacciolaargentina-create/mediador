@@ -22,9 +22,6 @@ Disallow: /legal-puente.html
 Disallow: /privacidad-puente.html
 Disallow: /terminos-puente.html
 
-# SEO Tanda 4 — comparación con medi.ar, TEMPORAL hasta aprobación del texto
-Disallow: /mediador-vs-medi-ar.html
-
 # nunca rutas de API, auth ni webhooks — no son contenido, son endpoints
 Disallow: /api/
 Disallow: /auth/
@@ -38,5 +35,6 @@ Allow: /privacidad.html
 Allow: /terminos.html
 Allow: /recursos.html
 Allow: /recursos/
+Allow: /mediador-vs-medi-ar.html
 
 Sitemap: https://puentedigital.app/sitemap.xml
