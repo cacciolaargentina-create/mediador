@@ -1,5 +1,42 @@
 // server.js
 require('dotenv').config();
+
+// Bloque 54 — monitoreo de errores en producción (Sentry). Opcional: sin
+// SENTRY_DSN configurado, el SDK no se inicializa y el server sigue
+// funcionando exactamente como antes (los errores siguen yendo a
+// console.error → logs de pm2, nada más) — mismo criterio de "degrada sin
+// romper" que VAPID/GA/WhatsApp más abajo. Tiene que inicializarse ANTES
+// de requerir express/http para que la instrumentación automática de
+// Sentry los enganche bien.
+const Sentry = require('@sentry/node');
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || 'development',
+    tracesSampleRate: 0, // solo errores — no hace falta tracing de performance para este volumen
+    // Nunca mandar el contenido de una request a un tercero: puede traer
+    // mensajes de mediación, documentos, tokens de portal (?guest=/?pro=
+    // en query string) o la cookie de sesión. Un error se puede diagnosticar
+    // igual de bien solo con la ruta, el método y el stack.
+    beforeSend(event) {
+      if (event.request) {
+        delete event.request.cookies;
+        delete event.request.data;
+        delete event.request.query_string;
+        if (event.request.headers) {
+          delete event.request.headers.cookie;
+          delete event.request.headers.authorization;
+        }
+        if (event.request.url) event.request.url = event.request.url.split('?')[0];
+      }
+      return event;
+    },
+  });
+  console.log('✓ Sentry inicializado — los errores del servidor se reportan ahí además de a los logs.');
+} else {
+  console.warn('⚠ SENTRY_DSN no configurado — sin monitoreo de errores en producción (solo quedan en los logs de pm2/consola). Ver .env.example.');
+}
+
 const express = require('express');
 const session = require('express-session');
 const passport = require('passport');
@@ -387,6 +424,17 @@ io.on('connection', (socket) => {
       }
     }
   });
+});
+
+// Bloque 54 — red de contención final: cualquier error que llegue hasta
+// acá sin haber sido atrapado por una ruta. Primero Sentry (si está
+// configurado), después una respuesta genérica — nunca se filtra el
+// mensaje interno ni el stack al cliente.
+if (process.env.SENTRY_DSN) Sentry.setupExpressErrorHandler(app);
+app.use((err, req, res, next) => {
+  console.error('Error no manejado:', err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: 'Error interno del servidor.' });
 });
 
 server.listen(PORT, () => {
