@@ -351,6 +351,38 @@ function getHearingsWithoutMinimumNotice(db, mediation, now = Date.now()) {
   return out;
 }
 
+// Bloque 52 — audiencia virtual próxima sin datos completos (en la
+// práctica, hoy el único caso de validateModalityData: modalidad virtual
+// sin meetingUrl). Esto YA se detectaba en getHearingPreparationState,
+// pero solo aparecía si el mediador entraba a la pantalla de preparación
+// de ESA audiencia puntual — acá se suma al feed general para que no
+// dependa de que la abra a revisar.
+function getHearingsWithModalityIssue(db, mediation, now = Date.now()) {
+  const hearings = db.hearings.filter((h) => h.mediationId === mediation.id
+    && ['propuesta', 'programada', 'confirmada'].includes(h.status)
+    && new Date(h.date).getTime() >= now);
+  const out = [];
+  for (const h of hearings) {
+    const issue = validateModalityData(h.modality, h.location, h.meetingUrl);
+    if (issue) out.push({ hearing: h, issue });
+  }
+  return out;
+}
+
+// Bloque 52 — audiencia cuya sincronización con Google Calendar falló
+// (calendarSyncStatus === 'error', ver calendarSync.js). Antes era
+// completamente silencioso: el mediador conecta Calendar, cree que sus
+// audiencias quedan reflejadas ahí, y si una sincronización puntual
+// falla (token vencido, error transitorio de la API) no había ninguna
+// señal — el pill "En tu Calendar" del expediente simplemente no
+// aparecía, exactamente igual que si nunca se hubiera intentado.
+function getHearingsWithCalendarSyncError(db, mediation, now = Date.now()) {
+  return db.hearings.filter((h) => h.mediationId === mediation.id
+    && ['propuesta', 'programada', 'confirmada'].includes(h.status)
+    && new Date(h.date).getTime() >= now
+    && h.calendarSyncStatus === 'error');
+}
+
 // ================= feed combinado (§1/§2 — centro de atención) =================
 // Arma una lista PLANA y normalizada { type, mediationId, mediationCode,
 // title, detail, priority, dueDate, refId, suggestedActions } combinando
@@ -446,6 +478,14 @@ function buildAttentionItems(db, mediations, { includeInactive = true } = {}) {
     for (const { hearing, check } of getHearingsWithoutMinimumNotice(db, m, now)) {
       items.push({ type: 'audienciaSinAvisoMinimo', mediationId: m.id, mediationCode: m.code, title: `Audiencia del ${hearing.date} sin el aviso mínimo de ${check.requiredBusinessDays} días hábiles`, detail: check.explanation, priority: 'pendiente', dueDate: hearing.date, refId: hearing.id, responsible: 'Vos', suggestedActions: ['verMediacion'] });
     }
+    // Bloque 52
+    for (const { hearing, issue } of getHearingsWithModalityIssue(db, m, now)) {
+      const daysUntil = daysBetween(now, new Date(hearing.date).getTime());
+      items.push({ type: 'audienciaModalidadIncompleta', mediationId: m.id, mediationCode: m.code, title: `Audiencia del ${hearing.date}${hearing.startTime ? ' ' + hearing.startTime : ''} sin datos completos`, detail: issue, priority: daysUntil <= 2 ? 'critico' : 'proximo', dueDate: hearing.date, refId: hearing.id, responsible: 'Vos', suggestedActions: ['verMediacion'] });
+    }
+    for (const hearing of getHearingsWithCalendarSyncError(db, m, now)) {
+      items.push({ type: 'audienciaSyncCalendarFallido', mediationId: m.id, mediationCode: m.code, title: `Audiencia del ${hearing.date} no se sincronizó con Google Calendar`, detail: 'La última sincronización falló — esta audiencia puede no estar reflejada en tu Google Calendar. Revisá la conexión en Configuración → Video.', priority: 'pendiente', dueDate: hearing.date, refId: hearing.id, responsible: 'Vos', suggestedActions: ['verMediacion'] });
+    }
   }
 
   for (const m of mediations) {
@@ -488,4 +528,5 @@ module.exports = {
   getMediationAttentionItems, getDashboardAttentionItems,
   getLegalDeadlineAttentionState, getRequeridosSinNotificacion,
   getNotificacionesSinSeguimiento, getHearingsWithoutMinimumNotice,
+  getHearingsWithModalityIssue, getHearingsWithCalendarSyncError,
 };

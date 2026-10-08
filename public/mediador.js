@@ -4131,7 +4131,7 @@ function renderHearingRow(m, h, timelineList){
     <div class="status-history-item">
       <strong>${fmtDate(h.date)}${h.startTime ? ' ' + h.startTime : ''}</strong> —
       ${HEARING_MODALITY_LABELS[h.modality] || h.modality} · <span class="pill ${h.status==='propuesta'?'warn':(h.status==='cancelada'||h.status==='no_realizada')?'danger':'calm'}">${h.status==='propuesta'?'Propuesta':(HEARING_STATUS_LABELS[h.status] || h.status)}</span>
-      ${h.calendarSynced ? `<span class="pill calm" style="margin-left:4px;" title="Esta audiencia aparece en tu Google Calendar">📅 En tu Calendar</span>` : ''}
+      ${h.calendarSynced ? `<span class="pill calm" style="margin-left:4px;" title="Esta audiencia aparece en tu Google Calendar">📅 En tu Calendar</span>` : (h.calendarSyncFailed ? `<span class="pill danger" style="margin-left:4px;" title="No se pudo sincronizar con tu Google Calendar — puede no estar reflejada ahí">📅 Sin sincronizar</span>` : '')}
       ${motivoHtml}
       ${renderHearingVideoCard(m, h)}
       <div style="margin-top:4px;">

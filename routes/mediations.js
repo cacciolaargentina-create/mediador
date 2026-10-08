@@ -1957,6 +1957,10 @@ module.exports = function (io, presence) {
       // porque el proveedor de video ES google_meet (ese evento de
       // Calendar ya la representa, ver calendarSync.js).
       calendarSynced: !!(h.calendarSyncEventId || h.videoProvider === 'google_meet'),
+      // Bloque 52 — distingue "nunca se intentó sincronizar" (calendarSynced
+      // false, calendarSyncFailed false) de "se intentó y falló" (antes
+      // ambos casos se veían exactamente igual: sin pill).
+      calendarSyncFailed: h.calendarSyncStatus === 'error',
       confirmations: (confirmations || []).map((c) => ({
         id: c.id, partyId: c.partyId, response: c.response, respondedAt: c.respondedAt,
       })),
