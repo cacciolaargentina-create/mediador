@@ -30,39 +30,63 @@
 <link rel="stylesheet" href="/styles/components.css">
 <link rel="stylesheet" href="/styles/layout.css">
 <link rel="stylesheet" href="/styles/responsive.css">
+<link rel="stylesheet" href="/styles/landing.css">
 <style>
-  .legal-header{ position:sticky; top:0; z-index:20; background:var(--color-surface); border-bottom:1px solid var(--color-border-light); }
+  html, body{ background:#0A0D0E; }
+  body{ min-height:100vh; }
+  .legal-header{ position:sticky; top:0; z-index:20; background:rgba(10,13,14,.78); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); border-bottom:1px solid var(--lp-glass-border); }
   .legal-header-inner{ max-width:760px; margin:0 auto; padding:16px 20px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
-  .legal-wrap{ max-width:760px; margin:0 auto; padding:40px 20px 24px; }
-  .legal-wrap h1{ margin-bottom:6px; }
-  .legal-wrap .updated{ font-family:var(--font-mono); font-size:11px; color:var(--color-text-muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:26px; }
-  .legal-wrap h2{ font-size:var(--font-size-lg); margin:28px 0 8px; }
-  .legal-wrap p, .legal-wrap li{ color:var(--color-text-secondary); line-height:1.7; }
+  .legal-wrap{ max-width:760px; margin:0 auto; padding:48px 20px 32px; }
+  .legal-wrap .breadcrumb{ font-size:12.5px; color:var(--lp-text-dim); margin-bottom:14px; }
+  .legal-wrap .breadcrumb a{ color:var(--lp-text-dim); }
+  .legal-wrap h1{ margin-bottom:6px; color:var(--lp-text); font-size:32px; letter-spacing:-.01em; }
+  .legal-wrap .updated{ font-family:var(--font-mono); font-size:11px; color:var(--lp-text-dim); text-transform:uppercase; letter-spacing:.05em; margin-bottom:26px; }
+  .legal-wrap h2{ font-size:var(--font-size-lg); margin:28px 0 8px; color:var(--lp-text); }
+  .legal-wrap h3{ font-size:15px; margin:18px 0 6px; color:var(--lp-text); }
+  .legal-wrap > p.lead{ color:var(--lp-text-dim); font-size:16px; line-height:1.6; max-width:640px; margin-bottom:32px; }
+  .legal-wrap p, .legal-wrap li{ color:var(--lp-text-dim); line-height:1.7; }
   .legal-wrap ul{ margin:0 0 12px 20px; padding:0; }
   .legal-wrap li{ margin-bottom:6px; }
-  .legal-wrap strong{ color:var(--color-text); }
-  .legal-note{ background:var(--color-warning-soft); border:1px solid var(--color-warning); color:#7A5310; border-radius:var(--radius-md); padding:12px 14px; font-size:13px; line-height:1.55; margin-bottom:28px; }
-  .legal-callout{ background:var(--color-brand-soft); border:1px solid var(--color-brand); border-radius:var(--radius-md); padding:16px 18px; margin:20px 0; }
-  .legal-callout .lab{ font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--color-brand-dark); margin-bottom:6px; font-weight:700; }
-  .legal-callout p{ margin-bottom:0; color:var(--color-text); }
-  .legal-danger{ background:var(--color-danger-soft); border:1px solid var(--color-danger); border-radius:var(--radius-md); padding:16px 18px; margin:20px 0; }
-  .legal-danger .lab{ font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--color-danger); margin-bottom:6px; font-weight:700; }
-  .legal-danger p{ margin-bottom:0; color:var(--color-text); }
-  .legal-footer{ border-top:1px solid var(--color-border-light); padding:24px 20px 20px; margin-top:32px; }
+  .legal-wrap strong{ color:var(--lp-text); }
+  .legal-wrap a{ color:var(--lp-accent); }
+  .legal-wrap table{ width:100%; border-collapse:collapse; margin:14px 0 20px; font-size:13px; }
+  .legal-wrap th, .legal-wrap td{ text-align:left; padding:9px 10px; border-bottom:1px solid var(--lp-glass-border); vertical-align:top; }
+  .legal-wrap th{ font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--lp-text-dim); font-weight:500; }
+  .legal-wrap td{ color:var(--lp-text-dim); }
+  .legal-note{ background:rgba(255,186,73,.12); border:1px solid rgba(255,186,73,.35); color:#FFD591; border-radius:var(--radius-md); padding:12px 14px; font-size:13px; line-height:1.55; margin-bottom:28px; }
+  .legal-callout{ background:var(--lp-accent-dim); border:1px solid rgba(34,199,184,.3); border-radius:var(--radius-md); padding:16px 18px; margin:20px 0; }
+  .legal-callout .lab{ font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--lp-accent); margin-bottom:6px; font-weight:700; }
+  .legal-callout p{ margin-bottom:0; color:var(--lp-text); }
+  .legal-danger{ background:rgba(255,92,92,.1); border:1px solid rgba(255,92,92,.35); border-radius:var(--radius-md); padding:16px 18px; margin:20px 0; }
+  .legal-danger .lab{ font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#FF8A8A; margin-bottom:6px; font-weight:700; }
+  .legal-danger p{ margin-bottom:0; color:var(--lp-text); }
+  .draft-banner{ background:repeating-linear-gradient(135deg, rgba(255,186,73,.12), rgba(255,186,73,.12) 10px, rgba(255,186,73,.05) 10px, rgba(255,186,73,.05) 20px); border:2px solid rgba(255,186,73,.4); border-radius:var(--radius-md); padding:14px 16px; margin-bottom:24px; }
+  .draft-banner .lab{ font-family:var(--font-mono); font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#FFD591; margin-bottom:4px; }
+  .draft-banner p{ margin:0; color:var(--lp-text); font-size:13.5px; line-height:1.5; }
+  .source-box{ background:var(--lp-glass); border:1px solid var(--lp-glass-border); border-radius:var(--radius-md); padding:10px 14px; font-size:12.5px; color:var(--lp-text-dim); margin:8px 0 20px; }
+  .source-box strong{ color:var(--lp-text); }
+  .recursos-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:16px; margin-bottom:32px; }
+  .recurso-card{ display:block; text-decoration:none; border:1px solid var(--lp-glass-border); border-radius:var(--radius-md); padding:18px; background:var(--lp-panel); transition:border-color .15s; }
+  .recurso-card:hover{ border-color:var(--lp-accent); }
+  .recurso-card .tag{ font-family:var(--font-mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--lp-accent); margin-bottom:6px; }
+  .recurso-card h2{ font-size:16px; margin:0 0 6px; color:var(--lp-text); }
+  .recurso-card p{ font-size:13.5px; color:var(--lp-text-dim); margin:0; line-height:1.5; }
+  .legal-footer{ border-top:1px solid var(--lp-glass-border); padding:24px 20px 20px; margin-top:32px; }
   .legal-footer-inner{ max-width:760px; margin:0 auto; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:14px; }
   .legal-footer-links{ display:flex; flex-wrap:wrap; gap:20px; }
-  .legal-footer-links a{ font-size:13px; color:var(--color-text-secondary); text-decoration:none; }
-  .legal-footer-links a:hover{ color:var(--color-text); }
-  .legal-disclaimer{ max-width:760px; margin:16px auto 0; font-size:11px; color:var(--color-text-muted); line-height:1.5; }
+  .legal-footer-links a{ font-size:13px; color:var(--lp-text-dim); text-decoration:none; }
+  .legal-footer-links a:hover{ color:var(--lp-text); }
+  .legal-disclaimer{ max-width:760px; margin:16px auto 0; font-size:11px; color:var(--lp-text-dim); line-height:1.5; }
 </style>
 </head>
 <body>
 <div class="mediador-app">
+<div class="lp-root">
 
   <header class="legal-header">
     <div class="legal-header-inner">
-      <a href="/" class="mediador-logo on-light"><img class="mediador-logo-mark" style="width:26px; height:26px;" src="/mediador-icon.svg" alt=""><span class="mediador-logo-text" style="font-size:16px;">Mediador</span></a>
-      <a href="/auth/google?next=/" class="btn btn-primary btn-sm" style="text-decoration:none;">Ingresar</a>
+      <a href="/" class="mediador-logo"><img class="mediador-logo-mark" style="width:26px; height:26px;" src="/mediador-icon.svg" alt=""><span class="mediador-logo-text" style="font-size:16px;">Mediador</span></a>
+      <a href="/auth/google?next=/" class="lp-nav-login">Ingresar</a>
     </div>
   </header>
 
@@ -114,7 +138,7 @@
 
   <footer class="legal-footer">
     <div class="legal-footer-inner">
-      <div class="mediador-logo on-light"><img class="mediador-logo-mark" style="width:22px; height:22px;" src="/mediador-icon.svg" alt=""><span class="mediador-logo-text" style="font-size:14px;">Mediador</span></div>
+      <div class="mediador-logo"><img class="mediador-logo-mark" style="width:22px; height:22px;" src="/mediador-icon.svg" alt=""><span class="mediador-logo-text" style="font-size:14px;">Mediador</span></div>
       <div class="legal-footer-links">
         <a href="/terminos.html">Términos y condiciones</a>
         <a href="/privacidad.html">Privacidad</a>
@@ -125,6 +149,7 @@
     <p class="legal-disclaimer">Mediador es una herramienta de gestión para mediadores y estudios jurídicos. No reemplaza a SIGIM ni a ningún sistema oficial de mediación, y no brinda asesoramiento legal.</p>
   </footer>
 
+</div>
 </div>
 </body>
 </html>
