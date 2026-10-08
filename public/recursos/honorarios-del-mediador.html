@@ -49,7 +49,7 @@
   .legal-wrap ul{ margin:0 0 12px 20px; padding:0; }
   .legal-wrap li{ margin-bottom:6px; }
   .legal-wrap strong{ color:var(--lp-text); }
-  .legal-wrap a{ color:var(--lp-accent); }
+  .legal-wrap a:not(.lp-btn){ color:var(--lp-accent); }
   .legal-wrap table{ width:100%; border-collapse:collapse; margin:14px 0 20px; font-size:13px; }
   .legal-wrap th, .legal-wrap td{ text-align:left; padding:9px 10px; border-bottom:1px solid var(--lp-glass-border); vertical-align:top; }
   .legal-wrap th{ font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--lp-text-dim); font-weight:500; }
@@ -58,6 +58,7 @@
   .legal-callout{ background:var(--lp-accent-dim); border:1px solid rgba(34,199,184,.3); border-radius:var(--radius-md); padding:16px 18px; margin:20px 0; }
   .legal-callout .lab{ font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--lp-accent); margin-bottom:6px; font-weight:700; }
   .legal-callout p{ margin-bottom:0; color:var(--lp-text); }
+  .legal-callout .lp-btn{ margin-top:10px; }
   .legal-danger{ background:rgba(255,92,92,.1); border:1px solid rgba(255,92,92,.35); border-radius:var(--radius-md); padding:16px 18px; margin:20px 0; }
   .legal-danger .lab{ font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#FF8A8A; margin-bottom:6px; font-weight:700; }
   .legal-danger p{ margin-bottom:0; color:var(--lp-text); }
@@ -145,7 +146,7 @@
     <div class="legal-callout">
       <div class="lab">Si ya tenés el caso cargado en Mediador</div>
       <p>La Calculadora de Honorarios de Mediador aplica esta misma escala automáticamente, con la fuente normativa citada en cada resultado — no hace falta buscar la tabla a mano cada vez.</p>
-      <a class="btn btn-primary btn-sm" href="/auth/google?next=/" style="text-decoration:none;">Empezar gratis</a>
+      <a class="lp-btn lp-btn-primary" href="/auth/google?next=/">Empezar gratis</a>
     </div>
   </div>
 
