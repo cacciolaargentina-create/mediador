@@ -3,7 +3,7 @@
 // (el backend en routes/admin-mediador.js es quien realmente protege cada
 // endpoint — esto es solo UX para no mostrar la pantalla a quien no puede
 // usarla igual).
-function escapeHtml(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escapeHtml(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
 // Bloque 46 — esta fmtDate se usa tanto con timestamps en ms (createdAt)
 // como con fechas sin hora 'YYYY-MM-DD' (nextActionDueDate, proximaAudiencia)
 // — las segundas parseaban como medianoche UTC y se corrían un día para

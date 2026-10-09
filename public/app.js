@@ -44,7 +44,7 @@ function otherPartyOf(info){
   return info.members.find(m => (m.role === 'A' || m.role === 'B') && (!m.user || m.user.id !== me.id));
 }
 
-function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escapeHtml(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
 function fmtTs(iso){ return new Date(iso).toLocaleString('es-AR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}); }
 // solo hora — para la hora chica dentro de cada burbuja del chat, donde
 // la fecha ya la da el separador de día (ver dateSeparatorLabel), no

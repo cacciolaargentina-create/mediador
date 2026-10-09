@@ -1,7 +1,7 @@
 // public/radar.js — Bloque 25. Panel interno del radar competitivo, mismo
 // patrón que admin.js (auth vía /auth/me + chequeo de admin, sin esto el
 // backend igual devuelve 403 en cada endpoint — esto es solo UX).
-function escapeHtml(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escapeHtml(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
 function fmtDate(ms){ return ms ? new Date(ms).toLocaleString('es-AR', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'}) : '—'; }
 
 async function api(path, opts){
