@@ -2548,11 +2548,12 @@ const HEARING_STATUS_LABELS = { programada: 'Programada', confirmada: 'Confirmad
 const CONFIRMATION_LABELS = { pendiente: 'Pendiente', confirma: 'Confirma', no_puede: 'No puede', pide_cambio: 'Pide cambio' };
 
 // ================= VIDEOCONFERENCIAS (Bloque 28) =================
+// Bloque 71 — zoom/teams quedan en el mapa de labels (audiencias viejas
+// podrían tener uno de los dos guardado) pero afuera de las opciones
+// seleccionables — ver el comentario largo en videoProviders/index.js.
 const VIDEO_PROVIDER_LABELS = { google_meet: 'Google Meet', zoom: 'Zoom', teams: 'Microsoft Teams', manual: 'Enlace manual' };
 const VIDEO_PROVIDER_OPTIONS = `
   <option value="google_meet">Google Meet</option>
-  <option value="zoom">Zoom</option>
-  <option value="teams">Microsoft Teams</option>
 `;
 const MEETING_STATUS_LABELS = {
   no_configurada: 'Sin configurar', creando: 'Creando…', creada: 'Reunión creada',
@@ -2743,7 +2744,7 @@ function renderHearingVideoCard(m, h){
       <div style="margin-top:8px; background:var(--surface-2); border-radius:8px; padding:10px 12px;">
         <div style="font-size:12px; color:var(--text-faint);">Videoconferencia no configurada</div>
         <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">
-          ${['google_meet','zoom','teams'].map(p => `<button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="createHearingMeetingNow('${m.id}','${h.id}','${p}')">Crear con ${VIDEO_PROVIDER_LABELS[p]}</button>`).join('')}
+          ${['google_meet'].map(p => `<button class="ghost" style="padding:4px 10px; font-size:11px;" onclick="createHearingMeetingNow('${m.id}','${h.id}','${p}')">Crear con ${VIDEO_PROVIDER_LABELS[p]}</button>`).join('')}
         </div>
       </div>
     `;
