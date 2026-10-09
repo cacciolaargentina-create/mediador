@@ -114,6 +114,21 @@ function updateCommsBadge(count){
   else { badge.style.display = 'none'; }
 }
 
+// Bloque 67 — fecha/hora actual en la topbar, referencia rápida de "hoy"
+// (pedido del usuario, pensado sobre todo como apoyo visual para el
+// campo opcional "Cuándo pasó" del cambio de Estado — Bloque 66). Un
+// solo setInterval por sesión de pantalla, se actualiza cada 30s — sobra
+// para un reloj que solo muestra minutos, nunca segundos.
+function updateTopbarClock(){
+  const el = document.getElementById('topbar-clock');
+  if(!el) return;
+  el.textContent = new Date().toLocaleString('es-AR', { weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit', hour12:false });
+}
+function startTopbarClock(){
+  updateTopbarClock();
+  setInterval(updateTopbarClock, 30000);
+}
+
 // Bloque 38 — buscador global de la topbar. En desktop el input está
 // siempre visible; en mobile el ícono lo abre como overlay (ver
 // responsive.css, .topbar-search-wrap.search-open). Reusa el MISMO
@@ -360,6 +375,7 @@ const NEXT_ACTION_RESPONSIBLE_LABELS = { mediador: 'Mediador/a', party: 'Una par
   }
   document.getElementById('app').style.display = 'block';
   renderAccountButton();
+  startTopbarClock();
   updateSidebarPlanCard();
   connectCommsSocket();
   initNotifications();

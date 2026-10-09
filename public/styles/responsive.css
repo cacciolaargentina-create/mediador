@@ -75,4 +75,5 @@
   .mediador-app .topbar.topbar-search-active .topbar-logo-mobile{ display: none; }
   .mediador-app .topbar.topbar-search-active .topbar-search-icon-btn{ display: none; }
   .mediador-app .topbar-bell-panel{ max-width: calc(100vw - 24px); }
+  .mediador-app .topbar-clock{ display: none; }
 }

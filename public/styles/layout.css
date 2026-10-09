@@ -102,6 +102,9 @@
 .mediador-app .topbar-search-backdrop{ position: fixed; top: 64px; left: 0; right: 0; bottom: 0; background: rgba(15,21,23,.4); z-index: 24; }
 
 .mediador-app .topbar-actions{ display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; margin-left: auto; position: relative; }
+/* Bloque 67 — fecha/hora actual, siempre a la vista en la topbar (ver
+   responsive.css: oculto en mobile, no entra). */
+.mediador-app .topbar-clock{ font-size: var(--font-size-sm); color: var(--color-text-secondary); white-space: nowrap; }
 .mediador-app .topbar-bell{ position: relative; width: 40px; height: 40px; border: none; background: none; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--color-text-secondary); }
 .mediador-app .topbar-bell:hover{ background: var(--color-surface-2); }
 .mediador-app .topbar-bell svg{ width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
