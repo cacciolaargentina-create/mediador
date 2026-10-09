@@ -2197,6 +2197,25 @@ module.exports = function (io, presence) {
     res.json(serializeLawyer(lawyer));
   });
 
+  // Bloque 68 — igual que PATCH /:id/parties/:partyId arriba: sin esto no
+  // había forma de corregir un dato cargado mal (o completar matrícula
+  // después) una vez creado el abogado — el "Auditor de expediente"
+  // podía marcar "Matrícula de los abogados" pendiente sin que hubiera
+  // ningún lugar desde donde cargarla.
+  router.patch('/:id/lawyers/:lawyerId', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
+    const db = getDB();
+    const lawyer = db.lawyers.find((l) => l.id === req.params.lawyerId && l.mediationId === req.mediation.id);
+    if (!lawyer) return res.status(404).json({ error: 'Abogado no encontrado en esta mediación' });
+    if (req.body?.partyId) {
+      const party = db.parties.find((p) => p.id === req.body.partyId && p.mediationId === req.mediation.id);
+      if (!party) return res.status(400).json({ error: 'La parte indicada no existe en esta mediación' });
+    }
+    const fields = ['partyId', 'name', 'enrollmentNumber', 'barAssociation', 'email', 'phone'];
+    for (const f of fields) if (req.body?.[f] !== undefined) lawyer[f] = req.body[f] || null;
+    await commit();
+    res.json(serializeLawyer(lawyer));
+  });
+
   // Portal de Abogados — genera (o reusa) el token del portal para este
   // abogado. "Evitar cuentas duplicadas para el mismo abogado": si ya
   // existe OTRO registro de abogado (en cualquier mediación) con el mismo

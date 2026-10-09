@@ -3321,6 +3321,7 @@ async function renderDetail(id){
             </div>
             <div style="display:flex; gap:6px; flex-shrink:0;">
               ${p.portalToken ? `<button class="ghost" style="padding:6px 10px; font-size:11px;" onclick="openPartyChat('${m.id}','${p.id}')">Mensajes</button>` : ''}
+              <button class="ghost" style="padding:6px 10px; font-size:11px;" onclick="toggleForm('edit-party-${p.id}')">Editar</button>
               <button class="ghost" style="padding:6px 10px; font-size:11px;" onclick="inviteParty('${m.id}','${p.id}')">
                 ${p.portalToken ? 'Reenviar portal' : 'Invitar al portal'}
               </button>
@@ -3332,6 +3333,32 @@ async function renderDetail(id){
               Permitir que suba documentos desde el portal
             </label>
           ` : ''}
+          <!-- Bloque 68 — antes no existía ninguna forma de corregir estos
+               datos ni de cargar el domicilio después de crear la parte
+               (el Auditor de expediente lo marcaba pendiente sin mandar a
+               ningún lado donde cargarlo). Mismos campos que "+ Agregar
+               parte" más Domicilio, que ni ahí estaba. -->
+          <div id="edit-party-${p.id}" style="display:none; margin-top:10px;">
+            <label>Rol</label>
+            <select id="edit-party-role-${p.id}">
+              <option value="requirente" ${p.role==='requirente'?'selected':''}>Requirente</option>
+              <option value="requerido" ${p.role==='requerido'?'selected':''}>Requerido</option>
+              <option value="otro" ${p.role==='otro'?'selected':''}>Otro</option>
+            </select>
+            <label>Nombre</label>
+            <input id="edit-party-first-name-${p.id}" value="${escapeHtml(p.firstName || '')}">
+            <label>Apellido</label>
+            <input id="edit-party-last-name-${p.id}" value="${escapeHtml(p.lastName || '')}">
+            <label>Documento</label>
+            <input id="edit-party-document-${p.id}" value="${escapeHtml(p.documentNumber || '')}">
+            <label>Email</label>
+            <input id="edit-party-email-${p.id}" value="${escapeHtml(p.email || '')}">
+            <label>Teléfono</label>
+            <input id="edit-party-phone-${p.id}" value="${escapeHtml(p.phone || '')}">
+            <label>Domicilio</label>
+            <input id="edit-party-address-${p.id}" value="${escapeHtml(p.address || '')}">
+            <button class="primary" style="width:100%;" onclick="saveEditedParty('${m.id}','${p.id}')">Guardar cambios</button>
+          </div>
           <div id="chat-${p.id}" style="display:none; margin-top:10px;"></div>
         </div>
       `).join('') : `<p class="empty-hint">Todavía no hay partes cargadas — agregá al menos una para poder programar audiencias.</p>`}
@@ -3370,9 +3397,28 @@ async function renderDetail(id){
               <strong>${escapeHtml(l.name)}</strong>${l.enrollmentNumber ? ` · Matrícula ${escapeHtml(l.enrollmentNumber)}` : ''}
               ${l.partyId ? `<br><span style="color:var(--text-faint);">Representa a ${escapeHtml(partyName(l.partyId))}</span>` : ''}
             </div>
-            <button class="ghost" style="flex-shrink:0; padding:6px 10px; font-size:11px;" onclick="inviteLawyer('${m.id}','${l.id}')">
-              ${l.portalToken ? 'Reenviar portal' : 'Invitar al portal'}
-            </button>
+            <div style="display:flex; gap:6px; flex-shrink:0;">
+              <button class="ghost" style="padding:6px 10px; font-size:11px;" onclick="toggleForm('edit-lawyer-${l.id}')">Editar</button>
+              <button class="ghost" style="padding:6px 10px; font-size:11px;" onclick="inviteLawyer('${m.id}','${l.id}')">
+                ${l.portalToken ? 'Reenviar portal' : 'Invitar al portal'}
+              </button>
+            </div>
+          </div>
+          <div id="edit-lawyer-${l.id}" style="display:none; margin-top:10px;">
+            <label>Email</label>
+            <input id="edit-lawyer-email-${l.id}" value="${escapeHtml(l.email || '')}">
+            <label>Nombre</label>
+            <input id="edit-lawyer-name-${l.id}" value="${escapeHtml(l.name || '')}">
+            <label>Matrícula</label>
+            <input id="edit-lawyer-enrollment-${l.id}" value="${escapeHtml(l.enrollmentNumber || '')}">
+            <label>Representa a</label>
+            <select id="edit-lawyer-party-${l.id}">
+              <option value="">— Sin asignar —</option>
+              ${parties.map(p => `<option value="${p.id}" ${l.partyId===p.id?'selected':''}>${escapeHtml(partyName(p.id))}</option>`).join('')}
+            </select>
+            <label>Teléfono</label>
+            <input id="edit-lawyer-phone-${l.id}" value="${escapeHtml(l.phone || '')}">
+            <button class="primary" style="width:100%;" onclick="saveEditedLawyer('${m.id}','${l.id}')">Guardar cambios</button>
           </div>
         </div>
       `).join('') : `<p class="empty-hint">Todavía no hay abogados cargados.</p>`}
@@ -4184,6 +4230,24 @@ async function addParty(mediationId, afterSave){
   }catch(e){ showToast(e.error || 'No se pudo guardar la parte.', 'danger'); }
 }
 
+async function saveEditedParty(mediationId, partyId){
+  const firstName = document.getElementById(`edit-party-first-name-${partyId}`).value.trim();
+  if(!firstName){ showToast('Falta el nombre de la parte.', 'danger'); return; }
+  try{
+    await api(`/api/mediations/${mediationId}/parties/${partyId}`, { method:'PATCH', body: JSON.stringify({
+      role: document.getElementById(`edit-party-role-${partyId}`).value,
+      firstName,
+      lastName: document.getElementById(`edit-party-last-name-${partyId}`).value.trim() || null,
+      documentNumber: document.getElementById(`edit-party-document-${partyId}`).value.trim() || null,
+      email: document.getElementById(`edit-party-email-${partyId}`).value.trim() || null,
+      phone: document.getElementById(`edit-party-phone-${partyId}`).value.trim() || null,
+      address: document.getElementById(`edit-party-address-${partyId}`).value.trim() || null,
+    })});
+    showToast('Parte actualizada.', 'success');
+    renderDetail(mediationId);
+  }catch(e){ showToast(e.error || 'No se pudo guardar los cambios.', 'danger'); }
+}
+
 async function sendLawyerInvite(mediationId, lawyerId){
   const result = await api(`/api/mediations/${mediationId}/lawyers/${lawyerId}/invite`, { method:'POST' });
   const fullUrl = location.origin + result.portalUrl;
@@ -4222,6 +4286,22 @@ async function addLawyer(mediationId, afterSave){
     if(afterSave) afterSave();
     else renderDetail(mediationId);
   }catch(e){ showToast(e.error || 'No se pudo guardar el abogado.', 'danger'); }
+}
+
+async function saveEditedLawyer(mediationId, lawyerId){
+  const name = document.getElementById(`edit-lawyer-name-${lawyerId}`).value.trim();
+  if(!name){ showToast('Falta el nombre del abogado.', 'danger'); return; }
+  try{
+    await api(`/api/mediations/${mediationId}/lawyers/${lawyerId}`, { method:'PATCH', body: JSON.stringify({
+      name,
+      enrollmentNumber: document.getElementById(`edit-lawyer-enrollment-${lawyerId}`).value.trim() || null,
+      partyId: document.getElementById(`edit-lawyer-party-${lawyerId}`).value || null,
+      email: document.getElementById(`edit-lawyer-email-${lawyerId}`).value.trim() || null,
+      phone: document.getElementById(`edit-lawyer-phone-${lawyerId}`).value.trim() || null,
+    })});
+    showToast('Abogado actualizado.', 'success');
+    renderDetail(mediationId);
+  }catch(e){ showToast(e.error || 'No se pudo guardar los cambios.', 'danger'); }
 }
 
 async function addHearing(mediationId, afterSave){
