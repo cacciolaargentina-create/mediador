@@ -119,6 +119,49 @@
 .mediador-app .card.agenda-day-empty h2{ font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--color-text-secondary); margin: 0; }
 .mediador-app .card.agenda-day-empty .empty-hint{ margin: 0; padding: 0; white-space: nowrap; }
 
+/* Bloque 65 — vista mes de Agenda: grilla real de calendario en desktop
+   (ver buildAgendaMonthGrid en mediador.js), oculta en mobile (ver
+   breakpoint 767px más abajo) donde en cambio se muestra
+   .agenda-month-list — la misma lista de cards que ya usa semana,
+   reusada 1:1 (buildAgendaDayList), porque 7 columnas no entran en
+   375px y no hay ningún "colapsa columnas" que sirva para días de la
+   semana (no se puede sacar ninguno). */
+.mediador-app .agenda-month-list{ display: none; }
+.mediador-app .agenda-month-weekdays{
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px;
+  text-align: center; font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary); padding: 6px 0; background: var(--color-surface);
+}
+.mediador-app .agenda-month-grid-wrap{ margin-bottom: var(--space-4); }
+.mediador-app .agenda-month-grid{
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px;
+  background: var(--color-border-light); border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg); overflow: hidden;
+}
+.mediador-app .month-cell{
+  background: var(--color-surface); min-height: 92px; padding: 6px 8px;
+  cursor: pointer; display: flex; flex-direction: column; gap: 3px;
+}
+.mediador-app .month-cell:hover{ background: var(--color-surface-2); }
+.mediador-app .month-cell-num{ font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); color: var(--color-text-secondary); }
+.mediador-app .month-cell-outside{ opacity: .45; }
+.mediador-app .month-cell-today .month-cell-num{
+  background: var(--color-brand); color: var(--color-sidebar);
+  width: 20px; height: 20px; border-radius: var(--radius-pill);
+  display: flex; align-items: center; justify-content: center;
+}
+.mediador-app .month-hearing-chip{
+  font-size: 10.5px; line-height: 1.3; background: var(--color-brand-soft); color: var(--color-text);
+  border-radius: var(--radius-sm); padding: 2px 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mediador-app .month-hearing-more{ font-size: 10.5px; color: var(--color-text-muted); padding: 0 5px; }
+@media (max-width: 767px){
+  /* una grilla de 7 columnas no entra en 375px — en mobile se ve la
+     lista (mismas cards que semana), nunca la grilla */
+  .mediador-app .agenda-month-grid-wrap{ display: none; }
+  .mediador-app .agenda-month-list{ display: block; }
+}
+
 /* card destacada — "Próxima acción" en el dashboard y el expediente */
 .mediador-app .card-highlight{
   background: var(--color-brand-soft); border: 1px solid var(--color-brand);

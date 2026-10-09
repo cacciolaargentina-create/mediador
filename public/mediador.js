@@ -1697,6 +1697,8 @@ async function revokeFromStudioView(mediationId, accessId){
 
 // ================= AGENDA =================
 const DAY_NAMES = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+const DAY_NAMES_SHORT = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom']; // Bloque 65 — encabezado de la grilla de Mes, siempre empieza lunes
+const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 let agendaState = { view: 'week', date: new Date().toISOString().slice(0,10), mediador:'', estado:'', modalidad:'', confirmacionPendiente:'' };
 
 function todayISO(){ return new Date().toISOString().slice(0,10); }
@@ -1718,12 +1720,19 @@ async function renderAgenda(){
   let studio = null;
   try{ studio = await api('/api/studios/me'); }catch(e){}
 
-  // agrupar por dia para la vista semanal
+  // agrupar por dia
   const byDate = {};
   data.hearings.forEach(h => { (byDate[h.date] = byDate[h.date] || []).push(h); });
-  const days = agendaState.view === 'week'
-    ? Array.from({length:7}, (_,i) => { const d = new Date(data.rangeStart+'T00:00:00Z'); d.setUTCDate(d.getUTCDate()+i); return d.toISOString().slice(0,10); })
-    : [agendaState.date];
+  // Bloque 65 — generalizado para que sirva tanto para semana (7 días)
+  // como para mes (28-42 días, el backend ya mandó el rango exacto,
+  // relleno hasta semanas enteras incluido) — antes estaba hardcodeado
+  // a 7 elementos, solo servía para semana.
+  const days = agendaState.view === 'day' ? [agendaState.date] : (() => {
+    const start = new Date(data.rangeStart+'T00:00:00Z');
+    const end = new Date(data.rangeEnd+'T00:00:00Z');
+    const count = Math.round((end - start) / 86400000) + 1;
+    return Array.from({length: count}, (_,i) => { const d = new Date(start); d.setUTCDate(d.getUTCDate()+i); return d.toISOString().slice(0,10); });
+  })();
 
   main.innerHTML = `
     <h1>Agenda</h1>
@@ -1731,13 +1740,14 @@ async function renderAgenda(){
       <div style="display:flex; gap:6px; margin-bottom:10px;">
         <button class="ghost" style="flex:1; ${agendaState.view==='day'?'background:var(--calm-dim); color:var(--calm);':''}" onclick="setAgendaView('day')">Día</button>
         <button class="ghost" style="flex:1; ${agendaState.view==='week'?'background:var(--calm-dim); color:var(--calm);':''}" onclick="setAgendaView('week')">Semana</button>
+        <button class="ghost" style="flex:1; ${agendaState.view==='month'?'background:var(--calm-dim); color:var(--calm);':''}" onclick="setAgendaView('month')">Mes</button>
       </div>
       <div style="display:flex; gap:6px; align-items:center;">
-        <button class="ghost" onclick="shiftAgendaDate(${agendaState.view==='week'?-7:-1})">←</button>
+        <button class="ghost" onclick="shiftAgenda(-1)">←</button>
         <input type="date" id="agenda-date" value="${agendaState.date}" onchange="jumpAgendaDate(this.value)" style="flex:1; margin:0;">
-        <button class="ghost" onclick="shiftAgendaDate(${agendaState.view==='week'?7:1})">→</button>
+        <button class="ghost" onclick="shiftAgenda(1)">→</button>
       </div>
-      <p class="empty-hint" style="margin-top:6px;">${data.rangeStart === data.rangeEnd ? fmtDate(data.rangeStart) : fmtDate(data.rangeStart) + ' – ' + fmtDate(data.rangeEnd)}</p>
+      <p class="empty-hint" style="margin-top:6px;">${agendaState.view==='month' ? `${MONTH_NAMES[Number(agendaState.date.slice(5,7))-1]} ${agendaState.date.slice(0,4)}` : (data.rangeStart === data.rangeEnd ? fmtDate(data.rangeStart) : fmtDate(data.rangeStart) + ' – ' + fmtDate(data.rangeEnd))}</p>
     </div>
 
     <div class="card">
@@ -1773,24 +1783,48 @@ async function renderAgenda(){
       </label>
     </div>
 
-    ${days.map(day => {
-      const hearingsOfDay = byDate[day] || [];
-      // Bloque 64 — en la vista semana, un día sin audiencias no necesita
-      // la misma card grande que uno con 3 audiencias: antes cada día
-      // vacío ocupaba el mismo alto que uno lleno, así que en una semana
-      // típica (2-3 audiencias de 7 días) había que scrollear varias
-      // cards vacías para llegar a la que importa. Colapsa a una fila
-      // angosta — sigue mostrando los 7 días (saber qué días están
-      // libres también sirve), pero sin dominar el scroll.
-      if (!hearingsOfDay.length) {
-        return `
+    ${agendaState.view === 'month' ? buildAgendaMonthGrid(days, byDate, agendaState.date) : ''}
+    ${agendaState.view === 'month' ? `<div class="agenda-month-list">${buildAgendaDayList(days, byDate)}</div>` : buildAgendaDayList(days, byDate)}
+
+    <div class="card">
+      <button class="primary" style="width:100%;" onclick="goTo('requests')">Solicitudes de cambio</button>
+    </div>
+
+    <div class="card">
+      <h2>Disponibilidad y bloqueos</h2>
+      <button class="ghost" style="width:100%;" onclick="toggleAvailabilityPanel()">Configurar</button>
+      <div id="availability-panel" style="display:none; margin-top:10px;"></div>
+    </div>
+  `;
+}
+
+const AGENDA_CONFIRMATION_LABELS = { todas:'Todas confirmaron', algunas:'Algunas confirmaron', ninguna:'Ninguna confirmó', pendientes:'Pendientes' };
+
+// Bloque 65 — la lista card-por-día que ya usaban Día y Semana, ahora
+// extraída a función aparte para poder reusarla TAL CUAL como vista
+// mobile de Mes (ver .agenda-month-list en components.css — en
+// desktop queda oculta, en mobile es lo único que se ve). Ningún
+// cambio de comportamiento para Día/Semana, es el mismo HTML de
+// siempre, solo movido.
+function buildAgendaDayList(days, byDate){
+  return days.map(day => {
+    const hearingsOfDay = byDate[day] || [];
+    // Bloque 64 — en la vista semana, un día sin audiencias no necesita
+    // la misma card grande que uno con 3 audiencias: antes cada día
+    // vacío ocupaba el mismo alto que uno lleno, así que en una semana
+    // típica (2-3 audiencias de 7 días) había que scrollear varias
+    // cards vacías para llegar a la que importa. Colapsa a una fila
+    // angosta — sigue mostrando los días (saber qué días están libres
+    // también sirve), pero sin dominar el scroll.
+    if (!hearingsOfDay.length) {
+      return `
       <div class="card agenda-day-empty">
         <h2>${DAY_NAMES[new Date(day+'T00:00:00Z').getUTCDay()]} ${fmtDate(day)}</h2>
         <span class="empty-hint">Sin audiencias</span>
       </div>
     `;
-      }
-      return `
+    }
+    return `
       <div class="card">
         <h2>${DAY_NAMES[new Date(day+'T00:00:00Z').getUTCDay()]} ${fmtDate(day)}</h2>
         ${hearingsOfDay.map(h => `
@@ -1815,30 +1849,75 @@ async function renderAgenda(){
         `).join('')}
       </div>
     `;
-    }).join('')}
+  }).join('');
+}
 
-    <div class="card">
-      <button class="primary" style="width:100%;" onclick="goTo('requests')">Solicitudes de cambio</button>
-    </div>
-
-    <div class="card">
-      <h2>Disponibilidad y bloqueos</h2>
-      <button class="ghost" style="width:100%;" onclick="toggleAvailabilityPanel()">Configurar</button>
-      <div id="availability-panel" style="display:none; margin-top:10px;"></div>
+// Bloque 65 — grilla real de calendario para la vista Mes (desktop,
+// ver components.css .agenda-month-grid — oculta en mobile). `days` ya
+// viene con el relleno de semanas completas que mandó el backend
+// (lunes antes del día 1 hasta domingo después del último). Click en
+// una celda (fuera de un chip de audiencia) lleva a la vista Día
+// completa de esa fecha vía openAgendaDay — nunca se intenta meter el
+// detalle entero de una audiencia adentro de una celda chica.
+function buildAgendaMonthGrid(days, byDate, anchorDate){
+  const anchorMonth = anchorDate.slice(0,7); // "YYYY-MM"
+  const today = todayISO();
+  const MAX_CHIPS = 3;
+  return `
+    <div class="agenda-month-grid-wrap">
+      <div class="agenda-month-weekdays">
+        ${DAY_NAMES_SHORT.map(n => `<div>${n}</div>`).join('')}
+      </div>
+      <div class="agenda-month-grid">
+        ${days.map(day => {
+          const hearingsOfDay = byDate[day] || [];
+          const isOutside = day.slice(0,7) !== anchorMonth;
+          const isToday = day === today;
+          const dayNum = Number(day.slice(8,10));
+          const shown = hearingsOfDay.slice(0, MAX_CHIPS);
+          const extra = hearingsOfDay.length - shown.length;
+          return `
+          <div class="month-cell ${isOutside?'month-cell-outside':''} ${isToday?'month-cell-today':''} ${!hearingsOfDay.length?'month-cell-empty':''}" onclick="openAgendaDay('${day}')">
+            <div class="month-cell-num">${dayNum}</div>
+            ${shown.map(h => `
+              <div class="month-hearing-chip" onclick="event.stopPropagation(); goTo('detail','${h.mediationId}')" title="${escapeHtml(h.mediationCode)} — ${escapeHtml(h.mediationObject)}">
+                ${h.startTime ? escapeHtml(h.startTime)+' ' : ''}${escapeHtml(h.mediationCode)}
+              </div>
+            `).join('')}
+            ${extra > 0 ? `<div class="month-hearing-more">+${extra} más</div>` : ''}
+          </div>
+        `;
+        }).join('')}
+      </div>
     </div>
   `;
 }
 
-const AGENDA_CONFIRMATION_LABELS = { todas:'Todas confirmaron', algunas:'Algunas confirmaron', ninguna:'Ninguna confirmó', pendientes:'Pendientes' };
-
 function setAgendaView(view){ agendaState.view = view; renderAgenda(); }
-function shiftAgendaDate(days){
-  const d = new Date(agendaState.date+'T00:00:00Z');
-  d.setUTCDate(d.getUTCDate()+days);
-  agendaState.date = d.toISOString().slice(0,10);
+// Bloque 65 — unifica la navegación prev/next: mes salta de mes
+// calendario completo (nunca una cantidad fija de días — un mes tiene
+// 28 a 31), día/semana siguen igual que siempre (±1 o ±7 días).
+function shiftAgenda(direction){
+  if(agendaState.view === 'month'){
+    const [y,m] = agendaState.date.split('-').map(Number);
+    // día 1 del mes destino, nunca el mismo día-del-mes (evita el bug
+    // clásico de "31 de enero + 1 mes" cayendo en marzo en vez de
+    // febrero) — para esta vista solo importa EN QUÉ MES estamos.
+    agendaState.date = new Date(Date.UTC(y, m-1+direction, 1)).toISOString().slice(0,10);
+  } else {
+    const amount = (agendaState.view === 'week' ? 7 : 1) * direction;
+    const d = new Date(agendaState.date+'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate()+amount);
+    agendaState.date = d.toISOString().slice(0,10);
+  }
   renderAgenda();
 }
 function jumpAgendaDate(value){ agendaState.date = value; renderAgenda(); }
+// Bloque 65 — click en una celda vacía (o en el número de día) de la
+// grilla de Mes: salta a la vista Día completa de esa fecha, en vez de
+// construir una segunda versión de la tarjeta de audiencia adentro de
+// una celda chica.
+function openAgendaDay(dateStr){ agendaState.view = 'day'; agendaState.date = dateStr; renderAgenda(); }
 function applyAgendaFilters(){
   const medField = document.getElementById('filter-ag-mediador');
   agendaState.mediador = medField ? medField.value : '';

@@ -50,6 +50,19 @@ function startOfWeek(yyyyMmDd) {
   const diffToMonday = dow === 0 ? -6 : 1 - dow;
   return addDays(yyyyMmDd, diffToMonday);
 }
+// Bloque 65 — vista "Mes" de la Agenda. Mismo idioma UTC que todo lo de
+// arriba, nunca Date local.
+function daysInMonth(year, monthIndex0based) {
+  return new Date(Date.UTC(year, monthIndex0based + 1, 0)).getUTCDate();
+}
+function startOfMonth(yyyyMmDd) {
+  const [y, m] = yyyyMmDd.split('-').map(Number);
+  return formatCalendarDate(new Date(Date.UTC(y, m - 1, 1)));
+}
+function endOfMonth(yyyyMmDd) {
+  const [y, m] = yyyyMmDd.split('-').map(Number);
+  return formatCalendarDate(new Date(Date.UTC(y, m - 1, daysInMonth(y, m - 1))));
+}
 
 module.exports = function () {
   const router = express.Router();
@@ -139,10 +152,23 @@ module.exports = function () {
   // bloqueos ni disponibilidad de otra persona, nunca mediaciones ajenas.
   router.get('/', requireAuth, (req, res) => {
     const db = getDB();
-    const view = req.query.view === 'week' ? 'week' : 'day';
+    const view = ['week', 'month'].includes(req.query.view) ? req.query.view : 'day';
     const baseDate = req.query.date || formatCalendarDate(new Date());
-    const rangeStart = view === 'week' ? startOfWeek(baseDate) : baseDate;
-    const rangeEnd = view === 'week' ? addDays(rangeStart, 6) : baseDate;
+    let rangeStart, rangeEnd;
+    if (view === 'week') {
+      rangeStart = startOfWeek(baseDate);
+      rangeEnd = addDays(rangeStart, 6);
+    } else if (view === 'month') {
+      // mes completo + relleno hasta semanas enteras (lunes antes del
+      // día 1, domingo después del último día) — así la grilla del
+      // frontend siempre es un múltiplo de 7 sin tener que calcular
+      // nada de eso del lado del cliente.
+      rangeStart = startOfWeek(startOfMonth(baseDate));
+      rangeEnd = addDays(startOfWeek(endOfMonth(baseDate)), 6);
+    } else {
+      rangeStart = baseDate;
+      rangeEnd = baseDate;
+    }
 
     const myMediations = getMyMediations(db, req.user);
     const myMediationIds = new Set(myMediations.map((m) => m.id));
