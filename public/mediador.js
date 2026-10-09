@@ -2217,22 +2217,57 @@ async function renderComunicaciones(q){
     <div class="card">
       <input id="comms-search" placeholder="Buscar mediación, parte, abogado o mensaje…" value="${escapeHtml(commsSearchQuery)}" onkeyup="if(event.key==='Enter') renderComunicaciones(document.getElementById('comms-search').value.trim())">
     </div>
-    <div class="card">
-      ${items.length ? items.map(c => `
-        <div class="alert-row" onclick="openMediationConversation('${c.mediationId}','${c.type}',${c.participantId ? `'${c.participantId}'` : 'null'})" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-          <div style="min-width:0;">
-            <div style="font-weight:600; font-size:13.5px;">${escapeHtml(c.mediationCode)} — ${escapeHtml(c.participantName)}</div>
-            <div class="code" style="margin-top:0;">${escapeHtml(c.mediationObject)}</div>
-            <div style="font-size:12.5px; color:var(--text-dim); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">"${escapeHtml(c.lastMessage.text)}" · ${fmtRelativeTime(c.lastMessage.createdAt)}</div>
-          </div>
-          <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
-            ${c.unreadCount ? `<span class="pill warn">${c.unreadCount}</span>` : ''}
-            <span style="font-size:12px; font-weight:600; color:var(--calm);">Entrar al chat</span>
-          </div>
-        </div>
-      `).join('') : `<p class="empty-hint">${commsSearchQuery ? 'No hay conversaciones que coincidan con la búsqueda.' : 'Todavía no hay conversaciones con mensajes.'}</p>`}
+    <div class="card" id="comms-inbox-list">${renderInboxList(items)}</div>
+    <div id="communications-chat" style="margin-top:10px;"></div>
+  `;
+}
+
+// Bloque 72 — antes, tocar una conversación acá te mandaba a la ficha
+// completa de ESA mediación (página distinta, scroll hasta Comunicaciones)
+// — para pasar de un chat a otro de OTRA mediación había que repetir todo
+// el viaje. Ahora el chat se abre ahí mismo, en esta pantalla: cambiar de
+// conversación (sea de la misma mediación o de otra) es un solo click,
+// nunca una navegación nueva. Reusa openConversation/loadConversation/
+// sendConversationMessage tal cual (mismo <div id="communications-chat">
+// que usa la ficha de mediación) — lo único que no podían asumir es
+// currentDocuments ya cargado para la mediación correcta, así que se
+// refresca acá antes de abrir.
+function renderInboxList(items){
+  if(!items.length) return `<p class="empty-hint">${commsSearchQuery ? 'No hay conversaciones que coincidan con la búsqueda.' : 'Todavía no hay conversaciones con mensajes.'}</p>`;
+  return items.map(c => {
+    const isOpen = currentConversation && currentConversation.mediationId === c.mediationId && currentConversation.type === c.type && currentConversation.participantId === c.participantId;
+    return `
+    <div class="alert-row" style="display:flex; justify-content:space-between; align-items:center; gap:10px; cursor:pointer; ${isOpen ? 'background:var(--color-brand-soft);' : ''}" onclick="openInboxConversation('${c.mediationId}','${c.type}',${c.participantId ? `'${c.participantId}'` : 'null'},${c.channelCode ? `'${c.channelCode}'` : 'null'})">
+      <div style="min-width:0;">
+        <div style="font-weight:600; font-size:13.5px;">${escapeHtml(c.mediationCode)} — ${escapeHtml(c.participantName)}</div>
+        <div class="code" style="margin-top:0;">${escapeHtml(c.mediationObject)}</div>
+        <div style="font-size:12.5px; color:var(--text-dim); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">"${escapeHtml(c.lastMessage.text)}" · ${fmtRelativeTime(c.lastMessage.createdAt)}</div>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+        ${c.unreadCount ? `<span class="pill warn">${c.unreadCount}</span>` : ''}
+        <span style="font-size:12px; font-weight:600; color:var(--calm);">${isOpen ? 'Abierto' : 'Entrar al chat'}</span>
+      </div>
     </div>
   `;
+  }).join('');
+}
+
+async function openInboxConversation(mediationId, type, participantId, code){
+  // currentDocuments queda compartido con la ficha de mediación (para el
+  // selector de "adjuntar documento") — si el mediador venía de otra
+  // mediación o de ninguna, hay que traer los documentos de ESTA antes de
+  // abrir, si no el desplegable mostraría los de otro expediente.
+  try{ currentDocuments = await api(`/api/mediations/${mediationId}/documents`); }
+  catch(e){ currentDocuments = []; }
+  await openConversation(mediationId, type, participantId, code);
+  try{
+    const params = new URLSearchParams();
+    if(commsSearchQuery) params.set('q', commsSearchQuery);
+    params.set('limit', '30');
+    const items = await api('/api/mediations/inbox?' + params.toString());
+    document.getElementById('comms-inbox-list').innerHTML = renderInboxList(items);
+    updateCommsBadge(items.reduce((sum, c) => sum + (c.unreadCount || 0), 0));
+  }catch(e){ /* la conversación ya se abrió igual; solo no se refrescó la lista */ }
 }
 
 async function renderTeam(){
@@ -3292,6 +3327,13 @@ async function renderDetail(id){
       <nav class="detail-subnav">
         <span class="detail-subnav-code" title="${escapeHtml(m.object)}">${escapeHtml(m.code)}</span>
         <a href="#section-partes">Partes</a>
+        <!-- Bloque 72 — Comunicaciones (el chat con partes/abogados, lo que
+             más se usa día a día) quedaba 6ta de 10, después de Documentos
+             — había que scrollear más de media pantalla para llegar. La
+             movemos justo después de Partes (necesitás saber quiénes son
+             antes de poder escribirles). Mismo criterio que Administración
+             en Bloque 66. -->
+        <a href="#section-comunicaciones">Comunicaciones</a>
         <!-- Bloque 66 — Administración (cambio de Estado, lo que más se usa
              día a día) quedaba último en una barra que scrollea horizontal
              sin ninguna pista visual de que hay más — invisible en la
@@ -3302,7 +3344,6 @@ async function renderDetail(id){
         <a href="#section-abogados">Abogados</a>
         <a href="#section-audiencias">Audiencias</a>
         <a href="#section-documentos">Documentos</a>
-        <a href="#section-comunicaciones">Comunicaciones</a>
         <a href="#section-tareas">Tareas</a>
         <a href="#section-compromisos">Compromisos</a>
         <a href="#section-plazos">Plazos</a>
@@ -3387,6 +3428,16 @@ async function renderDetail(id){
         </label>
         <button class="primary" style="width:100%;" onclick="addParty('${m.id}')">Guardar parte</button>
       </div>
+    </div>
+
+    <!-- Bloque 72 — movida de después de Documentos a acá, ver el
+         comentario largo en el subnav de arriba. -->
+    <div class="card" id="section-comunicaciones">
+      <h2>Comunicaciones</h2>
+      <p class="empty-hint" style="margin-top:-4px; margin-bottom:10px;">Qué se dijo, quién lo dijo y a quién estaba dirigido — separado del Timeline, que es lo que pasó operativamente.</p>
+      ${renderHearingBanner(m.code, hearings)}
+      <div id="communications-list">${renderCommunicationsList(m.id, communications)}</div>
+      <div id="communications-chat" style="margin-top:10px;"></div>
     </div>
 
     <div class="card" id="section-abogados">
@@ -3548,14 +3599,6 @@ async function renderDetail(id){
         </select>
         <button class="primary" style="width:100%;" onclick="uploadDocument('${m.id}')" id="upload-btn">Subir</button>
       </div>
-    </div>
-
-    <div class="card" id="section-comunicaciones">
-      <h2>Comunicaciones</h2>
-      <p class="empty-hint" style="margin-top:-4px; margin-bottom:10px;">Qué se dijo, quién lo dijo y a quién estaba dirigido — separado del Timeline, que es lo que pasó operativamente.</p>
-      ${renderHearingBanner(m.code, hearings)}
-      <div id="communications-list">${renderCommunicationsList(m.id, communications)}</div>
-      <div id="communications-chat" style="margin-top:10px;"></div>
     </div>
 
     <div class="card" id="section-tareas">
@@ -3794,6 +3837,19 @@ async function renderDetail(id){
     </div>
     `}
   `;
+
+  // Bloque 72 — Comunicaciones ya quedó más arriba en la página (ver el
+  // subnav), pero igual hacía falta un click extra para elegir CUÁL
+  // conversación abrir. Se abre sola la que más necesita atención (más
+  // mensajes sin leer; si ninguna tiene, la más reciente) — mismo criterio
+  // que ya usan openMediationConversation/openInboxConversation cuando se
+  // entra desde el Dashboard o la bandeja global.
+  if(communications && communications.length){
+    const best = communications.slice().sort((a, b) =>
+      (b.unreadCount || 0) - (a.unreadCount || 0) || (b.lastMessage?.createdAt || 0) - (a.lastMessage?.createdAt || 0)
+    )[0];
+    openConversation(m.id, best.type, best.participantId, best.code);
+  }
 }
 async function saveReminderSettings(id){
   try{
@@ -4096,10 +4152,27 @@ async function sendConversationMessage(){
     });
     docSelect.value = '';
     await loadConversation();
-    // refresca la lista de conversaciones (último mensaje / no-leídos) sin
-    // recargar todo el expediente.
-    const list = await api(`/api/mediations/${currentConversation.mediationId}/communications`);
-    document.getElementById('communications-list').innerHTML = renderCommunicationsList(currentConversation.mediationId, list);
+    // Bloque 72 — este mismo #communications-chat ahora lo usan DOS
+    // pantallas (la ficha de una mediación y la bandeja global de
+    // Comunicaciones), cada una con su propia lista a refrescar. Antes
+    // esto asumía que siempre era la ficha (#communications-list) — desde
+    // la bandeja global ese id no existe, tirar sobre null rompía todo el
+    // catch de abajo y el mensaje quedaba mostrado como "no se pudo
+    // enviar" aunque sí se había mandado.
+    const perMediationList = document.getElementById('communications-list');
+    if(perMediationList){
+      const list = await api(`/api/mediations/${currentConversation.mediationId}/communications`);
+      perMediationList.innerHTML = renderCommunicationsList(currentConversation.mediationId, list);
+    }
+    const inboxList = document.getElementById('comms-inbox-list');
+    if(inboxList){
+      const params = new URLSearchParams();
+      if(commsSearchQuery) params.set('q', commsSearchQuery);
+      params.set('limit', '30');
+      const items = await api('/api/mediations/inbox?' + params.toString());
+      inboxList.innerHTML = renderInboxList(items);
+      updateCommsBadge(items.reduce((sum, c) => sum + (c.unreadCount || 0), 0));
+    }
   }catch(e){ showToast(e.error || 'No se pudo enviar el mensaje.', 'danger'); }
 }
 
