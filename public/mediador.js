@@ -1773,10 +1773,27 @@ async function renderAgenda(){
       </label>
     </div>
 
-    ${days.map(day => `
+    ${days.map(day => {
+      const hearingsOfDay = byDate[day] || [];
+      // Bloque 64 — en la vista semana, un día sin audiencias no necesita
+      // la misma card grande que uno con 3 audiencias: antes cada día
+      // vacío ocupaba el mismo alto que uno lleno, así que en una semana
+      // típica (2-3 audiencias de 7 días) había que scrollear varias
+      // cards vacías para llegar a la que importa. Colapsa a una fila
+      // angosta — sigue mostrando los 7 días (saber qué días están
+      // libres también sirve), pero sin dominar el scroll.
+      if (!hearingsOfDay.length) {
+        return `
+      <div class="card agenda-day-empty">
+        <h2>${DAY_NAMES[new Date(day+'T00:00:00Z').getUTCDay()]} ${fmtDate(day)}</h2>
+        <span class="empty-hint">Sin audiencias</span>
+      </div>
+    `;
+      }
+      return `
       <div class="card">
         <h2>${DAY_NAMES[new Date(day+'T00:00:00Z').getUTCDay()]} ${fmtDate(day)}</h2>
-        ${(byDate[day]||[]).length ? byDate[day].map(h => `
+        ${hearingsOfDay.map(h => `
           <div class="status-history-item" style="cursor:pointer;" onclick="goTo('detail','${h.mediationId}')">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <strong>${h.startTime || '—'}${h.endTime ? '–'+h.endTime : ''}</strong>
@@ -1795,9 +1812,10 @@ async function renderAgenda(){
               <button class="ghost btn-sm" onclick="openMediationSection('${h.mediationId}','comunicaciones')">Chat</button>
             </div>
           </div>
-        `).join('') : `<p class="empty-hint">Sin audiencias.</p>`}
+        `).join('')}
       </div>
-    `).join('')}
+    `;
+    }).join('')}
 
     <div class="card">
       <button class="primary" style="width:100%;" onclick="goTo('requests')">Solicitudes de cambio</button>

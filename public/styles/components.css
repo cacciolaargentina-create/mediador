@@ -108,6 +108,17 @@
 }
 .mediador-app .card-flush{ padding: 0; overflow: hidden; }
 
+/* Bloque 64 — vista semana de Agenda: un día sin audiencias no necesita
+   la misma card grande que uno con audiencias cargadas (ver mediador.js,
+   sección Agenda) — colapsa a una fila angosta en vez de ocupar el mismo
+   alto que un día lleno. */
+.mediador-app .card.agenda-day-empty{
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+  padding: var(--space-3) var(--space-5); margin-bottom: var(--space-2);
+}
+.mediador-app .card.agenda-day-empty h2{ font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--color-text-secondary); margin: 0; }
+.mediador-app .card.agenda-day-empty .empty-hint{ margin: 0; padding: 0; white-space: nowrap; }
+
 /* card destacada — "Próxima acción" en el dashboard y el expediente */
 .mediador-app .card-highlight{
   background: var(--color-brand-soft); border: 1px solid var(--color-brand);
