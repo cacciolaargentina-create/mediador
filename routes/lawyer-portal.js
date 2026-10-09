@@ -200,10 +200,18 @@ module.exports = function (io) {
     // comentario en routes/party-portal.js.
     const lawyerThread = db.channels.find((c) => c.mediationId === mediation.id && c.lawyerId === req.lawyer.id);
 
+    // Bloque 61 — tareas DELEGADAS a este abogado puntual (nunca las
+    // internas del equipo mediador, ni las de otro abogado/parte) — mismo
+    // criterio y mismo subconjunto de campos que ya usa party-portal.js.
+    const tasks = db.tasks
+      .filter((t) => t.mediationId === mediation.id && t.assignedToLawyerId === req.lawyer.id && t.status !== 'cancelada')
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((t) => ({ id: t.id, title: t.title, description: t.description, dueDate: t.dueDate, priority: t.priority, status: t.status }));
+
     res.json({
       mediationCode: mediation.code, mediationObject: mediation.object, mediationStatus: mediation.status,
       partyName: partyDisplayName(db, party.id), allowDocumentUpload: party.allowDocumentUpload !== false,
-      hearings, commitments, documents, timeline,
+      hearings, commitments, documents, tasks, timeline,
       channelCode: lawyerThread ? lawyerThread.code : null,
     });
   });
@@ -269,6 +277,29 @@ module.exports = function (io) {
     }
     await commit();
     res.json({ id: confirmation.id, response: confirmation.response, rescheduleRequestId: rescheduleRequest ? rescheduleRequest.id : null });
+  });
+
+  // ---------- marcar una tarea propia como realizada ----------
+  // Bloque 61 — mismo criterio que el equivalente en party-portal.js: el
+  // abogado solo puede tocar el `status` de UNA tarea que le fue
+  // explícitamente delegada (assignedToLawyerId===req.lawyer.id) en ESTA
+  // mediación — nunca una tarea interna del equipo mediador, ni de otro
+  // abogado, ni de una parte, ni de otra mediación.
+  router.post('/:token/mediations/:mediationId/tasks/:taskId/complete', portalLimiter, resolveLawyer, resolveLawyerMediation, async (req, res) => {
+    const db = getDB();
+    const task = db.tasks.find((t) => t.id === req.params.taskId && t.mediationId === req.mediation.id && t.assignedToLawyerId === req.lawyer.id);
+    if (!task) return res.status(404).json({ error: 'Tarea no encontrada' });
+    if (task.status !== 'completada') {
+      task.status = 'completada';
+      task.completedAt = Date.now();
+      logMediationEvent(db, {
+        mediationId: req.mediation.id, type: 'TASK_COMPLETED', actorId: null,
+        entityType: 'task', entityId: task.id,
+        title: `Tarea completada por ${req.lawyer.name}: ${task.title}`,
+      });
+      await commit();
+    }
+    res.json({ id: task.id, status: task.status });
   });
 
   // ---------- documentos ----------

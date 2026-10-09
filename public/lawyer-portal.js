@@ -93,6 +93,8 @@ function showToast(message, kind){
 const CONFIRM_LABELS = { confirma:'Confirmó', no_puede:'Avisó que no puede', pide_cambio:'Pidió un cambio' };
 const REQUEST_STATUS_LABELS = { pendiente:'Esperando respuesta del mediador/a', aceptada:'Aceptado — se reprogramó', rechazada:'No se pudo hacer el cambio', resuelta:'Resuelto sin cambio' };
 const COMMITMENT_STATUS_LABELS = { pendiente:'Pendiente', cumplido:'Cumplido', vencido:'Vencido', cancelado:'Cancelado' };
+// Bloque 61 — mismo mapa que ya usa public/portal.js para "Tareas para vos".
+const TASK_PRIORITY_LABELS = { baja:'Baja', media:'Media', alta:'Alta', urgente:'Urgente' };
 const DOCUMENT_STATUS_LABELS = { pendiente_escaneo:'En revisión', recibido:'Recibido', pendiente_revision:'En revisión', revisado:'Revisado', observado:'Observado — requiere corrección', final:'Aprobado' };
 // Bloque 28 §13 — solo el nombre del proveedor, nunca hostUrl/credenciales.
 const VIDEO_PROVIDER_LABELS = { google_meet:'Google Meet', zoom:'Zoom', teams:'Microsoft Teams', manual:'enlace de reunión' };
@@ -225,6 +227,23 @@ async function renderDetail(mediationId){
       `).join('') : `<p class="empty-hint">No hay audiencias agendadas por ahora.</p>`}
     </div>
 
+    ${data.tasks && data.tasks.length ? `
+    <div class="card">
+      <h2>Tareas</h2>
+      ${data.tasks.map(t => `
+        <div class="item" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+          <div>
+            <strong>${escapeHtml(t.title)}</strong>${t.dueDate ? ` · vence ${fmtDate(t.dueDate)}` : ''}
+            <br><span class="pill ${t.priority === 'urgente' || t.priority === 'alta' ? 'danger' : 'calm'}">${TASK_PRIORITY_LABELS[t.priority] || t.priority}</span>
+          </div>
+          ${t.status === 'completada'
+            ? `<span class="pill calm">Realizada</span>`
+            : `<button class="primary" onclick="completeTask('${mediationId}','${t.id}')">Marcar realizada</button>`}
+        </div>
+      `).join('')}
+    </div>
+    ` : ''}
+
     <div class="card">
       <h2>Compromisos de tu representado/a</h2>
       ${data.commitments.length ? data.commitments.map(c => `
@@ -345,6 +364,14 @@ async function confirmHearing(mediationId, hearingId, response){
     await api(`/api/lawyer-portal/${token}/mediations/${mediationId}/hearings/${hearingId}/confirm`, { method:'POST', body: JSON.stringify({ response }) });
     renderDetail(mediationId);
   }catch(e){ showToast(e.error || 'No se pudo registrar la respuesta.', 'danger'); }
+}
+
+// Bloque 61 — mismo patrón que completeTask en public/portal.js.
+async function completeTask(mediationId, taskId){
+  try{
+    await api(`/api/lawyer-portal/${token}/mediations/${mediationId}/tasks/${taskId}/complete`, { method:'POST' });
+    renderDetail(mediationId);
+  }catch(e){ showToast(e.error || 'No se pudo marcar la tarea.', 'danger'); }
 }
 
 function togglePideCambioForm(hearingId){

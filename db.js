@@ -68,7 +68,7 @@ const EMPTY_DB = {
 
   // ===== Bloque 6. Ver IMPLEMENTATION_PLAN.md §3.10/3.11/3.8/3.9 =====
   mediationEvents: [], // { id, mediationId, type, actorId|null, visibility:'public'|'mediator_only', entityType, entityId, title, description, metadata|null, causedByEventId|null, createdAt }
-  tasks: [], // { id, mediationId, assignedTo, title, description, dueDate, priority:'baja'|'media'|'alta'|'urgente', status:'pendiente'|'en_proceso'|'completada'|'cancelada', createdBy, completedAt, createdAt, sourceMessageId|null, sourceDocumentId|null, assignedToPartyId|null } — sourceDocumentId (Bloque 22 automatización): igual que sourceMessageId pero para "documento recibido → ¿crear tarea de revisión?"; sirve para no duplicar la sugerencia si ya existe una tarea activa para ese documento. assignedToPartyId (Bloque 31): si está seteada, la tarea es de UNA parte (visible/completable desde su portal, ver routes/party-portal.js) en vez de del equipo mediador — mutuamente excluyente en la práctica con assignedTo, aunque el campo no se borra
+  tasks: [], // { id, mediationId, assignedTo, title, description, dueDate, priority:'baja'|'media'|'alta'|'urgente', status:'pendiente'|'en_proceso'|'completada'|'cancelada', createdBy, completedAt, createdAt, sourceMessageId|null, sourceDocumentId|null, assignedToPartyId|null, assignedToLawyerId|null } — sourceDocumentId (Bloque 22 automatización): igual que sourceMessageId pero para "documento recibido → ¿crear tarea de revisión?"; sirve para no duplicar la sugerencia si ya existe una tarea activa para ese documento. assignedToPartyId (Bloque 31): si está seteada, la tarea es de UNA parte (visible/completable desde su portal, ver routes/party-portal.js) en vez de del equipo mediador — mutuamente excluyente en la práctica con assignedTo, aunque el campo no se borra. assignedToLawyerId (Bloque 61): mismo mecanismo, para UN abogado (ver routes/lawyer-portal.js) — mutuamente excluyente con assignedToPartyId, validado al crear la tarea
   attentionDismissals: [], // { id, mediationId, alertType, refId, dismissedBy, dismissedAt } — "descartar alerta" del centro de atención (Bloque 22 automatización). alertType+refId identifican la situación puntual (ej. alertType:'partyNoResponse', refId:partyId) — nunca borra el dato subyacente, solo oculta la alerta hasta que la situación cambie de verdad (ver automationEngine.js)
   commitments: [], // { id, mediationId, partyId, description, dueDate, status:'pendiente'|'cumplido'|'vencido'|'cancelado', createdFromEventId|null, completedAt, createdAt, sourceMessageId|null, notes|null, documentId|null } — notes/documentId (Bloque 31): observaciones libres y evidencia — documentId apunta a un documento YA existente de la mediación, nunca un adjunto nuevo (mismo patrón que messages.documentId)
 
@@ -730,6 +730,12 @@ function openDb() {
   // interna de siempre, cero cambio de comportamiento. Con esto la parte
   // puede verla y marcarla realizada desde su portal (routes/party-portal.js).
   ensureColumns(sqlite, 'tasks', { assignedToPartyId: 'TEXT' });
+  // Bloque 61 — mismo mecanismo que assignedToPartyId, pero para delegar
+  // una tarea a un ABOGADO (ve/completa desde routes/lawyer-portal.js).
+  // NULL = sin cambio de comportamiento. Mutuamente excluyente con
+  // assignedToPartyId en la práctica (routes/mediations.js lo valida al
+  // crear la tarea), igual que assignedToPartyId lo es con assignedTo.
+  ensureColumns(sqlite, 'tasks', { assignedToLawyerId: 'TEXT' });
   // Bloque 32 §2 — "revisar" un documento era solo cambiar un estado; sin
   // esto la parte nunca se enteraba de POR QUÉ algo quedó "observado".
   // NULL en todo documento existente = sin comentario, cero cambio de

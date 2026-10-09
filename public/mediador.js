@@ -2416,6 +2416,7 @@ async function createMediation(){
 
 // ================= EXPEDIENTE (detalle) =================
 let currentParties = []; // cache para no tener que resolver nombre de parte a mano en cada lugar que lo necesita (abogados, confirmaciones de audiencia)
+let currentLawyers = []; // Bloque 61 — mismo motivo que currentParties, para asignar/mostrar tareas delegadas a un abogado
 let currentDocuments = []; // Bloque 19 — para el selector de "adjuntar documento existente" en Comunicaciones, sin otro fetch
 let currentHearings = []; // Bloque 19 — para el selector de audiencia en "Gestionar cambio" desde un mensaje
 let currentPlazos = null; // Bloque 43 — respuesta de GET .../legal-tools/plazos, cacheada para los formularios de la sección Plazos
@@ -2747,6 +2748,11 @@ function partyName(partyId){
   const p = currentParties.find(x => x.id === partyId);
   if(!p) return '—';
   return p.legalName || `${p.firstName || ''} ${p.lastName || ''}`.trim() || '—';
+}
+// Bloque 61 — mismo criterio que partyName.
+function lawyerName(lawyerId){
+  const l = currentLawyers.find(x => x.id === lawyerId);
+  return (l && l.name) || '—';
 }
 
 // ================= Bloque 43 — Motor de Plazos Legales =================
@@ -3087,6 +3093,7 @@ async function renderDetail(id){
   }catch(e){ main.innerHTML = `<p class="empty-hint">${escapeHtml(e.error || 'No se pudo cargar la mediación.')}</p><button class="ghost" onclick="renderDetail('${id}')">Reintentar</button>`; return; }
   try{ myStudio = await api('/api/studios/me'); }catch(e){ myStudio = null; }
   currentParties = parties;
+  currentLawyers = lawyers;
   currentDocuments = documents;
   currentHearings = hearings;
   currentTimelineFull = timeline;
@@ -3385,6 +3392,7 @@ async function renderDetail(id){
               ${t.dueDate ? ` · vence ${fmtDate(t.dueDate)}` : ''}
               <br><span class="pill ${t.priority === 'urgente' || t.priority === 'alta' ? 'danger' : 'calm'}">${TASK_PRIORITY_LABELS[t.priority]}</span>
               ${t.assignedToPartyId ? `<span class="pill calm">Responsable: ${escapeHtml(partyName(t.assignedToPartyId))}</span>` : ''}
+              ${t.assignedToLawyerId ? `<span class="pill calm">Responsable: ${escapeHtml(lawyerName(t.assignedToLawyerId))}</span>` : ''}
             </div>
             <select onchange="changeTaskStatus('${m.id}','${t.id}',this.value)" style="width:auto; margin:0;">
               ${Object.keys(TASK_STATUS_LABELS).map(s => `<option value="${s}" ${s===t.status?'selected':''}>${TASK_STATUS_LABELS[s]}</option>`).join('')}
@@ -3405,9 +3413,10 @@ async function renderDetail(id){
         <label>Responsable</label>
         <select id="task-assignee">
           <option value="">Vos (equipo mediador)</option>
-          ${parties.map(p => `<option value="${p.id}">${escapeHtml(partyName(p.id))}</option>`).join('')}
+          ${parties.length ? `<optgroup label="Partes">${parties.map(p => `<option value="party:${p.id}">${escapeHtml(partyName(p.id))}</option>`).join('')}</optgroup>` : ''}
+          ${lawyers.length ? `<optgroup label="Abogados">${lawyers.map(l => `<option value="lawyer:${l.id}">${escapeHtml(lawyerName(l.id))}</option>`).join('')}</optgroup>` : ''}
         </select>
-        ${parties.length ? `<p class="empty-hint" style="margin-top:-4px;">Si elegís una parte, la tarea aparece en su portal y la puede marcar realizada ella misma.</p>` : ''}
+        ${parties.length || lawyers.length ? `<p class="empty-hint" style="margin-top:-4px;">Si elegís una parte o un abogado, la tarea aparece en su portal y la puede marcar realizada ella/él mismo/a.</p>` : ''}
         <button class="primary" style="width:100%;" onclick="addTask('${m.id}')">Guardar tarea</button>
       </div>
     </div>
@@ -4577,12 +4586,18 @@ let pendingSourceDocumentId = null;
 async function addTask(mediationId){
   const title = document.getElementById('task-title').value.trim();
   if(!title){ showToast('Falta el título de la tarea.', 'danger'); return; }
+  // Bloque 61 — el select trae el tipo codificado en el value ("party:ID"
+  // / "lawyer:ID") porque es un único <select> para los dos, nunca los dos
+  // campos a la vez.
+  const assigneeValue = document.getElementById('task-assignee')?.value || '';
+  const [assigneeType, assigneeId] = assigneeValue.includes(':') ? assigneeValue.split(':') : [null, null];
   try{
     const result = await api(`/api/mediations/${mediationId}/tasks`, { method:'POST', body: JSON.stringify({
       title,
       dueDate: document.getElementById('task-due').value || null,
       priority: document.getElementById('task-priority').value,
-      assignedToPartyId: document.getElementById('task-assignee')?.value || null,
+      assignedToPartyId: assigneeType === 'party' ? assigneeId : null,
+      assignedToLawyerId: assigneeType === 'lawyer' ? assigneeId : null,
       sourceMessageId: pendingSourceMessageId,
       sourceDocumentId: pendingSourceDocumentId,
     })});

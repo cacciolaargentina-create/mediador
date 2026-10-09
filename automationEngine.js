@@ -33,6 +33,21 @@ function partyDisplayName(db, partyId) {
   return p.legalName || `${p.firstName || ''} ${p.lastName || ''}`.trim() || null;
 }
 
+// Bloque 61 — mismo criterio que partyDisplayName, para abogados.
+function lawyerDisplayName(db, lawyerId) {
+  const l = db.lawyers.find((x) => x.id === lawyerId);
+  return l ? l.name || null : null;
+}
+
+// responsable de una tarea para mostrar en el centro de atención — una
+// tarea es de una parte, de un abogado, o (default) del equipo mediador,
+// nunca de más de uno a la vez (validado al crear, ver routes/mediations.js).
+function taskResponsibleLabel(db, task) {
+  if (task.assignedToPartyId) return partyDisplayName(db, task.assignedToPartyId) || 'Una parte';
+  if (task.assignedToLawyerId) return lawyerDisplayName(db, task.assignedToLawyerId) || 'Un abogado';
+  return 'Vos';
+}
+
 // ================= detectores por mediación (ya existentes, centralizados) =================
 
 function mediationMissingNextAction(mediation) {
@@ -408,11 +423,11 @@ function buildAttentionItems(db, mediations, { includeInactive = true } = {}) {
     }
   }
 
-  // Bloque 31 §1 — "responsable" visible por ítem: para una tarea/tarea
-  // vencida delegada a una parte (assignedToPartyId, ver db.js), el
-  // responsable real es esa parte, no el equipo mediador.
+  // Bloque 31 §1 / Bloque 61 — "responsable" visible por ítem: para una
+  // tarea vencida delegada a una parte o a un abogado, el responsable real
+  // es esa persona, no el equipo mediador.
   for (const t of getOverdueTasks(db, mediationIds, now)) {
-    const responsible = t.assignedToPartyId ? (partyDisplayName(db, t.assignedToPartyId) || 'Una parte') : 'Vos';
+    const responsible = taskResponsibleLabel(db, t);
     items.push({ type: 'tareaVencida', mediationId: t.mediationId, mediationCode: mediationById[t.mediationId]?.code, title: t.title, detail: `Vencida el ${t.dueDate}`, priority: 'vencido', dueDate: t.dueDate, refId: t.id, responsible, suggestedActions: ['completarTarea', 'editarTarea', 'verMediacion'] });
   }
 

@@ -318,6 +318,16 @@ function buildVencimientosPanel(db, mediations) {
     if (!p) return null;
     return p.legalName || `${p.firstName || ''} ${p.lastName || ''}`.trim() || null;
   };
+  // Bloque 61 — mismo criterio, para abogados.
+  const lawyerName = (id) => {
+    const l = db.lawyers.find((x) => x.id === id);
+    return l ? l.name || null : null;
+  };
+  const taskResponsible = (t) => {
+    if (t.assignedToPartyId) return partyName(t.assignedToPartyId) || 'Una parte';
+    if (t.assignedToLawyerId) return lawyerName(t.assignedToLawyerId) || 'Un abogado';
+    return 'Mediador/a';
+  };
   const items = [];
 
   db.tasks
@@ -328,7 +338,7 @@ function buildVencimientosPanel(db, mediations) {
       items.push({
         id: 'task:' + t.id, mediationId: t.mediationId, mediationCode: mediationById[t.mediationId].code,
         tipo: 'Tarea', label: t.title, dueDate: t.dueDate,
-        responsable: t.assignedToPartyId ? (partyName(t.assignedToPartyId) || 'Una parte') : 'Mediador/a',
+        responsable: taskResponsible(t),
         bucket,
       });
     });
@@ -1921,6 +1931,12 @@ module.exports = function (io, presence) {
     return p.legalName || `${p.firstName || ''} ${p.lastName || ''}`.trim() || null;
   }
 
+  // Bloque 61 — mismo criterio que partyDisplayName, para abogados.
+  function lawyerDisplayName(db, lawyerId) {
+    const l = db.lawyers.find((x) => x.id === lawyerId);
+    return l ? l.name || null : null;
+  }
+
   function serializeParty(p) {
     return {
       id: p.id, mediationId: p.mediationId, type: p.type, role: p.role,
@@ -3309,6 +3325,8 @@ module.exports = function (io, presence) {
       // Bloque 31 — si está seteado, esta tarea es DE una parte (visible y
       // completable desde su portal), no del equipo mediador.
       assignedToPartyId: t.assignedToPartyId || null,
+      // Bloque 61 — mismo criterio, para un abogado (ver routes/lawyer-portal.js).
+      assignedToLawyerId: t.assignedToLawyerId || null,
     };
   }
   // helper de serializeCommitment de abajo — nunca devuelve un documento
@@ -3398,8 +3416,9 @@ module.exports = function (io, presence) {
   }
 
   router.post('/:id/tasks', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
-    const { title, description, dueDate, priority, sourceMessageId, sourceDocumentId, assignedToPartyId } = req.body || {};
+    const { title, description, dueDate, priority, sourceMessageId, sourceDocumentId, assignedToPartyId, assignedToLawyerId } = req.body || {};
     if (!title || !title.trim()) return res.status(400).json({ error: 'Falta el título de la tarea' });
+    if (assignedToPartyId && assignedToLawyerId) return res.status(400).json({ error: 'Una tarea se asigna a una parte o a un abogado, no a los dos' });
     const db = getDB();
     // Bloque 31 — delegar la tarea a una parte (en vez de al equipo
     // mediador): la parte tiene que existir en ESTA mediación.
@@ -3408,6 +3427,13 @@ module.exports = function (io, presence) {
       const party = db.parties.find((p) => p.id === assignedToPartyId && p.mediationId === req.mediation.id);
       if (!party) return res.status(400).json({ error: 'La parte indicada no existe en esta mediación' });
       resolvedAssignedToPartyId = party.id;
+    }
+    // Bloque 61 — mismo criterio, para un abogado.
+    let resolvedAssignedToLawyerId = null;
+    if (assignedToLawyerId) {
+      const lawyer = db.lawyers.find((l) => l.id === assignedToLawyerId && l.mediationId === req.mediation.id);
+      if (!lawyer) return res.status(400).json({ error: 'El abogado indicado no existe en esta mediación' });
+      resolvedAssignedToLawyerId = lawyer.id;
     }
     const resolvedSourceDocumentId = resolveSourceDocument(db, req.mediation.id, sourceDocumentId);
     // Bloque 22 §6 — "si ya existe una tarea activa de revisión para ese
@@ -3426,12 +3452,16 @@ module.exports = function (io, presence) {
       status: 'pendiente', createdBy: req.user.id, completedAt: null, createdAt: Date.now(),
       sourceMessageId: resolvedSourceMessageId, sourceDocumentId: resolvedSourceDocumentId,
       assignedToPartyId: resolvedAssignedToPartyId,
+      assignedToLawyerId: resolvedAssignedToLawyerId,
     };
     db.tasks.push(task);
+    let taskCreatedTitle = `Tarea creada: ${task.title}`;
+    if (resolvedAssignedToPartyId) taskCreatedTitle = `Tarea asignada a ${partyDisplayName(db, resolvedAssignedToPartyId) || 'una parte'}: ${task.title}`;
+    else if (resolvedAssignedToLawyerId) taskCreatedTitle = `Tarea asignada a ${lawyerDisplayName(db, resolvedAssignedToLawyerId) || 'un abogado'}: ${task.title}`;
     logMediationEvent(db, {
       mediationId: req.mediation.id, type: 'TASK_CREATED', actorId: req.user.id,
       entityType: 'task', entityId: task.id,
-      title: resolvedAssignedToPartyId ? `Tarea asignada a ${partyDisplayName(db, resolvedAssignedToPartyId) || 'una parte'}: ${task.title}` : `Tarea creada: ${task.title}`,
+      title: taskCreatedTitle,
       metadata: (resolvedSourceMessageId || resolvedSourceDocumentId) ? { sourceMessageId: resolvedSourceMessageId, sourceDocumentId: resolvedSourceDocumentId } : null,
     });
     await commit();
