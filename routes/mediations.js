@@ -2130,7 +2130,7 @@ module.exports = function (io, presence) {
     await postSystemMessage(io, thread, notifyResult.status === 'enviado'
       ? 'Se envió la invitación al portal por WhatsApp.'
       : 'No se pudo enviar la invitación automáticamente — compartí el link manualmente.',
-      notifyResult.status === 'enviado' ? 'whatsapp' : 'sistema');
+      notifyResult.status === 'enviado' ? 'whatsapp' : 'sistema', true);
     await commit();
     // Bloque 45 — phone viaja en la respuesta para que, cuando el envío
     // automático por WhatsApp falla (notified:false), el frontend pueda
@@ -2276,7 +2276,7 @@ module.exports = function (io, presence) {
     await postSystemMessage(io, lawyerThread, notifyResult.status === 'enviado'
       ? 'Se envió la invitación al portal por WhatsApp.'
       : 'No se pudo enviar la invitación automáticamente — compartí el link manualmente.',
-      notifyResult.status === 'enviado' ? 'whatsapp' : 'sistema');
+      notifyResult.status === 'enviado' ? 'whatsapp' : 'sistema', true);
     await commit();
     res.json({ portalToken: lawyer.portalToken, portalUrl, notified: notifyResult.status === 'enviado', phone: lawyer.phone || null });
   });

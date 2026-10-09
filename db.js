@@ -514,7 +514,7 @@ CREATE INDEX IF NOT EXISTS idx_mediation_deadline_extensions_mediation ON mediat
 const BOOL_COLUMNS = {
   users: ['guest', 'verifiedProfessional', 'readReceiptsEnabled'],
   members: ['assignedByAdmin', 'notificationsMuted'],
-  messages: ['flagged', 'pattern'],
+  messages: ['flagged', 'pattern', 'internalOnly'],
   parties: ['allowDocumentUpload'],
   competitorSources: ['active'],
   billingPlans: ['active'],
@@ -725,6 +725,7 @@ function openDb() {
   // quedan reservados, ningún código los setea todavía. Default 'interno'
   // cubre todo mensaje viejo sin backfill.
   ensureColumns(sqlite, 'messages', { via: "TEXT DEFAULT 'interno'" });
+  ensureColumns(sqlite, 'messages', { internalOnly: 'INTEGER DEFAULT 0' });
   // Bloque 31 — permite delegar una tarea a una PARTE (antes solo podía
   // vivir en el equipo mediador vía assignedTo=userId). NULL = tarea
   // interna de siempre, cero cambio de comportamiento. Con esto la parte

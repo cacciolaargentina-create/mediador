@@ -163,13 +163,21 @@ async function undoMessage(channel, messageId, requesterId) {
 // `via` (Bloque 32): default 'sistema' para todos los call sites de
 // siempre; se puede pasar 'whatsapp' cuando el texto documenta un envío
 // real por ese medio (ver notifyInvitation/notifyDocumentReview más abajo).
-async function postSystemMessage(io, channel, text, via = 'sistema') {
+// `internalOnly` (Bloque 69): para avisos que solo tienen sentido para EL
+// MEDIADOR (ej. "no se pudo mandar la invitación automática, compartí el
+// link a mano") — antes se posteaban igual que cualquier mensaje, así que
+// la parte/abogado los leía en su propio portal ("¿invitación? si ya
+// estoy acá adentro..."), confuso y nada profesional en un contexto de
+// mediación. El mediador lo sigue viendo (Timeline + este mismo hilo
+// desde su lado); los endpoints de lectura del portal de partes/abogados
+// filtran estos mensajes antes de devolverlos.
+async function postSystemMessage(io, channel, text, via = 'sistema', internalOnly = false) {
   const db = getDB();
   const now = Date.now();
   const msg = {
     id: nanoid(), channelId: channel.id, senderId: null,
     text, flagged: false, reason: null, pattern: false, deliverAt: now, createdAt: now,
-    via,
+    via, internalOnly,
   };
   db.messages.push(msg);
   await commit();

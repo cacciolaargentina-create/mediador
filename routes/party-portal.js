@@ -172,7 +172,10 @@ module.exports = function (io) {
     const db = getDB();
     const thread = db.channels.find((c) => c.mediationId === req.mediation.id && c.partyId === req.party.id);
     if (!thread) return res.json([]);
-    const messages = db.messages.filter((m) => m.channelId === thread.id).sort((a, b) => a.createdAt - b.createdAt);
+    // Bloque 69 — internalOnly: avisos operativos para el mediador (ej.
+    // "no se pudo mandar la invitación automática"), nunca contenido para
+    // la parte — ver el comentario largo en postSystemMessage.
+    const messages = db.messages.filter((m) => m.channelId === thread.id && !m.internalOnly).sort((a, b) => a.createdAt - b.createdAt);
     res.json(messages.map((m) => {
       // Bloque 19 — si el mediador adjuntó un documento a este mensaje, se
       // muestra nombre/tipo/fecha (nunca storagePath) — la parte lo baja
