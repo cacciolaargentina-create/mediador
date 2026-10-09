@@ -261,9 +261,18 @@ async function fireNotification(key) {
 
   const link = accessLinkFor(channel, toUser);
   const plural = entry.count > 1 ? `${entry.count} mensajes nuevos` : 'un mensaje nuevo';
+  // Bloque 75 — este código es compartido entre los dos productos que
+  // viven en esta misma base (Puente Digital, coparentalidad, y
+  // Mediador) — channel.mediationId solo existe en los canales de
+  // Mediador (parties/lawyers/interno de una mediación), nunca en los
+  // de coparentalidad. Antes esto decía "Puente Digital" siempre, sin
+  // importar de qué producto viniera el mensaje — un mediador que
+  // recibía un mensaje de una parte en Mediador se enteraba por un
+  // WhatsApp/push que decía "Puente Digital", marca equivocada.
+  const productName = channel.mediationId ? 'Mediador' : 'Puente Digital';
 
   if (toUser.phone) {
-    const text = `Tenés ${plural} de ${entry.fromName} en Puente Digital. Verlo: ${link}`;
+    const text = `Tenés ${plural} de ${entry.fromName} en ${productName}. Verlo: ${link}`;
     try {
       await sendText(toUser.phone, text);
       logWhatsappEvent(db, {
@@ -283,7 +292,7 @@ async function fireNotification(key) {
   // aceptó notificaciones push del navegador, le llega por los dos lados.
   try {
     await sendPushToUser(db, commit, toUserId, {
-      title: 'Puente Digital',
+      title: productName,
       body: `Tenés ${plural} de ${entry.fromName}`,
       url: link,
     });
