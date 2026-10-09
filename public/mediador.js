@@ -1038,9 +1038,16 @@ async function renderDashboard(){
         <section class="dash-resto-item dash-section">
           <div class="dash-section-head"><h2>Tareas y vencimientos</h2><a href="#" onclick="event.preventDefault(); goTo('commitments');">Ver todas</a></div>
           ${(() => {
+            // evita mostrar el mismo ítem acá Y en "¿Qué requiere tu
+            // atención?" de arriba — esa lista ya cubre vencidos con el
+            // motivo y la acción sugerida; acá solo interesa lo que NO
+            // está ya ahí (en la práctica, casi siempre lo "por vencer").
+            const yaEnAtencion = new Set(
+              d.centroAtencion.filter(i => i.type === 'tareaVencida' || i.type === 'compromisoVencido').map(i => i.refId)
+            );
             const vencidos = [
-              ...d.necesitanAtencion.tareasVencidas.map(t => ({ kind:'tarea', id:t.id, mediationId:t.mediationId, title: t.title, sub: t.mediationCode, badge: 'Vencido', danger: true })),
-              ...d.necesitanAtencion.compromisosVencidos.map(c => ({ kind:'compromiso', id:c.id, mediationId:c.mediationId, title: c.description, sub: `Compromiso de ${c.partyName||'—'}`, badge: 'Vencido', danger: true })),
+              ...d.necesitanAtencion.tareasVencidas.filter(t => !yaEnAtencion.has(t.id)).map(t => ({ kind:'tarea', id:t.id, mediationId:t.mediationId, title: t.title, sub: t.mediationCode, badge: 'Vencido', danger: true })),
+              ...d.necesitanAtencion.compromisosVencidos.filter(c => !yaEnAtencion.has(c.id)).map(c => ({ kind:'compromiso', id:c.id, mediationId:c.mediationId, title: c.description, sub: `Compromiso de ${c.partyName||'—'}`, badge: 'Vencido', danger: true })),
             ];
             const proximos = [
               ...d.vencenProximamente.tareas.map(t => ({ kind:'tarea', id:t.id, mediationId:t.mediationId, title: t.title, sub: t.mediationCode, badge: fmtDate(t.dueDate), danger: false })),
