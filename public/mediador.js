@@ -3271,19 +3271,27 @@ async function renderDetail(id){
       ${detailAlerts ? `<div style="margin-top:10px;">${detailAlerts}</div>` : ''}
     </div>
 
-    <nav class="detail-subnav">
-      <span class="detail-subnav-code" title="${escapeHtml(m.object)}">${escapeHtml(m.code)}</span>
-      <a href="#section-partes">Partes</a>
-      <a href="#section-abogados">Abogados</a>
-      <a href="#section-audiencias">Audiencias</a>
-      <a href="#section-documentos">Documentos</a>
-      <a href="#section-comunicaciones">Comunicaciones</a>
-      <a href="#section-tareas">Tareas</a>
-      <a href="#section-compromisos">Compromisos</a>
-      <a href="#section-plazos">Plazos</a>
-      <a href="#section-timeline">Timeline</a>
-      <a href="#section-admin">Administración</a>
-    </nav>
+    <div class="detail-subnav-wrap">
+      <nav class="detail-subnav">
+        <span class="detail-subnav-code" title="${escapeHtml(m.object)}">${escapeHtml(m.code)}</span>
+        <a href="#section-partes">Partes</a>
+        <!-- Bloque 66 — Administración (cambio de Estado, lo que más se usa
+             día a día) quedaba último en una barra que scrollea horizontal
+             sin ninguna pista visual de que hay más — invisible en la
+             práctica. La movemos cerca del principio y agregamos el
+             degradé de abajo para el resto de los tabs que igual quedan
+             ocultos. -->
+        <a href="#section-admin">Administración</a>
+        <a href="#section-abogados">Abogados</a>
+        <a href="#section-audiencias">Audiencias</a>
+        <a href="#section-documentos">Documentos</a>
+        <a href="#section-comunicaciones">Comunicaciones</a>
+        <a href="#section-tareas">Tareas</a>
+        <a href="#section-compromisos">Compromisos</a>
+        <a href="#section-plazos">Plazos</a>
+        <a href="#section-timeline">Timeline</a>
+      </nav>
+    </div>
 
     <div class="card" id="section-partes">
       <h2>Partes</h2>
@@ -3591,6 +3599,15 @@ async function renderDetail(id){
     <div class="card">
       <h2>Estado</h2>
       <select id="status-select">${statusOptions}</select>
+      <!-- Bloque 66 — sin esto, todo cambio de estado quedaba fechado con
+           el momento en que alguien lo TIPEA, no cuando pasó de verdad
+           (un mediador no siempre carga el sistema el mismo día). Vacío
+           = comportamiento de siempre (ahora mismo), backend lo interpreta así. -->
+      <label>Cuándo pasó (opcional, si no fue hoy)</label>
+      <div style="display:flex; gap:6px;">
+        <input id="status-date" type="date" style="flex:1;">
+        <input id="status-time" type="time" style="flex:1;">
+      </div>
       <textarea id="status-note" placeholder="Nota sobre el cambio (opcional)" rows="2"></textarea>
       <button class="ghost" style="width:100%;" onclick="changeStatus('${m.id}')">Actualizar estado</button>
     </div>
@@ -3776,8 +3793,13 @@ function afterMediationClosed(id){
 async function changeStatus(id){
   const status = document.getElementById('status-select').value;
   const note = document.getElementById('status-note').value.trim() || undefined;
+  const dateVal = document.getElementById('status-date').value;
+  // Bloque 66 — fecha sin hora: igual vale la pena registrarla (mejor
+  // "ese día" que "ahora mismo" si en realidad pasó ayer), así que la
+  // hora vacía no bloquea nada, solo faltan los minutos exactos.
+  const changedAt = dateVal ? new Date(`${dateVal}T${document.getElementById('status-time').value || '00:00'}`).getTime() : undefined;
   try{
-    await api(`/api/mediations/${id}/status`, { method:'POST', body: JSON.stringify({ status, note }) });
+    await api(`/api/mediations/${id}/status`, { method:'POST', body: JSON.stringify({ status, note, changedAt }) });
     renderDetail(id);
   }catch(e){ showToast(e.error || 'No se pudo cambiar el estado.', 'danger'); }
 }

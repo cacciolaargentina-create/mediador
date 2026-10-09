@@ -1678,9 +1678,24 @@ module.exports = function (io, presence) {
 
   // ---------- cambiar estado ----------
   router.post('/:id/status', requireAuth, requireMediationAccess, requireEditAccess, async (req, res) => {
-    const { status, note } = req.body || {};
+    const { status, note, changedAt } = req.body || {};
     if (!VALID_STATUSES.includes(status)) {
       return res.status(400).json({ error: 'Estado inválido' });
+    }
+    // Bloque 66 — opcional: registrar el cambio con la fecha en que
+    // realmente pasó, no siempre el momento en que alguien lo carga acá
+    // (un mediador puede estar poniendo al día el sistema días después).
+    // Sin este campo, createdAt quedaba fijo en Date.now() — el
+    // Timeline/Historial de estados mentía sobre cuándo pasó cada cosa.
+    let changedAtMs;
+    if (changedAt !== undefined && changedAt !== null && changedAt !== '') {
+      changedAtMs = Number(changedAt);
+      if (!Number.isFinite(changedAtMs) || Number.isNaN(new Date(changedAtMs).getTime())) {
+        return res.status(400).json({ error: 'Fecha de cambio inválida' });
+      }
+      if (changedAtMs > Date.now()) {
+        return res.status(400).json({ error: 'La fecha del cambio no puede ser futura' });
+      }
     }
     // Bloque 33 §4 — auditoría de permisos: requireEditAccess deja pasar
     // a 'asistente' igual que a 'mediador' para casi todo (administrativo,
@@ -1707,15 +1722,17 @@ module.exports = function (io, presence) {
     if (fromStatus === status) return res.json(serializeMediation(mediation)); // no-op silencioso, no es un error de uso
 
     mediation.status = status;
+    const historyCreatedAt = changedAtMs || Date.now();
     db.mediationStatusHistory.push({
       id: nanoid(), mediationId: mediation.id, fromStatus, toStatus: status,
-      changedBy: req.user.id, note: note || null, createdAt: Date.now(),
+      changedBy: req.user.id, note: note || null, createdAt: historyCreatedAt,
     });
     logMediationEvent(db, {
       mediationId: mediation.id, type: 'MEDIATION_STATUS_CHANGED', actorId: req.user.id,
       entityType: 'mediation', entityId: mediation.id,
       title: `Estado: ${fromStatus} → ${status}`, description: note || null,
       metadata: { fromStatus, toStatus: status },
+      createdAt: historyCreatedAt,
     });
     await commit();
     res.json(serializeMediation(mediation));

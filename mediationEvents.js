@@ -7,12 +7,12 @@
 
 const { nanoid } = require('nanoid');
 
-function logMediationEvent(db, { mediationId, type, actorId, visibility, entityType, entityId, title, description, metadata, causedByEventId }) {
+function logMediationEvent(db, { mediationId, type, actorId, visibility, entityType, entityId, title, description, metadata, causedByEventId, createdAt }) {
   const event = {
     id: nanoid(), mediationId, type, actorId: actorId || null,
     visibility: visibility || 'public', entityType: entityType || null, entityId: entityId || null,
     title, description: description || null, metadata: metadata || null,
-    causedByEventId: causedByEventId || null, createdAt: Date.now(),
+    causedByEventId: causedByEventId || null, createdAt: createdAt || Date.now(),
   };
   db.mediationEvents.push(event);
   return event;

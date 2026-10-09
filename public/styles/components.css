@@ -259,6 +259,17 @@
   border-bottom: 1px solid var(--color-border); -ms-overflow-style: none; scrollbar-width: none;
 }
 .mediador-app .detail-subnav::-webkit-scrollbar{ display: none; }
+/* Bloque 66 — esta barra scrollea horizontal sin scrollbar visible (a
+   propósito, mismo lenguaje que .tabs-bar), pero eso dejaba los últimos
+   tabs (Plazos, Timeline) completamente escondidos sin ninguna pista de
+   que había más — había que adivinar que se podía arrastrar. Un degradé
+   fijo en el borde derecho al menos avisa que el contenido continúa. */
+.mediador-app .detail-subnav-wrap{ position: relative; }
+.mediador-app .detail-subnav-wrap::after{
+  content: ''; position: absolute; top: 0; right: 0; bottom: var(--space-3); width: 32px;
+  background: linear-gradient(to right, transparent, var(--color-bg));
+  pointer-events: none;
+}
 /* código del expediente, fijo a la izquierda del subnav sticky — para no
    perder de vista EN QUÉ expediente estás al scrollear varias pantallas
    hacia abajo (Compromisos, Timeline, Administración quedan lejos del
