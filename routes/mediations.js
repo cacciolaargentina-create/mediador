@@ -605,14 +605,31 @@ module.exports = function (io, presence) {
         (l.enrollmentNumber || '').toLowerCase().includes(q)
       )).map((l) => l.mediationId)
     );
+    // Bloque 63 — el placeholder del buscador siempre prometió "...o
+    // documento" pero nunca tocaba db.documents: buscar el nombre de un
+    // archivo real devolvía "sin resultados" aunque el documento
+    // existiera. Mapeado (no Set) para poder mostrar CUÁL documento
+    // matcheó — si no, un resultado que solo matchea por archivo se ve
+    // idéntico a uno que matchea por código/carátula, sin ninguna pista
+    // de por qué apareció.
+    const documentMatchByMediation = new Map();
+    for (const d of db.documents) {
+      if (!scopeIds.has(d.mediationId)) continue;
+      if (!(d.originalFilename || '').toLowerCase().includes(q)) continue;
+      if (!documentMatchByMediation.has(d.mediationId)) documentMatchByMediation.set(d.mediationId, d.originalFilename);
+    }
     const results = scope.filter((m) =>
       m.code.toLowerCase().includes(q) ||
       (m.object || '').toLowerCase().includes(q) ||
       (m.internalNumber || '').toLowerCase().includes(q) ||
       partyMatchIds.has(m.id) ||
-      lawyerMatchIds.has(m.id)
+      lawyerMatchIds.has(m.id) ||
+      documentMatchByMediation.has(m.id)
     );
-    res.json(results.map(serializeMediation));
+    res.json(results.map((m) => {
+      const matchedDocument = documentMatchByMediation.get(m.id);
+      return matchedDocument ? { ...serializeMediation(m), matchedDocument } : serializeMediation(m);
+    }));
   });
 
   // ---------- dashboard ----------

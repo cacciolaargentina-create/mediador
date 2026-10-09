@@ -157,6 +157,7 @@ function onTopbarSearchInput(value){
       <a class="topbar-search-result" href="#" onclick="event.preventDefault(); closeTopbarSearch(); goTo('detail','${m.id}');">
         <div class="code">${escapeHtml(m.code)}</div>
         <div class="obj">${escapeHtml(m.object || 'Sin carátula')}</div>
+        ${m.matchedDocument ? `<div class="match-hint">📄 ${escapeHtml(m.matchedDocument)}</div>` : ''}
       </a>
     `).join('') : `<div class="topbar-search-empty">Sin resultados para "${escapeHtml(q)}"</div>`;
     resultsEl.hidden = false;
