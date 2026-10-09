@@ -2425,6 +2425,29 @@ module.exports = function (io, presence) {
   });
 
   // ---------- audiencias ----------
+  // Bloque 73 — mismo respaldo que ya tienen "invitar al portal" (Bloque
+  // 32) y "documento observado": además de intentar WhatsApp, siempre se
+  // deja asentado el mismo texto en el chat propio de la parte/abogado.
+  // Antes, los 7 avisos de audiencias (crear/proponer/confirmar/cancelar/
+  // reprogramar/resolver pedido de cambio) dependían 100% de que el
+  // WhatsApp saliera bien — si fallaba (sin teléfono cargado, número
+  // viejo, error de Meta), no quedaba NINGÚN rastro en la app de lo más
+  // grave que se puede perder un aviso: a qué hora es la audiencia. Si
+  // nunca se invitó a esa parte/abogado no hay hilo donde dejarlo, y no
+  // hace falta — no podría leerlo de todas formas.
+  async function notifyPartyAboutHearingWithThread(db, party, mediationId, text) {
+    const result = await notifyPartyAboutHearing(db, party, text);
+    const thread = db.channels.find((c) => c.mediationId === mediationId && c.partyId === party.id);
+    if (thread) await postSystemMessage(io, thread, text, result.status === 'enviado' ? 'whatsapp' : 'sistema');
+    return result;
+  }
+  async function notifyLawyerAboutHearingWithThread(db, lawyer, mediationId, text) {
+    const result = await notifyLawyerAboutHearing(db, lawyer, text);
+    const thread = db.channels.find((c) => c.mediationId === mediationId && c.lawyerId === lawyer.id);
+    if (thread) await postSystemMessage(io, thread, text, result.status === 'enviado' ? 'whatsapp' : 'sistema');
+    return result;
+  }
+
   // Bloque 15 (Parte 3) §1-3 — checklist de preparación, calculado en
   // vivo desde datos existentes. Bloque 22 — la función se movió a
   // automationEngine.js (getHearingPreparationState) para poder
@@ -2724,11 +2747,11 @@ module.exports = function (io, presence) {
     const notifyText = `${req.mediation.code}: te proponemos audiencia (${req.mediation.type || 'mediación'}, ${modality || 'presencial'}). Opciones: ${optionsText}. Ingresá al portal para confirmar cuál te sirve.`;
     const notificationResults = [];
     for (const party of targetParties) {
-      const n = await notifyPartyAboutHearing(db, party, notifyText);
+      const n = await notifyPartyAboutHearingWithThread(db, party, req.mediation.id, notifyText);
       notificationResults.push({ recipient: 'party', partyId: party.id, status: n.status });
       const partyLawyers = db.lawyers.filter((l) => l.mediationId === req.mediation.id && l.partyId === party.id);
       for (const lawyer of partyLawyers) {
-        const nl = await notifyLawyerAboutHearing(db, lawyer, `${req.mediation.code}: se propuso audiencia para tu representado/a. Opciones: ${optionsText}. Podés ver el detalle en el portal.`);
+        const nl = await notifyLawyerAboutHearingWithThread(db, lawyer, req.mediation.id, `${req.mediation.code}: se propuso audiencia para tu representado/a. Opciones: ${optionsText}. Podés ver el detalle en el portal.`);
         notificationResults.push({ recipient: 'lawyer', lawyerId: lawyer.id, status: nl.status });
       }
     }
@@ -2788,11 +2811,11 @@ module.exports = function (io, presence) {
     const confirmNotifyText = `${req.mediation.code}: tu audiencia quedó confirmada para el ${fmtDateEs(hearing.date)}${hearing.startTime ? ' ' + hearing.startTime : ''} (${hearing.modality}). Ingresá al portal para volver a confirmar tu asistencia.`;
     const confirmNotifications = [];
     for (const party of involvedParties) {
-      const n = await notifyPartyAboutHearing(db, party, confirmNotifyText);
+      const n = await notifyPartyAboutHearingWithThread(db, party, req.mediation.id, confirmNotifyText);
       confirmNotifications.push({ recipient: 'party', partyId: party.id, status: n.status });
       const partyLawyers = db.lawyers.filter((l) => l.mediationId === req.mediation.id && l.partyId === party.id);
       for (const lawyer of partyLawyers) {
-        const nl = await notifyLawyerAboutHearing(db, lawyer, `${req.mediation.code}: quedó confirmada la audiencia para el ${fmtDateEs(hearing.date)}${hearing.startTime ? ' ' + hearing.startTime : ''}.`);
+        const nl = await notifyLawyerAboutHearingWithThread(db, lawyer, req.mediation.id, `${req.mediation.code}: quedó confirmada la audiencia para el ${fmtDateEs(hearing.date)}${hearing.startTime ? ' ' + hearing.startTime : ''}.`);
         confirmNotifications.push({ recipient: 'lawyer', lawyerId: lawyer.id, status: nl.status });
       }
     }
@@ -2857,11 +2880,11 @@ module.exports = function (io, presence) {
       const involvedParties = db.parties.filter((p) => confirmations.some((c) => c.partyId === p.id));
       const cancelText = `${req.mediation.code}: se canceló la audiencia del ${fmtDateEs(hearing.date)}${hearing.startTime ? ' ' + hearing.startTime : ''}${note ? '. Motivo: ' + note : ''}.`;
       for (const party of involvedParties) {
-        const n = await notifyPartyAboutHearing(db, party, cancelText);
+        const n = await notifyPartyAboutHearingWithThread(db, party, req.mediation.id, cancelText);
         cancelNotifications.push({ recipient: 'party', partyId: party.id, status: n.status });
         const partyLawyers = db.lawyers.filter((l) => l.mediationId === req.mediation.id && l.partyId === party.id);
         for (const lawyer of partyLawyers) {
-          const nl = await notifyLawyerAboutHearing(db, lawyer, cancelText);
+          const nl = await notifyLawyerAboutHearingWithThread(db, lawyer, req.mediation.id, cancelText);
           cancelNotifications.push({ recipient: 'lawyer', lawyerId: lawyer.id, status: nl.status });
         }
       }
@@ -3038,7 +3061,7 @@ module.exports = function (io, presence) {
         entityType: 'hearing_reschedule_request', entityId: request.id,
         title: eventTitle, description: note || null,
       });
-      const notif = requestingParty ? await notifyPartyAboutHearing(db, requestingParty, `Tu pedido de cambio de audiencia fue ${action === 'rechazar' ? 'rechazado' : 'resuelto sin reprogramar'}${note ? ': ' + note : ''}`) : { status: 'no_disponible' };
+      const notif = requestingParty ? await notifyPartyAboutHearingWithThread(db, requestingParty, req.mediation.id, `Tu pedido de cambio de audiencia fue ${action === 'rechazar' ? 'rechazado' : 'resuelto sin reprogramar'}${note ? ': ' + note : ''}`) : { status: 'no_disponible' };
       await commit();
       return res.json({ ...serializeRescheduleRequest(request), notification: notif.status });
     }
@@ -3116,11 +3139,11 @@ module.exports = function (io, presence) {
     const rescheduleNotifyText = `${req.mediation.code}: tu audiencia fue reprogramada. Nueva fecha: ${fmtDateEs(targetDate)}${targetStartTime ? ' ' + targetStartTime : ''}. Hace falta que vuelvas a confirmar en el portal.`;
     const rescheduleNotifications = [];
     for (const party of involvedPartiesForReschedule) {
-      const n = await notifyPartyAboutHearing(db, party, rescheduleNotifyText);
+      const n = await notifyPartyAboutHearingWithThread(db, party, req.mediation.id, rescheduleNotifyText);
       rescheduleNotifications.push({ recipient: 'party', partyId: party.id, status: n.status });
       const partyLawyers = db.lawyers.filter((l) => l.mediationId === req.mediation.id && l.partyId === party.id);
       for (const lawyer of partyLawyers) {
-        const nl = await notifyLawyerAboutHearing(db, lawyer, `${req.mediation.code}: se reprogramó la audiencia de tu representado/a. Nueva fecha: ${fmtDateEs(targetDate)}${targetStartTime ? ' ' + targetStartTime : ''}.`);
+        const nl = await notifyLawyerAboutHearingWithThread(db, lawyer, req.mediation.id, `${req.mediation.code}: se reprogramó la audiencia de tu representado/a. Nueva fecha: ${fmtDateEs(targetDate)}${targetStartTime ? ' ' + targetStartTime : ''}.`);
         rescheduleNotifications.push({ recipient: 'lawyer', lawyerId: lawyer.id, status: nl.status });
       }
     }
