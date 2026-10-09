@@ -50,6 +50,7 @@ const fs = require('fs');
 const authRoutes = require('./routes/auth');
 const { getDB, resolveGuest, resolvePortalGuest, commit } = require('./db');
 const { canAccessMediationChannel } = require('./mediationAccess');
+const { SqliteSessionStore } = require('./sessionStore');
 
 // Sin FRONTEND_URL en producción, el CORS de abajo reflejaría cualquier
 // origen (con credentials:true) — mejor no arrancar que quedar abierto.
@@ -167,6 +168,10 @@ if (!process.env.SESSION_SECRET && process.env.NODE_ENV === 'production') {
 }
 
 const sessionMiddleware = session({
+  // Bloque 56 — antes de esto no había `store`, así que express-session
+  // usaba su MemoryStore por default: cada reinicio de pm2 (cada deploy)
+  // perdía todas las sesiones activas y desconectaba a todo el mundo.
+  store: new SqliteSessionStore(),
   secret: process.env.SESSION_SECRET || 'cambiar-este-secreto-en-produccion',
   resave: false,
   saveUninitialized: false,
