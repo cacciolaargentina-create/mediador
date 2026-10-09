@@ -78,7 +78,10 @@ router.get('/:hash', (req, res) => {
     }));
   }
 
-  let signatureHtml = '';
+  // Bloque 59 — antes, sin signature esta sección entera desaparecía: la
+  // página se veía exactamente igual con o sin firma, sin ninguna pista de
+  // que falte algo que el propio PDF menciona. Ahora siempre dice algo.
+  let signatureHtml;
   if (record.signature) {
     const valid = verifySignature(record.hash, record.signature);
     const fingerprint = publicKeyFingerprint();
@@ -89,6 +92,13 @@ router.get('/:hash', (req, res) => {
       </div>
       <div class="hash">Firma (base64):<br>${escapeHtml(record.signature)}</div>
       <p class="disclaimer" style="border-top:none;padding-top:0;margin-top:6px;">Esta firma es electrónica en los términos del Art. 5 de la Ley 25.506 (no "firma digital" del Art. 2): prueba que el documento salió de la clave privada de Puente Digital, pero no tiene la presunción legal automática de la firma digital — quien la invoque debe poder acreditar su validez.</p>
+    `;
+  } else {
+    signatureHtml = `
+      <div class="details">
+        <div><b>Firma electrónica:</b> <span class="warn">⚠ este documento no tiene firma electrónica</span></div>
+      </div>
+      <p class="disclaimer" style="border-top:none;padding-top:0;margin-top:6px;">El hash de integridad de arriba sigue siendo válido para detectar alteraciones, pero este documento en particular se generó sin firma electrónica.</p>
     `;
   }
 

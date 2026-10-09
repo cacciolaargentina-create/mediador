@@ -141,8 +141,11 @@ async function buildCertifiedReport({ channel, messages, events, nameOf, generat
     doc.moveDown(1);
 
     // ---- firma electrónica (Ley 25.506 Art. 5 — no "firma digital") ----
+    // Bloque 59 — antes, sin signature esta sección entera desaparecía sin
+    // aviso: el PDF quedaba igual de "prolijo" con o sin firma, sin forma
+    // de notar la diferencia a simple vista. Ahora siempre dice algo.
+    doc.fontSize(9).font('Helvetica-Bold').fillColor('#1a1a2e').text('Firma electrónica');
     if (signature) {
-      doc.fontSize(9).font('Helvetica-Bold').fillColor('#1a1a2e').text('Firma electrónica');
       doc.font('Helvetica').fillColor('#555').fontSize(8).text(
         'Este documento está firmado electrónicamente con la clave privada de Puente Digital sobre el hash de integridad de abajo. No es firma digital en el sentido de la Ley 25.506 (sin certificador licenciado ni presunción legal automática), pero permite verificar de forma independiente que el documento salió de acá y no fue alterado.'
       );
@@ -152,9 +155,13 @@ async function buildCertifiedReport({ channel, messages, events, nameOf, generat
         doc.font('Courier').fontSize(7).text(`Clave pública (huella): ${publicKeyFingerprint}`);
       }
       doc.font('Helvetica').fontSize(8).fillColor('#555').text('Verificable en la página de verificación de este documento, con la firma y el hash de arriba.');
-      doc.fillColor('#000');
-      doc.moveDown(1);
+    } else {
+      doc.font('Helvetica').fillColor('#555').fontSize(8).text(
+        'Este documento NO incluye firma electrónica (clave de firma no configurada en el servidor) — el hash de integridad de abajo sigue siendo válido para detectar alteraciones.'
+      );
     }
+    doc.fillColor('#000');
+    doc.moveDown(1);
 
     // ---- mensajes ----
     doc.fontSize(13).font('Helvetica-Bold').fillColor('#1a1a2e').text('Mensajes');
@@ -400,7 +407,12 @@ async function buildMediationConstanciaPDF({ mediation, hash, signature, verifyU
     doc.moveDown(2);
 
     doc.fontSize(7.5).font('Courier').fillColor('#555').text(`SHA-256: ${hash}`, { align: 'center' });
-    if (signature) doc.fontSize(7).text(`Firma electrónica: ${signature.slice(0, 40)}…`, { align: 'center' });
+    // Bloque 59 — antes callaba del todo sin firma; ahora al menos deja
+    // constancia explícita de que no la tiene, en vez de no decir nada.
+    doc.fontSize(7).fillColor(signature ? '#000' : '#999').text(
+      signature ? `Firma electrónica: ${signature.slice(0, 40)}…` : 'Sin firma electrónica (clave no configurada en el servidor)',
+      { align: 'center' }
+    );
 
     doc.end();
   });
